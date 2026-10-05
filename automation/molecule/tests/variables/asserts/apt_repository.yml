@@ -1,0 +1,39 @@
+---
+# 🚀 These tasks aim to validate the apt_repository variable
+# 🎯 The objective is to ensure that the repository URLs are correctly defined
+
+# ========================================
+# 💻 Start Repository Operations and Tests
+# ========================================
+
+# 🖨️ Debugging the current OS distribution and release
+# These values are used to construct the expected URL
+- name: Molecule.tests.variables.asserts.apt_repository | Debug System Distribution Info
+  run_once: true
+  ansible.builtin.debug:
+    msg:
+      distribution: "{{ ansible_distribution }}"
+      release: "{{ ansible_distribution_release }}"
+      apt_repository: "{{ apt_repository }}"
+
+# 📝 Construct the expected apt repository URL and key
+- name: Molecule.tests.variables.asserts.apt_repository | Set expected repo and key
+  run_once: true
+  ansible.builtin.set_fact:
+    expected_apt_repo_url: "deb https://apt.postgresql.org/pub/repos/apt/ {{ ansible_distribution_release }}-pgdg main"
+    expected_apt_repo_key: "https://apt.postgresql.org/pub/repos/apt/ACCC4CF8.asc"
+
+# ✅ Verifying the correctness of the repository URL and key
+- name: Molecule.tests.variables.asserts.apt_repository | Assert repo and key
+  run_once: true
+  ansible.builtin.assert:
+    that:
+      - "apt_repository[0]['repo'] | trim == expected_apt_repo_url | trim"
+      - "apt_repository[0]['key'] == expected_apt_repo_key"
+    fail_msg: >-
+      Test failed:
+        repo is "{{ apt_repository[0]['repo'] }}"
+        key  is "{{ apt_repository[0]['key'] }}"
+        expected repo: "{{ expected_apt_repo_url }}"
+        expected key : "{{ expected_apt_repo_key }}"
+    success_msg: "Test passed: apt_repository[0]['repo'] and ['key'] are correct"

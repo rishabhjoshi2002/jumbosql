@@ -1,0 +1,80 @@
+---
+# Configure SSH Key-Based Authentication between cluster nodes
+
+- name: Gather package facts
+  ansible.builtin.package_facts:
+    manager: auto
+  when: ansible_facts.packages is not defined
+  check_mode: false
+
+- name: Install openssh-client package
+  become: true
+  become_user: root
+  ansible.builtin.apt:
+    name: openssh-client
+    state: present
+  when:
+    - ansible_os_family == "Debian"
+    - "'openssh-client' not in ansible_facts.packages"
+
+- name: Install openssh-clients package
+  become: true
+  become_user: root
+  ansible.builtin.dnf:
+    name: openssh-clients
+    state: present
+  when:
+    - ansible_os_family == "RedHat"
+    - "'openssh-clients' not in ansible_facts.packages"
+
+- name: Make sure the SSH key for user "{{ ssh_key_user | default('') }}" exists
+  ansible.builtin.user:
+    name: "{{ ssh_key_user }}"
+    generate_ssh_key: true
+    ssh_key_file: .ssh/id_rsa
+
+- name: Fetch public SSH keys from database servers
+  ansible.builtin.fetch:
+    src: "~{{ ssh_key_user }}/.ssh/id_rsa.pub"
+    dest: "{{ files_dir | default(playbook_dir ~ '/files') }}/{{ ansible_hostname }}-id_rsa.pub"
+    flat: true
+  changed_when: false
+
+- name: Add public SSH keys to authorized_keys
+  ansible.posix.authorized_key:
+    user: "{{ ssh_key_user }}"
+    state: present
+    key: "{{ lookup('pipe', 'cat ' ~ public_keys_file_path) }}"
+    exclusive: false
+  vars:
+    public_keys_file_path: "{{ files_dir | default(playbook_dir ~ '/files') }}/*id_rsa.pub"
+
+- name: Remove public SSH keys from localhost
+  run_once: true
+  become: false
+  ansible.builtin.file:
+    path: "{{ files_dir | default(playbook_dir ~ '/files') }}/{{ item }}-id_rsa.pub"
+    state: absent
+  loop: "{{ groups.get(source_group | default('postgres_cluster', true), []) }}"
+  delegate_to: localhost
+  changed_when: false
+
+# known_hosts
+- name: known_hosts | for each host, scan for its ssh public key
+  ansible.builtin.command: "ssh-keyscan -trsa -p {{ ansible_ssh_port | default(22) }} {{ hostvars[item]['bind_address'] }}"
+  loop: "{{ groups.get(source_group | default('postgres_cluster', true), []) }}"
+  register: ssh_known_host_results
+  until: ssh_known_host_results is succeeded
+  retries: 3
+  delay: 5
+  changed_when: false
+
+- name: known_hosts | for each host, add/update the public key in the "~{{ ssh_key_user | default('') }}/.ssh/known_hosts"
+  become: true
+  become_user: "{{ ssh_key_user }}"
+  ansible.builtin.known_hosts:
+    name: "{{ hostvars[item.item]['bind_address'] }}"
+    key: "{{ item.stdout }}"
+    path: "~{{ ssh_key_user }}/.ssh/known_hosts"
+  loop: "{{ ssh_known_host_results.results }}"
+  no_log: true # don't show public keys

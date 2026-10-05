@@ -1,0 +1,322 @@
+---
+- name: vitabaks.autobase.config_pgcluster | Configure PostgreSQL Cluster
+  hosts: postgres_cluster:etcd_cluster
+  become: true
+  become_method: sudo
+  gather_facts: true
+  pre_tasks:
+    - name: Validate secrets configuration
+      ansible.builtin.import_role:
+        name: vitabaks.autobase.pre_checks
+        tasks_from: secrets
+      when: secrets_provider | default('') | length > 0
+      tags: always
+
+    - name: Gather package facts
+      ansible.builtin.package_facts:
+        manager: auto
+      check_mode: false
+      tags: always
+
+    - name: Define bind_address
+      ansible.builtin.import_role:
+        name: vitabaks.autobase.bind_address
+      when: bind_address is not defined
+      tags: always
+
+    - name: Set default variables
+      ansible.builtin.import_role:
+        name: vitabaks.autobase.common
+      tags: always
+
+    - name: "[Prepare] Set maintenance variable"
+      ansible.builtin.set_fact:
+        postgresql_cluster_maintenance: true
+      tags: always
+
+    # When enabling TLS on an existing non-TLS cluster, the desired protocol is HTTPS,
+    # while the running Patroni API still uses HTTP until its configuration is reloaded.
+    # Probe the desired protocol first; the leader check falls back to the current one.
+    # The same fallback also supports disabling TLS.
+    - name: "[Prepare] Probe Patroni REST API with configured protocol"
+      ansible.builtin.uri:
+        url: >-
+          {{ patroni_restapi_protocol | default('https') }}://{{ patroni_restapi_connect_addr
+            | default(patroni_bind_address | default(bind_address, true), true) }}:{{ patroni_restapi_port
+            | default('8008') }}/leader
+        status_code: [200, 503]
+        validate_certs: false
+        ca_path: "{{ patroni_restapi_cafile | default(omit, true) }}"
+      register: patroni_restapi_probe
+      changed_when: false
+      failed_when: false
+      check_mode: false
+      environment:
+        no_proxy: "{{ patroni_bind_address | default(bind_address, true) }}"
+      when: inventory_hostname in groups['postgres_cluster']
+      tags: always
+
+    - name: "[Prepare] Get Patroni Cluster Leader Node"
+      ansible.builtin.uri:
+        url: >-
+          {{ patroni_restapi_effective_protocol }}://{{ patroni_restapi_connect_addr
+            | default(patroni_bind_address | default(bind_address, true), true) }}:{{ patroni_restapi_port
+            | default('8008') }}/leader
+        status_code: 200
+        # The CA path is omitted when the desired protocol is HTTP. Disable certificate
+        # validation only while using fallback HTTPS during an HTTPS-to-HTTP transition.
+        validate_certs: "{{ patroni_restapi_effective_protocol == (patroni_restapi_protocol | default('https')) }}"
+        ca_path: "{{ patroni_restapi_cafile | default(omit, true) }}"
+      register: patroni_leader_result
+      changed_when: false
+      failed_when: false
+      check_mode: false
+      environment:
+        no_proxy: "{{ patroni_bind_address | default(bind_address, true) }}"
+      vars:
+        patroni_restapi_effective_protocol: >-
+          {{ (patroni_restapi_protocol | default('https'))
+             if (patroni_restapi_probe.status | default(-1)) in [200, 503]
+             else ('http' if (patroni_restapi_protocol | default('https')) == 'https' else 'https') }}
+      when: inventory_hostname in groups['postgres_cluster']
+      tags: always
+
+    # Stop, if no healthy Patroni leader node
+    - name: The Patroni cluster is unhealthy
+      ansible.builtin.fail:
+        msg: >
+          No healthy leader node detected in cluster '{{ patroni_cluster_name | default('postgres-cluster') }}'.
+          Please ensure the cluster is up and node responds on REST API port ({{ patroni_restapi_port | default('8008') }}).
+      when:
+        - inventory_hostname == groups['postgres_cluster'][0]
+        - (groups.get('postgres_cluster', [])
+            | map('extract', hostvars)
+            | selectattr('patroni_leader_result.status', 'defined')
+            | selectattr('patroni_leader_result.status', 'equalto', 200)
+            | list | length) == 0
+      tags: always
+
+  roles:
+    - role: vitabaks.autobase.pre_checks
+      vars:
+        minimal_ansible_version: 2.19.0
+        timescale_minimal_pg_version: 12 # if enable_timescale is defined
+      when: inventory_hostname in groups['postgres_cluster']
+      tags: always
+
+  tasks:
+    - name: '[Prepare] Add host to group "primary" (in-memory inventory)'
+      ansible.builtin.add_host:
+        name: "{{ item }}"
+        groups: primary
+        postgresql_exists: true
+      when: hostvars[item]['patroni_leader_result']['status'] == 200
+      loop: "{{ groups['postgres_cluster'] }}"
+      changed_when: false
+      check_mode: false
+      tags: always
+
+    - name: '[Prepare] Add hosts to group "secondary" (in-memory inventory)'
+      ansible.builtin.add_host:
+        name: "{{ item }}"
+        groups: secondary
+        postgresql_exists: true
+      when: hostvars[item]['patroni_leader_result']['status'] == 503
+      loop: "{{ groups['postgres_cluster'] }}"
+      changed_when: false
+      check_mode: false
+      tags: always
+
+    - name: "Print Patroni Cluster info"
+      ansible.builtin.debug:
+        msg:
+          - "Cluster Name: {{ patroni_cluster_name | default('postgres-cluster') }}"
+          - "Cluster Leader: {{ ansible_hostname }}"
+      when: inventory_hostname in groups['primary'] | default([])
+      tags: always
+
+    # if 'cloud_provider' is 'aws', 'gcp', or 'azure'
+    # set_fact: 'pgbackrest_install' to configure Postgres backups if not disabled explicitly.
+    - name: "Set variable: 'pgbackrest_install' to configure Postgres backups"
+      ansible.builtin.set_fact:
+        pgbackrest_install: true
+      when:
+        - not (pgbackrest_install | default(false) | bool or wal_g_install | default(false) | bool)
+        - cloud_backup_provider | default(cloud_provider | default('')) | lower in ['aws', 'gcp', 'azure']
+        - pgbackrest_auto_conf | default(true) | bool # to be able to disable auto backup settings
+      tags: always
+
+- name: vitabaks.autobase.config_pgcluster | Configure PostgreSQL Cluster
+  hosts: "primary:secondary"
+  become: true
+  become_method: sudo
+  gather_facts: true
+  any_errors_fatal: true
+  environment: "{{ proxy_env | default({}) }}"
+  pre_tasks:
+    - block: # Ensure Postgres TLS certificates exist on all nodes
+        - name: Generate Postgres TLS certificate
+          ansible.builtin.import_role:
+            name: vitabaks.autobase.tls_certificate
+          vars:
+            tls_group_name: "postgres_cluster"
+
+        - name: Copy Postgres TLS certificate, key and CA to all nodes
+          ansible.builtin.import_role:
+            name: vitabaks.autobase.tls_certificate
+            tasks_from: copy
+      when: tls_cert_generate | default(true) | bool
+
+    - name: Build a firewall_ports_dynamic_var
+      ansible.builtin.set_fact:
+        firewall_ports_dynamic_var: "{{ firewall_ports_dynamic_var | default([]) + (firewall_allowed_tcp_ports_for[item] | default([])) }}"
+      loop: "{{ hostvars[inventory_hostname].group_names }}"
+      when: firewall_enabled_at_boot | default(false) | bool
+      tags: config_firewall, firewall
+
+    - name: Build a firewall_rules_dynamic_var
+      ansible.builtin.set_fact:
+        firewall_rules_dynamic_var: "{{ firewall_rules_dynamic_var | default([]) + (firewall_additional_rules_for[item] | default([])) }}"
+      loop: "{{ hostvars[inventory_hostname].group_names }}"
+      when: firewall_enabled_at_boot | default(false) | bool
+      tags: firewall
+
+    # if 'dcs_type' is 'consul'
+    - name: Add a nameserver entry poining to localhost for dnsmasq
+      ansible.builtin.set_fact:
+        nameservers: "{{ ['127.0.0.1'] + (nameservers | default([])) }}"
+      when: dcs_type | default('etcd') == "consul" and consul_dnsmasq_enable | default(true) | bool and ('127.0.0.1' not in (nameservers | default([])))
+
+  roles:
+    - role: vitabaks.autobase.firewall
+      vars:
+        firewall_allowed_tcp_ports: "{{ firewall_ports_dynamic_var | default([]) | unique }}"
+        firewall_additional_rules: "{{ firewall_rules_dynamic_var | default([]) | unique }}"
+      when: firewall_enabled_at_boot | default(false) | bool
+      tags: firewall
+
+    - role: vitabaks.autobase.resizefs
+      when: resizefs_enabled | default(false) | bool
+
+    - role: vitabaks.autobase.hostname
+    - role: vitabaks.autobase.resolv_conf
+    - role: vitabaks.autobase.etc_hosts
+    - role: vitabaks.autobase.timezone
+    - role: vitabaks.autobase.add_repository
+    - role: vitabaks.autobase.packages
+    - role: vitabaks.autobase.sudo
+    - role: vitabaks.autobase.swap
+    - role: vitabaks.autobase.sysctl
+    - role: vitabaks.autobase.transparent_huge_pages
+    - role: vitabaks.autobase.pam_limits
+    - role: vitabaks.autobase.io_scheduler
+    - role: vitabaks.autobase.locales
+    - role: vitabaks.autobase.ntp
+    - role: vitabaks.autobase.ssh_keys
+    - role: vitabaks.autobase.authorized_keys
+    - role: vitabaks.autobase.copy
+    - role: vitabaks.autobase.pgpass
+    - role: vitabaks.autobase.cron
+
+    - role: vitabaks.autobase.vip_manager
+      when: not with_haproxy_load_balancing | default(false) | bool and
+        (cluster_vip is defined and cluster_vip | length > 0)
+
+    - role: vitabaks.autobase.postgresql_users
+      when: inventory_hostname in groups['primary']
+
+    - role: vitabaks.autobase.postgresql_databases
+      when: inventory_hostname in groups['primary']
+
+    - role: vitabaks.autobase.postgresql_schemas
+      when: inventory_hostname in groups['primary']
+
+    - role: vitabaks.autobase.postgresql_privs
+      when: inventory_hostname in groups['primary']
+
+    - role: vitabaks.autobase.postgresql_index_maintenance
+
+    - role: vitabaks.autobase.wal_g
+      when: wal_g_install | default(false) | bool
+
+  tasks:
+    - name: Configure patroni
+      ansible.builtin.import_role:
+        name: vitabaks.autobase.patroni
+        tasks_from: config
+
+    - name: Configure pgbouncer
+      ansible.builtin.import_role:
+        name: vitabaks.autobase.pgbouncer
+        tasks_from: config
+      when: pgbouncer_install | default(true) | bool
+
+- name: config_pgcluster | Configure pgBackRest
+  hosts: pgbackrest:postgres_cluster
+  become: true
+  become_method: sudo
+  gather_facts: true
+  any_errors_fatal: true
+  pre_tasks:
+    # if 'cloud_provider' is 'aws', 'gcp', or 'azure'
+    # set_fact: 'pgbackrest_install' to configure Postgres backups if not disabled explicitly.
+    - name: "Set variable: 'pgbackrest_install' to configure Postgres backups"
+      ansible.builtin.set_fact:
+        pgbackrest_install: true
+      when:
+        - not (pgbackrest_install | default(false) | bool or wal_g_install | default(false) | bool)
+        - cloud_backup_provider | default(cloud_provider | default('')) | lower in ['aws', 'gcp', 'azure']
+        - pgbackrest_auto_conf | default(true) | bool # to be able to disable auto backup settings
+      tags: always
+  roles:
+    - role: vitabaks.autobase.pgbackrest
+      when: pgbackrest_install | default(false) | bool
+  tasks:
+    - name: Create pgbackrest stanza (if missing)
+      ansible.builtin.import_role:
+        name: vitabaks.autobase.pgbackrest
+        tasks_from: stanza_create
+      when: pgbackrest_install | default(false) | bool
+
+- name: Restart PostgreSQL Cluster if pending restart is required
+  ansible.builtin.import_playbook: restart_pgcluster.yml
+  when:
+    - pending_restart | default(false) | bool
+    - pg_pending_restart_settings | default('') | length > 0
+  tags: patroni_conf
+
+- name: vitabaks.autobase.config_pgcluster | Configure PostgreSQL Cluster and info
+  hosts: postgres_cluster
+  become: true
+  become_method: sudo
+  gather_facts: true
+  any_errors_fatal: true
+  pre_tasks:
+    - name: "Get current Patroni Cluster Leader Node"
+      ansible.builtin.uri:
+        url: >-
+          {{ patroni_restapi_protocol | default('https') }}://{{ patroni_restapi_connect_addr
+            | default(patroni_bind_address | default(bind_address, true), true) }}:{{ patroni_restapi_port
+            | default('8008') }}/leader
+        status_code: 200
+        ca_path: "{{ patroni_restapi_cafile | default(omit, true) }}"
+      register: current_patroni_leader_result
+      changed_when: false
+      failed_when: false
+      check_mode: false
+      environment:
+        no_proxy: "{{ patroni_bind_address | default(bind_address, true) }}"
+      tags: always
+  roles:
+    - role: vitabaks.autobase.postgresql_extensions
+      when: current_patroni_leader_result.status | default(0) == 200
+
+    # finish (info)
+    - role: vitabaks.autobase.deploy_finish
+      when: current_patroni_leader_result.status | default(0) == 200
+
+    - role: vitabaks.autobase.secrets
+      when:
+        - current_patroni_leader_result.status | default(0) == 200
+        - secrets_provider | default('') | length > 0
+      tags: secrets, postgresql_users

@@ -1,0 +1,196 @@
+---
+- name: Gather package facts
+  ansible.builtin.package_facts:
+    manager: auto
+  when: ansible_facts.packages is not defined
+  check_mode: false
+
+- block:
+    # Try to detect an empty disk (if 'cloud_provider' is defined)
+    - name: Detect empty volume
+      ansible.builtin.shell: |
+        set -o pipefail;
+        lsblk -e7 --bytes --output NAME,FSTYPE,TYPE,RO,SIZE,MOUNTPOINTS --json \
+          | jq -r '.blockdevices[]
+            | select(
+                ((.children // []) | length == 0)
+                and .fstype == null
+                and .type == "disk"
+                and .ro == false
+                and .size > 1073741824
+                and ((.mountpoints // []) | all(. == null))
+              )
+            | .name'
+      args:
+        executable: /bin/bash
+      register: lsblk_disk
+      changed_when: false
+      when:
+        - volume_type | default('') | lower != 'local'
+        - volume_size | default(100) | int != 0
+        - (cloud_provider | default('') | length > 0) and (mount | first | default({})).src | default('') | length < 1
+
+    # Stop if empty volume is not detected
+    - name: Empty volume is not detected
+      ansible.builtin.fail:
+        msg: >-
+          Whoops! The empty volume is not detected.
+          Attach a data volume or set mount[0].src explicitly.
+      when: lsblk_disk.stdout is defined and lsblk_disk.stdout | length < 1
+
+    - name: Fail if multiple empty volumes are detected
+      ansible.builtin.fail:
+        msg: >-
+          Whoops! Multiple empty volumes were detected: {{ lsblk_disk.stdout_lines | join(', ') }}.
+          Set mount[0].src explicitly to choose the correct device.
+      when: lsblk_disk.stdout_lines | default([]) | length > 1
+
+    - name: Set auto-detected mount disk
+      ansible.builtin.set_fact:
+        lsblk_disk_device: "{{ lsblk_disk.stdout_lines | first }}"
+      when: lsblk_disk.stdout_lines | default([]) | length == 1
+
+    # Filesystem
+    - name: Create "{{ postgresql_data_dir_mount_fstype | default('ext4') }}" filesystem on the disk "/dev/{{ lsblk_disk_device | default('') }}"
+      community.general.filesystem:
+        dev: "/dev/{{ lsblk_disk_device }}"
+        fstype: "{{ postgresql_data_dir_mount_fstype | default('ext4') }}"
+      when:
+        - lsblk_disk_device is defined
+        - ((postgresql_data_dir_mount_fstype is defined and postgresql_data_dir_mount_fstype != 'zfs') or
+          (postgresql_data_dir_mount_fstype is not defined and (mount | first | default({})).fstype | default('') != 'zfs'))
+
+    # Explicit /dev paths skip auto-detection, so create the filesystem here before mounting.
+    - name: Create filesystem on explicitly specified devices
+      community.general.filesystem:
+        dev: "{{ item.src }}"
+        fstype: "{{ item.fstype | default(postgresql_data_dir_mount_fstype | default('ext4', true), true) }}"
+      loop: "{{ mount }}"
+      when:
+        - (item.src | default('')) is match('^/dev/')
+        - ((postgresql_data_dir_mount_fstype is defined and postgresql_data_dir_mount_fstype != 'zfs') or
+          (postgresql_data_dir_mount_fstype is not defined and item.fstype != 'zfs'))
+
+    # UUID
+    - name: Get UUID of the disk "/dev/{{ lsblk_disk_device | default('') }}"
+      ansible.builtin.shell: |
+        set -o pipefail;
+        lsblk -no UUID /dev/{{ lsblk_disk_device }} | tr -d '\n'
+      args:
+        executable: /bin/bash
+      register: lsblk_uuid
+      changed_when: false
+      when:
+        - lsblk_disk_device is defined
+        - ((postgresql_data_dir_mount_fstype is defined and postgresql_data_dir_mount_fstype != 'zfs') or
+          (postgresql_data_dir_mount_fstype is not defined and (mount | first | default({})).fstype | default('') != 'zfs'))
+
+    - name: "Set mount variables"
+      ansible.builtin.set_fact:
+        mount:
+          - src: "UUID={{ lsblk_uuid.stdout }}"
+            path: "{{ postgresql_data_dir_mount_path | default('/pgdata', true) }}"
+            fstype: "{{ postgresql_data_dir_mount_fstype | default('ext4', true) }}"
+      when: lsblk_uuid.stdout is defined
+
+    # Mount
+    - name: Mount the filesystem
+      ansible.posix.mount:
+        path: "{{ item.path }}"
+        src: "{{ item.src }}"
+        fstype: "{{ item.fstype | default(postgresql_data_dir_mount_fstype | default('ext4', true), true) }}"
+        opts: "{{ item.opts | default('defaults,noatime') }}"
+        state: "{{ item.state | default('mounted') }}"
+      loop: "{{ mount }}"
+      when:
+        - (item.src | length > 0 and item.path | length > 0)
+        - ((postgresql_data_dir_mount_fstype is defined and postgresql_data_dir_mount_fstype != 'zfs') or
+          (postgresql_data_dir_mount_fstype is not defined and item.fstype != 'zfs'))
+
+    # ZFS Pool (if fstype is 'zfs')
+    - block:
+        - name: Install zfs
+          ansible.builtin.apt:
+            name: zfsutils-linux
+            state: present
+          register: package_status
+          until: package_status is success
+          delay: 5
+          retries: 3
+          when:
+            - ansible_distribution == 'Ubuntu'
+            - "'zfsutils-linux' not in ansible_facts.packages"
+
+        - name: Install zfs
+          ansible.builtin.apt:
+            name: "{{ item }}"
+            state: present
+          register: package_status
+          loop:
+            - "linux-headers-{{ ansible_kernel }}"
+            - dpkg-dev
+            - zfs-dkms
+            - zfsutils-linux
+          until: package_status is success
+          delay: 5
+          retries: 3
+          when:
+            - ansible_distribution == 'Debian'
+            - item not in ansible_facts.packages
+
+        - block: # RedHat based
+            - name: Download zfs-release
+              ansible.builtin.get_url:
+                url: "https://zfsonlinux.org/epel/zfs-release-2-3.el{{ ansible_distribution_major_version }}.noarch.rpm"
+                dest: /tmp/zfs-release.rpm
+
+            - name: Install zfs-release
+              ansible.builtin.package:
+                name: /tmp/zfs-release.rpm
+                state: present
+                disable_gpg_check: true
+              register: package_status
+              until: package_status is success
+              delay: 5
+              retries: 3
+
+            - name: Install zfs
+              ansible.builtin.dnf:
+                name: "{{ item }}"
+                state: present
+              register: package_status
+              until: package_status is success
+              delay: 5
+              retries: 3
+              loop:
+                - kernel-devel
+                - zfs
+              when: item not in ansible_facts.packages
+          when: ansible_os_family == 'RedHat'
+
+        - name: Load the ZFS module
+          community.general.modprobe:
+            name: zfs
+            state: present
+
+        - name: Ensure zfs is loaded at boot
+          ansible.builtin.lineinfile:
+            path: /etc/modules-load.d/zfs.conf
+            line: zfs
+            create: true
+
+        - name: "Create zpool (use {{ (mount | first | default({})).src | default('/dev/' ~ (lsblk_disk_device | default('')), true) }})"
+          ansible.builtin.command: >-
+            zpool create -f
+            -o autoexpand=on
+            -O compression=on
+            -O atime=off
+            -O recordsize=128k
+            -O logbias=throughput
+            -m {{ postgresql_data_dir_mount_path | default((mount | first | default({})).path | default('/pgdata', true), true) }}
+            pgdata {{ (mount | first | default({})).src | default("/dev/" + lsblk_disk_device, true) }}
+      when:
+        - ((mount | first | default({})).src | default('') | length > 0 or lsblk_disk_device is defined)
+        - ((postgresql_data_dir_mount_fstype is defined and postgresql_data_dir_mount_fstype == 'zfs') or
+          (postgresql_data_dir_mount_fstype is not defined and (mount | first | default({})).fstype | default('') == 'zfs'))
+  tags: mount, zpool

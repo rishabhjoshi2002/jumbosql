@@ -1,0 +1,28 @@
+---
+- name: Create or modify PostgreSQL databases
+  become: true
+  become_user: postgres
+  community.postgresql.postgresql_db:
+    name: "{{ item.db }}"
+    owner: "{{ item.owner | default('') }}"
+    encoding: "{{ item.encoding | default('') }}"
+    lc_collate: "{{ item.lc_collate | default('') }}"
+    lc_ctype: "{{ item.lc_ctype | default('') }}"
+    icu_locale: "{{ item.icu_locale | default('') }}"
+    locale_provider: "{{ item.locale_provider | default('') }}" # icu or libc
+    conn_limit: "{{ item.conn_limit | default(omit) }}"
+    template: "{{ item.template | default('template0') }}"
+    tablespace: "{{ item.tablespace | default('') }}"
+    login_host: "127.0.0.1"
+    login_port: "{{ postgresql_port }}"
+    login_user: "{{ patroni_superuser_username }}"
+    login_password: "{{ patroni_superuser_password }}"
+    state: "{{ item.state | default('present') }}"
+    force: "{{ 'true' if item.state | default('present') == 'absent' else 'false' }}"
+  ignore_errors: "{{ postgresql_databases_ignore_errors | default(false) }}"
+  loop: "{{ postgresql_databases | flatten(1) }}"
+  when:
+    - postgresql_databases | default('') | length > 0
+    - patroni_standby_cluster.host | default('') | length < 1 # do not perform on the standby cluster
+    - not ansible_check_mode # Skip database creation in check mode
+  tags: postgresql_databases

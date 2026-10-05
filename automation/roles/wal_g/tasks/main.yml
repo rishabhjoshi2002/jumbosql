@@ -1,0 +1,277 @@
+---
+- name: Gather package facts
+  ansible.builtin.package_facts:
+    manager: auto
+  when: ansible_facts.packages is not defined
+  check_mode: false
+
+# Automatic setup of the backup configuration based on the selected backup cloud provider.
+- ansible.builtin.import_tasks: auto_conf.yml
+  when:
+    - cloud_backup_provider | default(cloud_provider | default('')) | length > 0
+    - wal_g_auto_conf | default(true) | bool # to be able to disable auto backup settings
+  tags: wal-g, wal_g, wal_g_conf
+
+# GCS (if 'cloud_backup_provider=gcp')
+- block:
+    # if 'gcs_key_file' is not defined, copy GCS key file from GCP_SERVICE_ACCOUNT_CONTENTS environment variable.
+    - block:
+        - name: "Get GCP service account contents from localhost"
+          ansible.builtin.set_fact:
+            gcp_service_account_contents: "{{ lookup('ansible.builtin.env', 'GCP_SERVICE_ACCOUNT_CONTENTS') }}"
+          delegate_to: localhost
+          run_once: true # noqa run-once
+          no_log: true # do not output GCP service account contents to the ansible log
+
+        - name: "Copy GCP service account contents to {{ WALG_GS_KEY | default((postgresql_home_dir | default('')) ~ '/gcs-key.json') }}"
+          ansible.builtin.copy:
+            content: "{{ gcp_service_account_contents }}"
+            dest: "{{ WALG_GS_KEY | default(postgresql_home_dir + '/gcs-key.json') }}"
+            mode: "0600"
+            owner: "postgres"
+            group: "postgres"
+          no_log: true # do not output GCP service account contents to the ansible log
+      when: gcs_key_file is not defined
+
+    # if 'gcs_key_file' is defined, copy this GCS key file.
+    - name: "Copy GCS key file to {{ WALG_GS_KEY | default((postgresql_home_dir | default('')) ~ '/gcs-key.json') }}"
+      ansible.builtin.copy:
+        src: "{{ gcs_key_file }}"
+        dest: "{{ WALG_GS_KEY | default(postgresql_home_dir + '/gcs-key.json') }}"
+        mode: "0600"
+        owner: "postgres"
+        group: "postgres"
+      no_log: true # do not output GCP service account contents to the ansible log
+      when: gcs_key_file is defined and gcs_key_file | length > 0
+  when: cloud_backup_provider | default(cloud_provider | default('')) | lower == 'gcp'
+
+# Pre-check
+- name: Check if WAL-G is already installed
+  ansible.builtin.shell: |
+    set -o pipefail;
+    "{{ (wal_g_path | default('/usr/local/bin/wal-g')) | split(' ') | first }}" --version | awk {'print $3'} | tr -d 'v'
+  args:
+    executable: /bin/bash
+  changed_when: false
+  failed_when: false
+  register: wal_g_installed_version
+  environment:
+    PATH: "{{ ansible_env.PATH }}:/usr/local/bin"
+  tags: wal-g, wal_g, wal_g_install
+
+- name: WAL-G check result
+  ansible.builtin.debug:
+    msg: "WAL-G is already installed, version {{ wal_g_installed_version.stdout }}. Skip the installation."
+  when:
+    - wal_g_installed_version.rc == 0
+    - wal_g_installed_version.stdout == wal_g_version
+  tags: wal-g, wal_g, wal_g_install
+
+# Install WAL-G from a precompiled binary
+# (if 'wal_g_installation_method' is 'binary')
+# Note: excluding RHEL 8 as GLIBC version 2.29 or higher is required.
+- block:
+    - name: "Download WAL-G v{{ wal_g_version | default('') | string | replace('v', '') }} binary"
+      ansible.builtin.get_url:
+        url: "{{ wal_g_repo }}/{{ wal_g_archive }}"
+        dest: /tmp/
+        timeout: 60
+        validate_certs: false
+      check_mode: false
+      vars:
+        wal_g_repo: "https://github.com/wal-g/wal-g/releases/download/v{{ wal_g_version | string | replace('v', '') }}"
+        wal_g_archive: "wal-g-pg-20.04-{{ wal_g_architecture_map[ansible_architecture] }}.tar.gz"
+      environment: "{{ proxy_env | default({}) }}"
+
+    # Note: We are using a precompiled binary on Ubuntu 20.04,
+    # but since Go binaries are cross-platform, it works well on other distributions as well.
+
+    - name: Extract WAL-G into /tmp
+      ansible.builtin.unarchive:
+        src: "/tmp/wal-g-pg-20.04-{{ wal_g_architecture_map[ansible_architecture] }}.tar.gz"
+        dest: /tmp/
+        extra_opts:
+          - --no-same-owner
+        remote_src: true
+      check_mode: false
+
+    - name: Copy WAL-G binary file to "{{ (wal_g_path | default('/usr/local/bin/wal-g')) | split(' ') | first }}"
+      ansible.builtin.copy:
+        src: "/tmp/wal-g-pg-20.04-{{ wal_g_architecture_map[ansible_architecture] }}"
+        dest: "{{ (wal_g_path | default('/usr/local/bin/wal-g')) | split(' ') | first }}"
+        mode: u+x,g+x,o+x
+        remote_src: true
+  when:
+    - installation_method == "packages"
+    - wal_g_installation_method == "binary"
+    - wal_g_version is version('1.0', '>=')
+    - (wal_g_installed_version.stderr is search("command not found") or wal_g_installed_version.stdout != wal_g_version)
+    - not (ansible_os_family == "RedHat" and ansible_distribution_major_version == '8')
+  tags: wal-g, wal_g, wal_g_install
+
+# Install WAL-G from the source code
+# (if 'wal_g_installation_method' is 'src')
+- block:
+    - name: Install lib dependencies to build WAL-G
+      ansible.builtin.apt:
+        name: "{{ item }}"
+        state: present
+      register: package_status
+      until: package_status is success
+      delay: 5
+      retries: 3
+      loop:
+        - libbrotli-dev
+        - libsodium-dev
+        - make
+        - cmake
+        - git
+      when:
+        - ansible_os_family == "Debian"
+        - item not in ansible_facts.packages
+
+    - name: Install lib dependencies to build WAL-G
+      ansible.builtin.dnf:
+        name: "{{ item }}"
+        state: present
+      register: package_status
+      until: package_status is success
+      delay: 5
+      retries: 3
+      loop:
+        - brotli-devel
+        - libsodium-devel
+        - make
+        - cmake
+        - gcc
+        - git
+      when:
+        - ansible_os_family == "RedHat"
+        - item not in ansible_facts.packages
+
+    - name: Check the installed Go version
+      ansible.builtin.shell: |
+        set -o pipefail;
+        go version | awk {'print $3'} | tr -d 'go'
+      args:
+        executable: /bin/bash
+      changed_when: false
+      failed_when: false
+      register: go_installed_version
+      environment:
+        PATH: "{{ ansible_env.PATH }}:/usr/local/go/bin"
+
+    - name: Check the latest available Go version
+      ansible.builtin.shell: |
+        set -o pipefail;
+        curl -s https://go.dev/VERSION?m=text | grep 'go' | tr -d 'go'
+      args:
+        executable: /bin/bash
+      changed_when: false
+      register: go_latest_version
+
+    - block: # Install latest Go compiler
+        - name: "Download Go v{{ go_latest_version.stdout | default('') }}"
+          ansible.builtin.get_url:
+            url: "https://go.dev/dl/go{{ go_latest_version.stdout }}.linux-{{ go_architecture_map[ansible_architecture] }}.tar.gz"
+            dest: /tmp/
+            timeout: 60
+            validate_certs: false
+
+        - name: Install Go
+          ansible.builtin.unarchive:
+            src: "/tmp/go{{ go_latest_version.stdout }}.linux-{{ go_architecture_map[ansible_architecture] }}.tar.gz"
+            dest: /usr/local/
+            extra_opts:
+              - --no-same-owner
+            remote_src: true
+      when: go_installed_version.stderr is search("command not found") or
+        go_installed_version.stdout is version(go_latest_version.stdout, '<')
+
+    - name: "Download WAL-G v{{ wal_g_version | default('') | string | replace('v', '') }} source code"
+      ansible.builtin.git:
+        repo: https://github.com/wal-g/wal-g.git
+        version: v{{ wal_g_version | string | replace('v', '') }}
+        dest: /tmp/wal-g
+        force: true
+
+    - name: Run go mod tidy to ensure dependencies are correct
+      ansible.builtin.command: go mod tidy
+      args:
+        chdir: /tmp/wal-g
+      environment:
+        PATH: "{{ ansible_env.PATH }}:/usr/local/go/bin"
+
+    - name: Build WAL-G deps
+      become: true
+      become_user: root
+      community.general.make:
+        chdir: /tmp/wal-g/
+        target: deps
+        params:
+          USE_BROTLI: 1
+          USE_LIBSODIUM: 1
+          # USE_LZO: 1  # https://github.com/wal-g/wal-g/issues/1412
+      environment:
+        PATH: "{{ ansible_env.PATH }}:/usr/local/go/bin"
+
+    - name: Build and install WAL-G
+      become: true
+      become_user: root
+      community.general.make:
+        chdir: /tmp/wal-g/
+        target: pg_install
+        params:
+          USE_BROTLI: 1
+          USE_LIBSODIUM: 1
+          # USE_LZO: 1  # https://github.com/wal-g/wal-g/issues/1412
+          GOBIN: /usr/local/bin
+      environment:
+        PATH: "{{ ansible_env.PATH }}:/usr/local/go/bin"
+  environment: "{{ proxy_env | default({}) }}"
+  when:
+    - installation_method == "packages"
+    - (wal_g_installation_method == "src" or (ansible_os_family == "RedHat" and ansible_distribution_major_version == '8'))
+    - wal_g_version is version('1.0', '>=')
+    - (wal_g_installed_version.stderr is search("command not found") or wal_g_installed_version.stdout != wal_g_version)
+    - not ansible_check_mode
+  tags: wal-g, wal_g, wal_g_install
+
+# Ensure the WAL_G_PREFETCH directory is created if configured
+- name: "Create WAL-G prefetch directory {{ wal_g_prefetch_dir_path | default('') }}"
+  ansible.builtin.file:
+    path: "{{ wal_g_prefetch_dir_path }}"
+    state: directory
+    owner: postgres
+    group: postgres
+    mode: "0740"
+  when: wal_g_prefetch_dir_create | default(true) | bool
+  tags: wal-g, wal_g, wal_g_install
+
+- name: "Create postgres home directory ({{ postgresql_home_dir | default('') }})"
+  ansible.builtin.file:
+    path: "{{ postgresql_home_dir }}"
+    state: directory
+    owner: postgres
+    group: postgres
+    mode: "0755"
+  tags: wal-g, wal_g, wal_g_conf
+
+# Configure walg.json
+- name: "Generate conf file {{ postgresql_home_dir | default('') }}/.walg.json"
+  ansible.builtin.template:
+    src: templates/walg.json.j2
+    dest: "{{ postgresql_home_dir }}/.walg.json"
+    owner: postgres
+    group: postgres
+    mode: "0644"
+  tags: wal-g, wal_g, wal_g_conf
+
+- name: Add WAL-G cron jobs
+  ansible.builtin.include_role:
+    name: vitabaks.autobase.cron
+    apply:
+      tags: wal-g, wal_g, wal_g_cron
+  vars:
+    cron_jobs: "{{ wal_g_cron_jobs }}"
+  tags: wal-g, wal_g, wal_g_cron

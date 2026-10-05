@@ -1,0 +1,100 @@
+---
+# Configure SSH Key-Based Authentication
+
+- name: Gather package facts
+  ansible.builtin.package_facts:
+    manager: auto
+  when: ansible_facts.packages is not defined
+  check_mode: false
+
+- name: Install openssh-client package
+  become: true
+  become_user: root
+  ansible.builtin.apt:
+    name: openssh-client
+    state: present
+  when:
+    - ansible_os_family == "Debian"
+    - "'openssh-client' not in ansible_facts.packages"
+
+- name: Install openssh-clients package
+  become: true
+  become_user: root
+  ansible.builtin.dnf:
+    name: openssh-clients
+    state: present
+  when:
+    - ansible_os_family == "RedHat"
+    - "'openssh-clients' not in ansible_facts.packages"
+
+- block:
+    - name: Check user "{{ ssh_key_user | default('') }}" exists
+      ansible.builtin.user:
+        name: "{{ ssh_key_user }}"
+        shell: /bin/bash
+        state: present
+        system: true
+
+    - block:
+        - name: Check password lock state for "{{ ssh_key_user }}" user
+          ansible.builtin.command: "getent shadow {{ ssh_key_user }}"
+          register: ssh_key_user_shadow
+          changed_when: false
+          no_log: true
+
+        - name: Unlock the locked password for "{{ ssh_key_user }}" user (required for SSH key auth)
+          ansible.builtin.user:
+            name: "{{ ssh_key_user }}"
+            password: '*'
+            password_lock: false
+          when: ssh_key_user_shadow.stdout is match('^postgres:!+')
+      when: ssh_key_user | default('') == 'postgres'
+
+    - name: Create a 2048-bit SSH key for user "{{ ssh_key_user | default('') }}" in ~/.ssh/id_rsa (if not already exist)
+      ansible.builtin.user:
+        name: "{{ ssh_key_user }}"
+        generate_ssh_key: true
+        ssh_key_bits: 2048
+        ssh_key_file: .ssh/id_rsa
+
+    - name: Fetch key files from remote servers to ansible server
+      ansible.builtin.fetch:
+        src: "~{{ ssh_key_user }}/.ssh/id_rsa.pub"
+        dest: "{{ files_dir | default(playbook_dir ~ '/files') }}/{{ ansible_hostname }}-id_rsa.pub"
+        flat: true
+      changed_when: false
+
+    - name: Copy key files and add to authorized_keys
+      ansible.posix.authorized_key:
+        user: "{{ ssh_key_user }}"
+        state: "{{ ssh_key_state }}"
+        key: "{{ lookup('pipe', 'cat ' ~ public_keys_file_path) }}"
+        exclusive: false
+      vars:
+        public_keys_file_path: "{{ files_dir | default(playbook_dir ~ '/files') }}/*id_rsa.pub"
+
+    # known_hosts
+    - name: known_hosts | for each host, scan for its ssh public key
+      ansible.builtin.command: "ssh-keyscan -trsa -p {{ ansible_ssh_port | default(22) }} {{ hostvars[item]['bind_address'] }}"
+      loop: "{{ ssh_known_hosts }}"
+      register: ssh_known_host_results
+      until: ssh_known_host_results is succeeded
+      retries: 3
+      delay: 5
+      changed_when: false
+
+    - name: known_hosts | for each host, add/update the public key in the "~{{ ssh_key_user | default('') }}/.ssh/known_hosts"
+      become: true
+      become_user: "{{ ssh_key_user }}"
+      ansible.builtin.known_hosts:
+        name: "{{ hostvars[item.item]['bind_address'] }}"
+        key: "{{ item.stdout }}"
+        path: "~{{ ssh_key_user }}/.ssh/known_hosts"
+      no_log: true
+      loop: "{{ ssh_known_host_results.results }}"
+  ignore_errors: true
+  when:
+    - enable_ssh_key_based_authentication is defined
+    - enable_ssh_key_based_authentication | bool
+    - not ansible_check_mode
+  tags: ssh_keys

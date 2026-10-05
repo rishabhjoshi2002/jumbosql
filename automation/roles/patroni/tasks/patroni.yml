@@ -1,0 +1,16 @@
+---
+- name: "Generate {{ patroni_config_file | default('/etc/patroni/patroni.yml') }}"
+  ansible.builtin.template:
+    src: templates/patroni.yml.j2
+    dest: "{{ patroni_config_file | default('/etc/patroni/patroni.yml') }}"
+    validate: patroni --ignore-listen-port --validate-config %s
+    owner: postgres
+    group: postgres
+    mode: "0640"
+  vars:
+    etcd_hosts: "{{ groups['etcd_cluster'] | default([]) }}"
+  notify: "reload patroni"
+  no_log: "{{ patroni_conf_no_log | default(true) }}" # hide config contents from ansible logs
+
+- name: Flush handlers
+  ansible.builtin.meta: flush_handlers

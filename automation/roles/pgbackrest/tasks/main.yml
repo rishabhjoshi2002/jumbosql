@@ -1,0 +1,224 @@
+---
+# Automatic setup of the backup configuration based on the selected backup cloud provider.
+- ansible.builtin.import_tasks: auto_conf.yml
+  when:
+    - cloud_backup_provider | default(cloud_provider | default('')) | length > 0
+    - pgbackrest_auto_conf | default(true) | bool # to be able to disable auto backup settings
+  tags: pgbackrest, pgbackrest_conf
+
+# GCS (if 'cloud_backup_provider=gcp')
+- block:
+    # if 'gcs_key_file' is not defined, copy GCS key file from GCP_SERVICE_ACCOUNT_CONTENTS environment variable.
+    - block:
+        - name: "Get GCP service account contents from localhost"
+          ansible.builtin.set_fact:
+            gcp_service_account_contents: "{{ lookup('ansible.builtin.env', 'GCP_SERVICE_ACCOUNT_CONTENTS') }}"
+          delegate_to: localhost
+          run_once: true # noqa run-once
+          no_log: true # do not output GCP service account contents to the ansible log
+
+        - name: "Copy GCP service account contents to {{ pgbackrest_gcs_key | default((postgresql_home_dir | default('')) ~ '/gcs-key.json') }}"
+          ansible.builtin.copy:
+            content: "{{ gcp_service_account_contents }}"
+            dest: "{{ pgbackrest_gcs_key | default(postgresql_home_dir + '/gcs-key.json') }}"
+            mode: "0600"
+            owner: "postgres"
+            group: "postgres"
+          no_log: true # do not output GCP service account contents to the ansible log
+      when: gcs_key_file is not defined
+
+    # if 'gcs_key_file' is defined, copy this GCS key file.
+    - name: "Copy GCS key file to {{ pgbackrest_gcs_key | default((postgresql_home_dir | default('')) ~ '/gcs-key.json') }}"
+      ansible.builtin.copy:
+        src: "{{ gcs_key_file }}"
+        dest: "{{ pgbackrest_gcs_key | default(postgresql_home_dir + '/gcs-key.json') }}"
+        mode: "0600"
+        owner: "postgres"
+        group: "postgres"
+      no_log: true # do not output GCP service account contents to the ansible log
+      when: gcs_key_file is defined and gcs_key_file | length > 0
+  when: cloud_backup_provider | default(cloud_provider | default('')) | lower == 'gcp'
+
+- name: Gather package facts
+  ansible.builtin.package_facts:
+    manager: auto
+  when: ansible_facts.packages is not defined
+  check_mode: false
+
+- name: Add repositories, if it wasn't done yet
+  ansible.builtin.import_role:
+    name: vitabaks.autobase.add_repository
+    allow_duplicates: false
+  when: pgbackrest_install_from_pgdg_repo | bool
+  tags: pgbackrest, pgbackrest_repo, pgbackrest_install
+
+- name: Install pgbackrest
+  ansible.builtin.package:
+    name: pgbackrest
+    state: present
+  register: package_status
+  until: package_status is success
+  delay: 5
+  retries: 3
+  environment: "{{ proxy_env | default({}) }}"
+  when: "'pgbackrest' not in ansible_facts.packages"
+  tags: pgbackrest, pgbackrest_install
+
+- block:
+    - name: Ensure log directory exists
+      ansible.builtin.file:
+        path: "{{ item.value }}"
+        state: directory
+        owner: postgres
+        group: postgres
+        mode: "0755"
+      loop: "{{ pgbackrest_conf.global | default([], true) }}"
+      when: item.option | default('') == 'log-path'
+      loop_control:
+        label: "{{ item.value }}"
+
+    - name: Ensure repo directory exists
+      ansible.builtin.file:
+        path: "{{ item.value }}"
+        state: directory
+        owner: postgres
+        group: postgres
+        mode: "0750"
+      loop: "{{ pgbackrest_conf.global | default([], true) }}"
+      when:
+        - item.option | default('') == 'repo1-path'
+        - pgbackrest_repo_type | lower == 'posix'
+        - pgbackrest_repo_host | length < 1
+      loop_control:
+        label: "{{ item.value }}"
+
+    - name: Ensure spool directory exists
+      ansible.builtin.file:
+        path: "{{ item.value }}"
+        state: directory
+        owner: postgres
+        group: postgres
+        mode: "0750"
+      loop: "{{ pgbackrest_conf.global | default([], true) }}"
+      when: item.option | default('') == 'spool-path'
+      loop_control:
+        label: "{{ item.value }}"
+
+    - name: Ensure config directory exists
+      ansible.builtin.file:
+        path: "{{ pgbackrest_conf_file | dirname }}"
+        state: directory
+        owner: postgres
+        group: postgres
+        mode: "0750"
+
+    - name: "Generate conf file {{ pgbackrest_conf_file | default('') }}"
+      ansible.builtin.template:
+        src: pgbackrest.conf.j2
+        dest: "{{ pgbackrest_conf_file }}"
+        owner: postgres
+        group: postgres
+        mode: "0644"
+      no_log: true # do not output contents to the ansible log
+      diff: false
+  when:
+    - "'postgres_cluster' in group_names"
+    - pgbackrest_conf is defined
+  tags: pgbackrest, pgbackrest_conf
+
+# Dedicated pgbackrest server (if "repo_host" is set)
+- block:
+    - name: Ensure log directory exists
+      ansible.builtin.file:
+        path: "{{ item.value }}"
+        state: directory
+        owner: "{{ pgbackrest_repo_user }}"
+        group: "{{ pgbackrest_repo_user }}"
+        mode: "0755"
+      loop: "{{ pgbackrest_server_conf.global | default([]) }}"
+      when: item.option | default('') == 'log-path'
+      loop_control:
+        label: "{{ item.value }}"
+
+    - name: Ensure repo directory exists
+      ansible.builtin.file:
+        path: "{{ item.value }}"
+        state: directory
+        owner: "{{ pgbackrest_repo_user }}"
+        group: "{{ pgbackrest_repo_user }}"
+        mode: "0750"
+      loop: "{{ pgbackrest_server_conf.global | default([]) }}"
+      when: item.option | default('') == 'repo1-path'
+      loop_control:
+        label: "{{ item.value }}"
+
+    - name: Ensure config directory exists
+      ansible.builtin.file:
+        path: "{{ pgbackrest_conf_file | dirname }}"
+        state: directory
+        owner: "{{ pgbackrest_repo_user }}"
+        group: "{{ pgbackrest_repo_user }}"
+        mode: "0750"
+
+    - name: Ensure stanza config directory exists
+      ansible.builtin.file:
+        path: "{{ pgbackrest_conf_file | dirname }}/conf.d"
+        state: directory
+        owner: "{{ pgbackrest_repo_user }}"
+        group: "{{ pgbackrest_repo_user }}"
+        mode: "0750"
+
+    - name: "Generate global conf file {{ pgbackrest_conf_file | default('') }}"
+      ansible.builtin.template:
+        src: pgbackrest.server.conf.j2
+        dest: "{{ pgbackrest_conf_file }}"
+        owner: "{{ pgbackrest_repo_user }}"
+        group: "{{ pgbackrest_repo_user }}"
+        mode: "0644"
+
+    - name: "Generate stanza conf file {{ pgbackrest_conf_file | default('') | dirname }}/conf.d/{{ pgbackrest_stanza | default('') }}.conf"
+      ansible.builtin.template:
+        src: pgbackrest.server.stanza.conf.j2
+        dest: "{{ pgbackrest_conf_file | dirname }}/conf.d/{{ pgbackrest_stanza }}.conf"
+        owner: "{{ pgbackrest_repo_user }}"
+        group: "{{ pgbackrest_repo_user }}"
+        mode: "0644"
+  when:
+    - "'pgbackrest' in group_names"
+    - pgbackrest_server_conf is defined
+    - pgbackrest_repo_host is defined
+    - pgbackrest_repo_host | length > 0
+  tags: pgbackrest, pgbackrest_conf
+
+# if 'pgbackrest_repo_host' or 'backup-standby' are specified
+- ansible.builtin.import_tasks: ssh_keys.yml
+  when:
+    - (pgbackrest_repo_host is defined and pgbackrest_repo_host | length > 0) or
+      (pgbackrest_conf.global | selectattr('option', 'equalto', 'backup-standby') | map(attribute='value') | list | last | default('') == 'y')
+    - not ansible_check_mode
+  tags: pgbackrest, pgbackrest_ssh_keys
+
+- name: Add pgbackrest cron jobs on database server
+  ansible.builtin.include_role:
+    name: vitabaks.autobase.cron
+    apply:
+      tags: pgbackrest, pgbackrest_cron
+  vars:
+    cron_jobs: "{{ pgbackrest_cron_jobs }}"
+  when:
+    - "'postgres_cluster' in group_names"
+    - pgbackrest_repo_host | default('') | length < 1
+  tags: pgbackrest, pgbackrest_cron
+
+# Dedicated pgbackrest server (if "repo_host" is set)
+- name: Add pgbackrest cron jobs on pgbackrest server
+  ansible.builtin.include_role:
+    name: vitabaks.autobase.cron
+    apply:
+      tags: pgbackrest, pgbackrest_cron
+  vars:
+    cron_jobs: "{{ pgbackrest_cron_jobs }}"
+  when:
+    - "'pgbackrest' in group_names"
+    - pgbackrest_repo_host | default('') | length > 0
+  tags: pgbackrest, pgbackrest_cron

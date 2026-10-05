@@ -1,0 +1,69 @@
+---
+name: "Docker"
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Set TERM environment variable
+        run: echo "TERM=xterm" >> $GITHUB_ENV
+
+      - name: Extract branch or tag name
+        run: |
+          if [[ -n "${GITHUB_HEAD_REF}" ]]; then
+            # This is a PR, use the source branch name
+            echo "REF_NAME=${GITHUB_HEAD_REF}" >> $GITHUB_ENV
+          else
+            # This is a push, use the branch or tag name from GITHUB_REF
+            echo "REF_NAME=${GITHUB_REF##*/}" >> $GITHUB_ENV
+          fi
+
+      - name: Set TAG
+        run: |
+          if [[ "${{ env.REF_NAME }}" == "main" ]]; then
+            echo "TAG=latest" >> $GITHUB_ENV
+          else
+            echo "TAG=${{ env.REF_NAME }}" >> $GITHUB_ENV
+          fi
+
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.14"
+
+      - name: Install dependencies
+        run: make bootstrap-dev
+
+      - name: Run Docker lint
+        run: make docker-lint
+        if: ${{ github.event_name == 'pull_request' }}
+
+      - name: Run Docker build
+        run: make docker-build
+        if: ${{ github.event_name == 'pull_request' }}
+        env:
+          TAG: ${{ env.TAG }}
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v4
+        if: ${{ github.event_name != 'pull_request' }}
+
+      - name: Build and Push latest image
+        if: ${{ github.event_name != 'pull_request' && env.DOCKER_REGISTRY_USER != '' && env.DOCKER_REGISTRY_PASSWORD != '' }}
+        run: make docker-push
+        env:
+          TAG: ${{ env.TAG }}
+          DOCKER_REGISTRY_USER: ${{ secrets.DOCKER_USERNAME }}
+          DOCKER_REGISTRY_PASSWORD: ${{ secrets.DOCKER_PASSWORD }}

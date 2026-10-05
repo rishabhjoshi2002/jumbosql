@@ -1,0 +1,34 @@
+---
+name: scheduled PostgreSQL (OracleLinux 9)
+
+on:
+  schedule:
+    - cron: "0 1 * * *"
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    if: ${{ github.repository_owner == 'autobase-tech' || github.event_name == 'workflow_dispatch' }}
+
+    steps:
+      - name: Set TERM environment variable
+        run: echo "TERM=xterm" >> $GITHUB_ENV
+
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.14"
+
+      - name: Install dependencies
+        run: make bootstrap-dev
+
+      - name: Run Molecule tests
+        run: make molecule-test
+        env:
+          PY_COLORS: "1"
+          ANSIBLE_FORCE_COLOR: "1"
+          IMAGE_DISTRO: oraclelinux9
+          IMAGE_NAMESPACE: glillico

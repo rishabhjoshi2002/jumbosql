@@ -1,0 +1,218 @@
+---
+- name: Gather facts from postgres_cluster hosts
+  ansible.builtin.setup:
+  delegate_to: "{{ item }}"
+  delegate_facts: true
+  loop: "{{ groups['postgres_cluster'] }}"
+  when: hostvars[groups['postgres_cluster'][0]].ansible_hostname is not defined
+
+- name: Gather package facts
+  ansible.builtin.package_facts:
+    manager: auto
+  when: ansible_facts.packages is not defined
+  check_mode: false
+
+# Install HAProxy from rpm/deb packages
+- block:
+    # RedHat
+    - name: Install HAProxy package
+      ansible.builtin.dnf:
+        name: haproxy
+        state: present
+      register: package_status
+      until: package_status is success
+      delay: 5
+      retries: 3
+      environment: "{{ proxy_env | default({}) }}"
+      when:
+        - ansible_os_family == "RedHat"
+        - "'haproxy' not in ansible_facts.packages"
+      tags: haproxy, load_balancing
+
+    # Debian
+    - name: Install HAProxy package
+      ansible.builtin.apt:
+        name: haproxy
+        state: present
+      register: apt_status
+      until: apt_status is success
+      delay: 5
+      retries: 3
+      environment: "{{ proxy_env | default({}) }}"
+      when:
+        - ansible_os_family == "Debian"
+        - "'haproxy' not in ansible_facts.packages"
+  when: installation_method == "packages"
+  tags: haproxy, load_balancing
+
+# Configure
+- name: Make sure the kernel parameter "net.ipv4.ip_nonlocal_bind" are enabled
+  ansible.posix.sysctl:
+    name: "net.ipv4.ip_nonlocal_bind"
+    value: "1"
+    sysctl_set: true
+    state: present
+    reload: true
+  ignore_errors: true # to prevent test failures in CI
+  tags: haproxy, load_balancing
+
+- name: Add haproxy group
+  ansible.builtin.group:
+    name: haproxy
+    state: present
+  tags: haproxy, load_balancing
+
+- name: Add haproxy user
+  ansible.builtin.user:
+    name: haproxy
+    comment: "HAProxy user"
+    group: haproxy
+    shell: /usr/sbin/nologin
+    system: true
+  tags: haproxy, load_balancing
+
+- name: Create directories
+  ansible.builtin.file:
+    dest: "{{ item }}"
+    state: directory
+    owner: haproxy
+    group: haproxy
+  loop:
+    - /etc/haproxy
+    - /run/haproxy
+    - /var/lib/haproxy/dev
+  tags: haproxy, load_balancing
+
+- name: Generate conf file "/etc/haproxy/haproxy.cfg"
+  ansible.builtin.template:
+    src: templates/haproxy.cfg.j2
+    dest: /etc/haproxy/haproxy.cfg
+    owner: haproxy
+    group: haproxy
+  notify: "restart haproxy"
+  when: (add_balancer is not defined or not add_balancer|bool) and
+    (postgresql_cluster_maintenance is not defined or not postgresql_cluster_maintenance|bool)
+  tags: haproxy, haproxy_conf, load_balancing
+
+- name: Generate systemd service file "/etc/systemd/system/haproxy.service"
+  ansible.builtin.template:
+    src: templates/haproxy.service.j2
+    dest: /etc/systemd/system/haproxy.service
+    owner: haproxy
+    group: haproxy
+  notify: "restart haproxy"
+  tags: haproxy, haproxy_service, load_balancing
+
+- block: # for add_balancer.yml
+    - name: "Fetch haproxy.cfg file from {{ balancer_source_host }}"
+      run_once: true
+      ansible.builtin.fetch:
+        src: /etc/haproxy/haproxy.cfg
+        dest: "{{ files_dir | default(playbook_dir ~ '/files') }}/haproxy.cfg"
+        validate_checksum: true
+        flat: true
+      notify: "restart haproxy"
+      delegate_to: "{{ balancer_source_host }}"
+
+    - name: Copy haproxy.cfg file to replica
+      ansible.builtin.copy:
+        src: "{{ files_dir | default(playbook_dir ~ '/files') }}/haproxy.cfg"
+        dest: /etc/haproxy/haproxy.cfg
+        owner: haproxy
+        group: haproxy
+      notify: "restart haproxy"
+
+    - name: Remove haproxy.cfg file from localhost
+      become: false
+      run_once: true
+      ansible.builtin.file:
+        path: "{{ files_dir | default(playbook_dir ~ '/files') }}/haproxy.cfg"
+        state: absent
+      delegate_to: localhost
+
+    - name: Prepare haproxy.cfg conf file (replace "bind")
+      ansible.builtin.lineinfile:
+        path: /etc/haproxy/haproxy.cfg
+        regexp: "{{ bind_config_without_vip_item.regexp }}"
+        line: "{{ bind_config_without_vip_item.line }}"
+        backrefs: true
+      loop:
+        - regexp: "^.*bind.*:{{ haproxy_listen_port.stats }}$"
+          line: "    bind {{ haproxy_bind_address | default(bind_address, true) }}:{{ haproxy_listen_port.stats }}"
+        - regexp: "^.*bind.*:{{ haproxy_listen_port.master }}$"
+          line: "    bind {{ haproxy_bind_address | default(bind_address, true) }}:{{ haproxy_listen_port.master }}"
+        - regexp: "^.*bind.*:{{ haproxy_listen_port.replicas }}$"
+          line: "    bind {{ haproxy_bind_address | default(bind_address, true) }}:{{ haproxy_listen_port.replicas }}"
+        - regexp: "^.*bind.*:{{ haproxy_listen_port.replicas_sync }}$"
+          line: "    bind {{ haproxy_bind_address | default(bind_address, true) }}:{{ haproxy_listen_port.replicas_sync }}"
+        - regexp: "^.*bind.*:{{ haproxy_listen_port.replicas_async }}$"
+          line: "    bind {{ haproxy_bind_address | default(bind_address, true) }}:{{ haproxy_listen_port.replicas_async }}"
+      loop_control:
+        loop_var: bind_config_without_vip_item
+        label: "{{ bind_config_without_vip_item.line }}"
+      notify: "restart haproxy"
+      when: cluster_vip is not defined or cluster_vip | length < 1
+
+    - name: Prepare haproxy.cfg conf file (replace "bind" for stats)
+      ansible.builtin.lineinfile:
+        path: /etc/haproxy/haproxy.cfg
+        regexp: "{{ bind_config_with_vip_item.regexp }}"
+        line: "{{ bind_config_with_vip_item.line }}"
+        backrefs: true
+      loop:
+        - regexp: "^.*bind.*:{{ haproxy_listen_port.stats }}$"
+          line: "    bind {{ haproxy_bind_address | default(bind_address, true) }}:{{ haproxy_listen_port.stats }}"
+        - regexp: "^.*bind.*:{{ haproxy_listen_port.master }}$"
+          line: "    bind {{ cluster_vip }}:{{ haproxy_listen_port.master }}"
+        - regexp: "^.*bind.*:{{ haproxy_listen_port.replicas }}$"
+          line: "    bind {{ cluster_vip }}:{{ haproxy_listen_port.replicas }}"
+        - regexp: "^.*bind.*:{{ haproxy_listen_port.replicas_sync }}$"
+          line: "    bind {{ cluster_vip }}:{{ haproxy_listen_port.replicas_sync }}"
+        - regexp: "^.*bind.*:{{ haproxy_listen_port.replicas_async }}$"
+          line: "    bind {{ cluster_vip }}:{{ haproxy_listen_port.replicas_async }}"
+      loop_control:
+        loop_var: bind_config_with_vip_item
+        label: "{{ bind_config_with_vip_item.line }}"
+      notify: "restart haproxy"
+      when: cluster_vip is defined and cluster_vip | length > 0
+  vars:
+    balancer_source_host: >-
+      {{
+        groups['balancers']
+        | difference(groups['new_balancer'] | default([]))
+        | first
+      }}
+  when: add_balancer is defined and add_balancer|bool
+  tags: haproxy, haproxy_conf, load_balancing
+
+- block:
+    - name: selinux | make sure the python3-libsemanage, python3-policycoreutils packages is present
+      ansible.builtin.dnf:
+        name:
+          - python3-libsemanage
+          - python3-policycoreutils
+        state: present
+        update_cache: true
+      register: package_status
+      until: package_status is success
+      delay: 5
+      retries: 3
+      environment: "{{ proxy_env | default({}) }}"
+      when:
+        - ansible_os_family == "RedHat"
+        - installation_method == "packages"
+        - "'python3-libsemanage' not in ansible_facts.packages or 'python3-policycoreutils' not in ansible_facts.packages"
+
+    - name: selinux | set haproxy_connect_any flag to enable tcp connections
+      ansible.posix.seboolean:
+        name: haproxy_connect_any
+        state: true
+        persistent: true
+
+    - name: selinux | change the haproxy_t domain to permissive
+      community.general.selinux_permissive:
+        name: haproxy_t
+        permissive: true
+  when: ansible_selinux.status is defined and ansible_selinux.status == 'enabled'
+  ignore_errors: true
+  tags: haproxy, load_balancing, haproxy_selinux

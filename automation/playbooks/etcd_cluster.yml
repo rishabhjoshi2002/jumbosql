@@ -1,0 +1,82 @@
+---
+- name: vitabaks.autobase.etcd_cluster | Deploy etcd Cluster
+  hosts: etcd_cluster
+  become: true
+  become_method: sudo
+  any_errors_fatal: true
+  gather_facts: true
+
+  pre_tasks:
+    - name: Gather package facts
+      ansible.builtin.package_facts:
+        manager: auto
+      when: ansible_facts.packages is not defined
+      check_mode: false
+      tags: always
+
+    - name: Define bind_address
+      ansible.builtin.include_role:
+        name: vitabaks.autobase.bind_address
+      when: bind_address is not defined
+      tags: always
+
+    - name: Update apt cache
+      ansible.builtin.apt:
+        update_cache: true
+        cache_valid_time: 3600
+      register: apt_status
+      until: apt_status is success
+      delay: 5
+      retries: 3
+      environment: "{{ proxy_env | default({}) }}"
+      when: ansible_os_family == "Debian" and installation_method | default('packages') == "packages"
+
+    - name: Make sure the gnupg and apt-transport-https packages are present
+      ansible.builtin.apt:
+        pkg:
+          - gnupg
+          - apt-transport-https
+        state: present
+      register: apt_status
+      until: apt_status is success
+      delay: 5
+      retries: 3
+      environment: "{{ proxy_env | default({}) }}"
+      when:
+        - ansible_os_family == "Debian"
+        - installation_method | default('packages') == "packages"
+        - "'gnupg' not in ansible_facts.packages or 'apt-transport-https' not in ansible_facts.packages"
+
+    - name: Build a firewall_ports_dynamic_var
+      ansible.builtin.set_fact:
+        firewall_ports_dynamic_var: "{{ firewall_ports_dynamic_var | default([]) + (firewall_allowed_tcp_ports_for[item] | default([])) }}"
+      loop: "{{ hostvars[inventory_hostname].group_names }}"
+      when: firewall_enabled_at_boot | default(false) | bool
+      tags: firewall
+
+    - name: Build a firewall_rules_dynamic_var
+      ansible.builtin.set_fact:
+        firewall_rules_dynamic_var: "{{ firewall_rules_dynamic_var | default([]) + (firewall_additional_rules_for[item] | default([])) }}"
+      loop: "{{ hostvars[inventory_hostname].group_names }}"
+      when: firewall_enabled_at_boot | default(false) | bool
+      tags: firewall
+
+  roles:
+    - role: vitabaks.autobase.firewall
+      environment: "{{ proxy_env | default({}) }}"
+      vars:
+        firewall_allowed_tcp_ports: "{{ firewall_ports_dynamic_var | default([]) | unique }}"
+        firewall_additional_rules: "{{ firewall_rules_dynamic_var | default([]) | unique }}"
+      when: firewall_enabled_at_boot | default(false) | bool
+      tags: firewall
+
+    - role: vitabaks.autobase.hostname
+    - role: vitabaks.autobase.resolv_conf
+    - role: vitabaks.autobase.etc_hosts
+    - role: vitabaks.autobase.timezone
+    - role: vitabaks.autobase.ntp
+
+    - role: vitabaks.autobase.add_repository
+      when: etcd_installation_method | default('binary') != "binary"
+
+    - role: vitabaks.autobase.etcd

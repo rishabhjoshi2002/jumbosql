@@ -1,0 +1,294 @@
+---
+- name: vitabaks.autobase.update_pgcluster | Update PostgreSQL Cluster
+  hosts: postgres_cluster
+  gather_facts: true
+  become: true
+  become_method: sudo
+  any_errors_fatal: true
+  tasks:
+    - name: Gather package facts
+      ansible.builtin.package_facts:
+        manager: auto
+      check_mode: false
+      tags: always
+
+    - name: Define bind_address
+      ansible.builtin.include_role:
+        name: vitabaks.autobase.bind_address
+      when: bind_address is not defined
+      tags: always
+
+    - name: Set default variables
+      ansible.builtin.import_role:
+        name: vitabaks.autobase.common
+      tags: always
+
+    - name: "[Prepare] Get Patroni Cluster Leader Node"
+      ansible.builtin.uri:
+        url: >-
+          {{ patroni_restapi_protocol | default('https') }}://{{ patroni_restapi_connect_addr
+            | default(patroni_bind_address | default(bind_address, true), true) }}:{{ patroni_restapi_port
+            | default('8008') }}/leader
+        status_code: 200
+        ca_path: "{{ patroni_restapi_cafile | default(omit, true) }}"
+      register: patroni_leader_result
+      changed_when: false
+      failed_when: false
+      check_mode: false
+      environment:
+        no_proxy: "{{ patroni_bind_address | default(bind_address, true) }}"
+      tags: always
+
+    # Stop, if no healthy Patroni leader node
+    - name: The Patroni cluster is unhealthy
+      ansible.builtin.fail:
+        msg: >
+          No healthy leader node detected in cluster '{{ patroni_cluster_name | default('postgres-cluster') }}'.
+          Please ensure the cluster is up and node responds on REST API port ({{ patroni_restapi_port | default('8008') }}).
+      when:
+        - inventory_hostname == groups['postgres_cluster'][0]
+        - (hostvars
+            | dict2items
+            | selectattr('value.patroni_leader_result.status', 'defined')
+            | selectattr('value.patroni_leader_result.status', 'equalto', 200)
+            | list | length) == 0
+      tags: always
+
+    - name: '[Prepare] Add host to group "primary" (in-memory inventory)'
+      ansible.builtin.add_host:
+        name: "{{ item }}"
+        groups: primary
+      when: hostvars[item]['patroni_leader_result']['status'] == 200
+      loop: "{{ groups['postgres_cluster'] }}"
+      changed_when: false
+      tags: always
+
+    - name: '[Prepare] Add hosts to group "secondary" (in-memory inventory)'
+      ansible.builtin.add_host:
+        name: "{{ item }}"
+        groups: secondary
+      when: hostvars[item]['patroni_leader_result']['status'] == 503
+      loop: "{{ groups['postgres_cluster'] }}"
+      changed_when: false
+      tags: always
+
+    - name: "Print Patroni Cluster info"
+      ansible.builtin.debug:
+        msg:
+          - "Cluster Name: {{ patroni_cluster_name | default('postgres-cluster') }}"
+          - "Cluster Leader: {{ ansible_hostname }}"
+      when: inventory_hostname in groups['primary'] | default([])
+      tags: always
+
+    - name: '[Prepare] Get current passwords'
+      ansible.builtin.import_role:
+        name: vitabaks.autobase.pre_checks
+        tasks_from: passwords
+      vars:
+        source_group: primary
+        postgresql_cluster_maintenance: true
+      when: patroni_superuser_password | default('') | length < 1
+      tags: always
+
+- name: "(1/4) PRE-UPDATE: Perform pre-update tasks"
+  hosts: "primary:secondary"
+  gather_facts: true
+  become: true
+  become_user: postgres
+  any_errors_fatal: true
+  tasks:
+    - name: Running Pre-Checks
+      ansible.builtin.include_role:
+        name: vitabaks.autobase.update
+        tasks_from: pre_checks
+
+    # This task updates the pgBackRest package on the backup server (Dedicated Repository Host).
+    # It runs only if the 'pgbackrest' group is defined in the inventory and the update target is set to 'system'.
+    - name: Update pgBackRest package (Dedicated Repository Host)
+      ansible.builtin.include_role:
+        name: vitabaks.autobase.update
+        tasks_from: pgbackrest_host
+      when: groups['pgbackrest'] | default([]) | length > 0 and target | default('postgres') == 'system'
+  tags:
+    - update
+    - pre-checks
+
+- name: "(2/4) UPDATE: Secondary"
+  hosts: secondary
+  serial: 1 # update replicas one by one
+  gather_facts: true
+  become: true
+  become_method: sudo
+  any_errors_fatal: true
+  environment: "{{ proxy_env | default({}) }}"
+  tasks:
+    - name: Stop read-only traffic
+      ansible.builtin.include_role:
+        name: vitabaks.autobase.update
+        tasks_from: stop_traffic
+
+    - name: Stop Services
+      ansible.builtin.include_role:
+        name: vitabaks.autobase.update
+        tasks_from: stop_services
+
+    - name: Update PostgreSQL
+      ansible.builtin.include_role:
+        name: vitabaks.autobase.update
+        tasks_from: postgres
+      when: target | default('postgres') == 'postgres' or target | default('postgres') == 'system'
+
+    - name: Update Patroni
+      ansible.builtin.include_role:
+        name: vitabaks.autobase.update
+        tasks_from: patroni
+      when: target | default('postgres') == 'patroni' or target | default('postgres') == 'system'
+
+    - name: Update all system packages
+      ansible.builtin.include_role:
+        name: vitabaks.autobase.update
+        tasks_from: system
+      when: target | default('postgres') == 'system'
+
+    - name: Start Services
+      ansible.builtin.include_role:
+        name: vitabaks.autobase.update
+        tasks_from: start_services
+
+    - name: Start read-only traffic
+      ansible.builtin.include_role:
+        name: vitabaks.autobase.update
+        tasks_from: start_traffic
+  tags:
+    - update
+    - update-secondary
+
+- name: "(3/4) UPDATE: Primary"
+  hosts: primary
+  gather_facts: true
+  become: true
+  become_method: sudo
+  any_errors_fatal: true
+  environment: "{{ proxy_env | default({}) }}"
+  tasks:
+    - name: "Switchover Patroni leader role"
+      ansible.builtin.include_role:
+        name: vitabaks.autobase.patroni
+        tasks_from: switchover
+      when: groups['postgres_cluster'] | length > 1
+
+    - name: Stop read-only traffic
+      ansible.builtin.include_role:
+        name: vitabaks.autobase.update
+        tasks_from: stop_traffic
+
+    - name: Stop Services
+      ansible.builtin.include_role:
+        name: vitabaks.autobase.update
+        tasks_from: stop_services
+
+    - name: Update PostgreSQL
+      ansible.builtin.include_role:
+        name: vitabaks.autobase.update
+        tasks_from: postgres
+      when: target | default('postgres') == 'postgres' or target | default('postgres') == 'system'
+
+    - name: Update Patroni
+      ansible.builtin.include_role:
+        name: vitabaks.autobase.update
+        tasks_from: patroni
+      when: target | default('postgres') == 'patroni' or target | default('postgres') == 'system'
+
+    - name: Update all system packages
+      ansible.builtin.include_role:
+        name: vitabaks.autobase.update
+        tasks_from: system
+      when: target | default('postgres') == 'system'
+
+    - name: Start Services
+      ansible.builtin.include_role:
+        name: vitabaks.autobase.update
+        tasks_from: start_services
+
+    - name: Start read-only traffic
+      ansible.builtin.include_role:
+        name: vitabaks.autobase.update
+        tasks_from: start_traffic
+  tags:
+    - update
+    - update-primary
+
+- name: "(4/4) POST-UPDATE: Update extensions"
+  hosts: postgres_cluster
+  gather_facts: true
+  become: true
+  become_user: postgres
+  any_errors_fatal: true
+  tasks:
+    - name: Update extensions
+      ansible.builtin.include_role:
+        name: vitabaks.autobase.update
+        tasks_from: extensions
+      when: update_extensions | default(true) | bool
+
+    # finish (info)
+    - name: Check for any update failure
+      run_once: true # noqa run-once
+      ansible.builtin.set_fact:
+        any_update_failed: "{{ any_update_failed | default(false) or
+          hostvars[item].update_postgres_failed | default(false) or
+          hostvars[item].update_patroni_failed | default(false) or
+          hostvars[item].update_system_failed | default(false) }}"
+      loop: "{{ groups['postgres_cluster'] }}"
+
+    - name: Check the Patroni cluster state
+      run_once: true # noqa run-once
+      become: true
+      become_user: postgres
+      ansible.builtin.command: patronictl -c /etc/patroni/patroni.yml list
+      register: patronictl_result
+      changed_when: false
+      check_mode: false
+      environment:
+        PATH: "{{ ansible_env.PATH }}:/usr/bin:/usr/local/bin"
+
+    - name: Check the current PostgreSQL version
+      run_once: true # noqa run-once
+      ansible.builtin.command: >
+        psql -h 127.0.0.1
+        -p {{ postgresql_port | default(5432) }}
+        -U {{ patroni_superuser_username | default('postgres') }}
+        -d postgres
+        -tAXc "select current_setting('server_version')"
+      environment:
+        PGPASSWORD: "{{ patroni_superuser_password | default('') }}"
+      register: postgres_version
+      changed_when: false
+      check_mode: false
+
+    - name: List the Patroni cluster members
+      run_once: true # noqa run-once
+      ansible.builtin.debug:
+        msg: "{{ patronictl_result.stdout_lines }}"
+      when: patronictl_result.stdout_lines is defined
+
+    # if there are no update errors
+    - name: Update completed
+      run_once: true # noqa run-once
+      ansible.builtin.debug:
+        msg:
+          - "PostgreSQL Cluster update completed."
+          - "Current version: {{ postgres_version.stdout }}"
+      when: not any_update_failed
+
+    # if there were errors during the update
+    - name: Update completed with error
+      run_once: true # noqa run-once
+      ansible.builtin.debug:
+        msg:
+          - "Update of PostgreSQL Cluster completed with errors. Check the Ansible log."
+          - "Current version: {{ postgres_version.stdout }}"
+      when: any_update_failed
+  tags:
+    - update
+    - update-extensions

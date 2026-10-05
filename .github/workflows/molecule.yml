@@ -1,0 +1,48 @@
+---
+name: Molecule
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        config:
+          - distro: ubuntu2604
+            tag: latest
+            namespace: geerlingguy
+          - distro: rockylinux10
+            tag: latest
+            namespace: geerlingguy
+
+    steps:
+      - name: Set TERM environment variable
+        run: echo "TERM=xterm" >> $GITHUB_ENV
+
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.14"
+
+      - name: Install dependencies
+        run: make bootstrap-dev
+
+      - name: Run Molecule tests
+        run: make molecule-test
+        env:
+          PY_COLORS: "1"
+          ANSIBLE_FORCE_COLOR: "1"
+          IMAGE_DISTRO: ${{ matrix.config.distro }}
+          IMAGE_TAG: ${{ matrix.config.tag }}
+          IMAGE_NAMESPACE: ${{ matrix.config.namespace }}

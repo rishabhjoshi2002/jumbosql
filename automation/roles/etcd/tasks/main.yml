@@ -1,0 +1,178 @@
+---
+- name: Make sure handlers are flushed immediately
+  ansible.builtin.meta: flush_handlers
+
+- name: Gather package facts
+  ansible.builtin.package_facts:
+    manager: auto
+  when: ansible_facts.packages is not defined
+  check_mode: false
+
+- name: Expose etcd_bind_address as facts
+  ansible.builtin.set_fact:
+    etcd_bind_address: "{{ etcd_bind_address | default(bind_address, true) }}"
+
+- block: # install etcd package from repo, such as GitHub
+    - name: Make sure the unzip/tar packages are present
+      ansible.builtin.package:
+        name:
+          - unzip
+          - tar
+        state: present
+      register: package_status
+      until: package_status is success
+      delay: 5
+      retries: 3
+      environment: "{{ proxy_env | default({}) }}"
+      when: "'unzip' not in ansible_facts.packages or 'tar' not in ansible_facts.packages"
+
+    - name: Download "etcd" package
+      ansible.builtin.get_url:
+        url: "{{ item }}"
+        dest: /tmp/
+        timeout: 60
+        validate_certs: false
+      loop:
+        - "{{ etcd_package_repo }}"
+      environment: "{{ proxy_env | default({}) }}"
+
+    - name: Extract "etcd" into /tmp
+      ansible.builtin.unarchive:
+        src: "/tmp/{{ etcd_package_repo | basename }}"
+        dest: /tmp/
+        extra_opts:
+          - --no-same-owner
+        remote_src: true
+
+    - name: Copy "etcd" and "etcdctl" binary files to {{ etcd_bin_dir | default('/usr/local/bin') }}
+      ansible.builtin.copy:
+        src: "/tmp/{{ etcd_package_repo.split('.tar.gz')[0] | basename }}/{{ item }}"
+        dest: "{{ etcd_bin_dir | default('/usr/local/bin') }}"
+        mode: u+x,g+x,o+x
+        remote_src: true
+      loop:
+        - etcd
+        - etcdctl
+  when:
+    - installation_method == "packages"
+    - etcd_installation_method == "binary"
+    - etcd_package_repo | length > 0
+    - not ansible_check_mode
+  tags: etcd, etcd_install
+
+- name: Add etcd user
+  ansible.builtin.user:
+    name: etcd
+    shell: /usr/sbin/nologin
+    home: "{{ etcd_data_dir }}"
+    system: true
+  tags: etcd, etcd_conf
+
+- name: Create etcd conf directory
+  ansible.builtin.file:
+    path: "{{ etcd_conf_dir | default('/etc/etcd') }}"
+    state: directory
+    owner: etcd
+    group: etcd
+    mode: "0750"
+  tags: etcd, etcd_conf
+
+# TLS
+- block:
+    - name: Generate etcd TLS certificate
+      ansible.builtin.include_role:
+        name: vitabaks.autobase.tls_certificate
+      vars:
+        tls_group_name: "etcd_cluster"
+        generate_tls_owner: "etcd"
+        generate_tls_common_name: "etcd"
+        generate_tls_dir: "{{ etcd_tls_dir | default('/etc/etcd/tls') }}"
+        tls_cert_regenerate: "{{ etcd_tls_cert_regenerate | default(cluster_scaling | default(false)) }}"  # Regenerate when adding nodes
+
+    - name: Copy etcd TLS certificate, key and CA to all nodes
+      ansible.builtin.include_role:
+        name: vitabaks.autobase.tls_certificate
+        tasks_from: copy
+      vars:
+        tls_group_name: "etcd_cluster"
+        fetch_tls_dir: "{{ etcd_tls_dir | default('/etc/etcd/tls') }}"
+        copy_tls_dir: "{{ etcd_tls_dir | default('/etc/etcd/tls') }}"
+        copy_tls_owner: "etcd"
+  vars:
+    tls_source_host: >-
+      {{
+        (groups['etcd_cluster'] | difference(new_etcd_nodes | default([])) | first)
+        if cluster_scaling | default(false) | bool
+        else (groups['etcd_cluster'] | first)
+      }}
+  when: tls_cert_generate | default(true) | bool
+  tags: etcd, etcd_conf
+
+- name: Create etcd data directory
+  ansible.builtin.file:
+    path: "{{ etcd_data_dir | default('/var/lib/etcd') }}"
+    state: directory
+    owner: etcd
+    mode: "0700"
+  tags: etcd, etcd_conf
+
+- name: Generate etcd conf file
+  ansible.builtin.template:
+    src: templates/etcd.conf.j2
+    dest: "{{ etcd_conf_dir | default('/etc/etcd') }}/etcd.conf"
+  tags: etcd, etcd_conf
+
+- name: Copy systemd service file
+  ansible.builtin.template:
+    src: templates/etcd.service.j2
+    dest: /etc/systemd/system/etcd.service
+  tags: etcd, etcd_conf
+
+# Install etcd package from RPM or APT repository configured on the system
+# Note: Installation is done after configuration, as Debian automatically starts the service after install.
+- name: Install etcd package
+  ansible.builtin.package:
+    name: "{{ etcd_packages | flatten }}"
+    state: present
+  register: install_etcd_packages
+  until: install_etcd_packages is success
+  delay: 5
+  retries: 3
+  environment: "{{ proxy_env | default({}) }}"
+  when:
+    - installation_method == "packages"
+    - (etcd_installation_method == "rpm" or etcd_installation_method == "deb")
+  tags: etcd, etcd_install
+
+# After installing etcd in RHEL-based system, ownership is reset on /etc/etcd
+# So it is necessary to
+- name: Make sure that etcd directory owner and permissions are correct
+  ansible.builtin.file:
+    path: "{{ etcd_conf_dir | default('/etc/etcd') }}"
+    state: directory
+    owner: etcd
+    group: etcd
+    mode: "0750"
+  tags: etcd, etcd_conf
+  when:
+    - etcd_conf_dir | default('/etc/etcd') == '/etc/etcd'
+    - etcd_installation_method == "rpm"
+
+- name: Start etcd service and check cluster health
+  ansible.builtin.include_tasks: start.yml
+  when:
+    - not ansible_check_mode
+    - inventory_hostname not in (new_etcd_nodes | default([]))
+  tags: etcd, etcd_start, etcd_status
+
+# if cluster_scaling (add_node.yml)
+- name: Add new node(s) to existing etcd cluster
+  ansible.builtin.include_tasks: member_add.yml
+  run_once: true
+  loop: "{{ new_etcd_nodes | default([]) }}"
+  loop_control:
+    loop_var: etcd_node
+  when:
+    - cluster_scaling | default(false) | bool
+    - not ansible_check_mode
+  tags: etcd, etcd_member_add

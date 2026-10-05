@@ -1,0 +1,169 @@
+---
+- name: Get the current shared_preload_libraries settings
+  ansible.builtin.command: >
+    {{ psql_command }} -tAXc "show shared_preload_libraries"
+  changed_when: false
+  register: pg_shared_preload_libraries
+  vars:
+    psql_command: "{{ pg_old_bindir }}/psql -h 127.0.0.1 -p {{ postgresql_port }} -U {{ patroni_superuser_username }} -d postgres"
+  environment:
+    PGPASSWORD: "{{ patroni_superuser_password }}"
+  when: inventory_hostname in groups['primary']
+
+- name: Get the current cron.database_name settings
+  ansible.builtin.command: >
+    {{ psql_command }} -tAXc "select current_setting('cron.database_name', true)"
+  changed_when: false
+  register: pg_cron_database_name
+  vars:
+    psql_command: "{{ pg_old_bindir }}/psql -h 127.0.0.1 -p {{ postgresql_port }} -U {{ patroni_superuser_username }} -d postgres"
+  environment:
+    PGPASSWORD: "{{ patroni_superuser_password }}"
+  when:
+    - inventory_hostname in groups['primary']
+    - "'pg_cron' in pg_shared_preload_libraries.stdout"
+
+- name: Check if PostgreSQL is running
+  ansible.builtin.command: "{{ pg_new_bindir }}/pg_ctl status -D {{ pg_new_datadir }}"
+  register: pg_ctl_status_result
+  failed_when: false
+  changed_when: false
+  when: inventory_hostname in groups['primary']
+
+- name: Create temporary .pgpass entry for install user
+  ansible.builtin.lineinfile:
+    path: "{{ postgresql_home_dir }}/.pgpass"
+    line: "localhost:*:*:{{ hostvars[groups['primary'][0]].pg_install_user.stdout }}:{{ pg_install_user_password }}"
+  no_log: true
+  when:
+    - inventory_hostname in groups['primary']
+    - pg_install_user_password is defined
+
+- name: "Start new PostgreSQL on port {{ schema_compatibility_check_port | default('5433') }} to check the schema compatibility"
+  ansible.builtin.command: >-
+    {{ pg_new_bindir }}/pg_ctl -D {{ pg_new_datadir }}
+    -o "-p {{ schema_compatibility_check_port }}
+    -c unix_socket_directories='/tmp'
+    -c shared_preload_libraries='{{ pg_shared_preload_libraries.stdout }}'
+    {% if pg_cron_database_name.stdout | default('') | length > 0 %}
+    -c cron.database_name='{{ pg_cron_database_name.stdout }}'
+    {% endif %}
+    -c config_file='{{ pg_new_confdir }}/postgresql.conf'"
+    start -w -t {{ pg_start_stop_timeout }} -l /tmp/pg_start_schema_compatibility.log
+  async: "{{ pg_start_stop_timeout }}" # run the command asynchronously
+  poll: 0
+  register: pg_ctl_start_result
+  when:
+    - inventory_hostname in groups['primary']
+    - pg_ctl_status_result.rc != 0
+
+- name: "Wait for PostgreSQL to start (log: /tmp/pg_start_schema_compatibility.log)"
+  ansible.builtin.async_status:
+    jid: "{{ pg_ctl_start_result.ansible_job_id }}"
+  register: pg_ctl_start_job_result
+  until: pg_ctl_start_job_result.finished
+  retries: "{{ (pg_start_stop_timeout | int) // 10 }}"
+  delay: 10
+  when:
+    - pg_ctl_start_result.ansible_job_id is defined
+    - inventory_hostname in groups['primary']
+
+- name: "Check the compatibility of the database schema with the PostgreSQL {{ pg_new_version | default('') }}"
+  ansible.builtin.shell: >-
+    set -o pipefail;
+    {{ pg_new_bindir }}/pg_dumpall
+    -h {{ postgresql_unix_socket_dir }}
+    -p {{ postgresql_port }}
+    -U {{ pg_install_user.stdout }}
+    --schema-only | grep -v '^GRANT ' | {{ pg_new_bindir }}/psql
+    -U {{ pg_install_user.stdout }}
+    -d postgres
+    -h /tmp
+    -p {{ schema_compatibility_check_port }}
+    > /tmp/pg_schema_compatibility_check.log 2>&1
+  args:
+    executable: /bin/bash
+  environment:
+    PGPASSWORD: "{{ pg_install_user_password | default(patroni_superuser_password) }}"
+  async: "{{ schema_compatibility_check_timeout }}" # run the command asynchronously
+  poll: 0
+  register: pg_dumpall_result
+  when: inventory_hostname in groups['primary']
+
+- name: Wait for the schema compatibility check to complete.
+  ansible.builtin.async_status:
+    jid: "{{ pg_dumpall_result.ansible_job_id }}"
+  register: pg_dumpall_job_result
+  until: pg_dumpall_job_result.finished
+  retries: "{{ (schema_compatibility_check_timeout | int) // 10 }}"
+  delay: 10
+  ignore_errors: true # show the error and continue the playbook execution
+  when: inventory_hostname in groups['primary']
+
+# Debug, if pg_dumpall failed
+- block:
+    - name: "Read pg_schema_compatibility_check.log content"
+      ansible.builtin.command: >
+        cat /tmp/pg_schema_compatibility_check.log
+      register: pg_schema_compatibility_check_log
+      changed_when: false
+      failed_when: false
+
+    - name: "Print pg_schema_compatibility_check.log content, because pg_dumpall failed"
+      ansible.builtin.debug:
+        msg: "{{ pg_schema_compatibility_check_log.stdout_lines }}"
+      failed_when: true
+  when:
+    - inventory_hostname in groups['primary']
+    - pg_dumpall_job_result.rc != 0
+
+# Check result
+- name: Checking the result of the schema compatibility
+  ansible.builtin.shell: >-
+    set -o pipefail;
+    grep ERROR /tmp/pg_schema_compatibility_check.log | grep -v "already exists"
+  args:
+    executable: /bin/bash
+  register: pg_schema_compatibility_check_result
+  changed_when: false
+  failed_when: false
+  when: inventory_hostname in groups['primary']
+
+- name: "Result of checking the compatibility of the scheme - success"
+  ansible.builtin.debug:
+    msg: "The database schema are compatible with PostgreSQL {{ pg_new_version }}"
+  when:
+    - inventory_hostname in groups['primary']
+    - pg_schema_compatibility_check_result.stdout | length < 1
+
+# Stop, if the scheme is not compatible (there are errors)
+- name: "Result of checking the compatibility of the scheme - error"
+  ansible.builtin.debug:
+    msg:
+      - "{{ pg_schema_compatibility_check_result.stdout_lines }}"
+      - "The database schema is not compatible with PostgreSQL {{ pg_new_version }}"
+  failed_when: true
+  when:
+    - inventory_hostname in groups['primary']
+    - pg_schema_compatibility_check_result.stdout | length > 0
+
+- name: Stop new PostgreSQL to re-initdb
+  ansible.builtin.command: >
+    {{ pg_new_bindir }}/pg_ctl -D {{ pg_new_datadir }} stop -w -t {{ pg_start_stop_timeout }}
+  when:
+    - inventory_hostname in groups['primary']
+    - pg_new_confdir == pg_new_datadir
+
+# for Debian based, drop the cluster to perform re-init
+- name: Drop new PostgreSQL to re-initdb (perform pg_dropcluster)
+  ansible.builtin.command: >
+    /usr/bin/pg_dropcluster --stop {{ pg_new_version }} {{ postgresql_cluster_name }}
+  failed_when: false
+  when:
+    - inventory_hostname in groups['primary']
+    - pg_new_confdir != pg_new_datadir
+    - ansible_os_family == "Debian"
+
+- name: Reinitialize the database after checking schema compatibility
+  ansible.builtin.include_tasks: "{{ role_path }}/tasks/initdb.yml"
+  when: inventory_hostname in groups['primary']

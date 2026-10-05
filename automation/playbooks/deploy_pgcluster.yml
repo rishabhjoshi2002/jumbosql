@@ -1,0 +1,435 @@
+---
+- name: vitabaks.autobase.deploy_pgcluster | Deploy PostgreSQL Cluster
+  hosts: localhost
+  gather_facts: true
+  any_errors_fatal: true
+  pre_tasks:
+    - name: Validate secrets configuration
+      ansible.builtin.import_role:
+        name: vitabaks.autobase.pre_checks
+        tasks_from: secrets
+      when: secrets_provider | default('') | length > 0
+      tags: always
+
+    # set_fact: 'pgbackrest_install' to configure Postgres backups if not disabled explicitly.
+    # Note: Applicable only for "aws", "gcp", "azure", because:
+    # "digitalocean" - requires the Spaces access keys ("digital_ocean_spaces_access_key" and "digital_ocean_spaces_secret_key" variables)
+    # "hetzner" - requires the S3 credentials ("hetzner_object_storage_access_key" and "hetzner_object_storage_secret_key" variables).
+    - name: "Set variable: 'pgbackrest_install' to configure Postgres backups"
+      ansible.builtin.set_fact:
+        pgbackrest_install: true
+      when:
+        - not (pgbackrest_install | default(false) | bool or wal_g_install | default(false) | bool)
+        - cloud_backup_provider | default(cloud_provider | default('')) | lower in ['aws', 'gcp', 'azure']
+        - pgbackrest_auto_conf | default(true) | bool # to be able to disable auto backup settings
+      tags: always
+  roles:
+    - role: vitabaks.autobase.cloud_resources
+      when: cloud_provider | default('') | length > 0
+      tags: always
+
+- name: vitabaks.autobase.deploy_pgcluster | Perform pre-checks and preparation
+  hosts: "etcd_cluster:consul_instances:balancers:postgres_cluster"
+  become: true
+  become_method: sudo
+  gather_facts: true
+  any_errors_fatal: true
+  environment: "{{ proxy_env | default({}) }}"
+
+  pre_tasks:
+    - name: Gather package facts
+      ansible.builtin.package_facts:
+        manager: auto
+      check_mode: false
+      tags: always
+
+    - name: Define bind_address
+      ansible.builtin.import_role:
+        name: vitabaks.autobase.bind_address
+      when: bind_address is not defined
+      tags: always
+
+    # Print system information
+    - name: System info
+      ansible.builtin.debug:
+        msg:
+          server_name: "{{ hostname | default(ansible_hostname) }}"
+          server_location: "{{ server_location | default(omit) }}"
+          ip_address: "{{ bind_address | default('N/A') }}"
+          os: "{{ ansible_distribution | default('N/A') }} {{ ansible_distribution_version | default('N/A') }}"
+          kernel: "{{ ansible_kernel | default('N/A') }}"
+          cpu:
+            model: "{{ ansible_processor[2] | default('N/A') }}"
+            count: "{{ ansible_processor_count | default('N/A') }}"
+            cores: "{{ ansible_processor_cores | default('N/A') }}"
+          memory: "{{ (ansible_memtotal_mb / 1024) | round(2) if ansible_memtotal_mb is defined else 'N/A' }} GB"
+          disk_space_total: >-
+            {{
+              (ansible_mounts
+                | map(attribute='size_total')
+                | map('int')
+                | sum / 1024 / 1024 / 1024
+              )
+              | round(2) if ansible_mounts is defined else 'N/A'
+            }} GB
+          architecture: "{{ ansible_architecture | default('N/A') }}"
+          virtualization_type: "{{ ansible_virtualization_type | default('N/A') }}"
+          product_name: "{{ ansible_product_name | default('N/A') }}"
+      tags: always
+
+    # if 'cloud_provider' is 'aws', 'gcp', or 'azure'
+    # set_fact: 'pgbackrest_install' to configure Postgres backups if not disabled explicitly.
+    - name: "Set variable: 'pgbackrest_install' to configure Postgres backups"
+      ansible.builtin.set_fact:
+        pgbackrest_install: true
+      when:
+        - not (pgbackrest_install | default(false) | bool or wal_g_install | default(false) | bool)
+        - cloud_backup_provider | default(cloud_provider | default('')) | lower in ['aws', 'gcp', 'azure']
+        - pgbackrest_auto_conf | default(true) | bool # to be able to disable auto backup settings
+      tags: always
+
+    - name: Clean dnf cache
+      ansible.builtin.command: dnf clean all
+      when: ansible_os_family == "RedHat"
+
+    - name: Update apt cache
+      ansible.builtin.apt:
+        update_cache: true
+      register: apt_status
+      until: apt_status is success
+      delay: 5
+      retries: 3
+      when: ansible_os_family == "Debian"
+
+    - name: Make sure the gnupg and apt-transport-https packages are present
+      ansible.builtin.apt:
+        pkg:
+          - gnupg
+          - apt-transport-https
+        state: present
+      register: apt_status
+      until: apt_status is success
+      delay: 5
+      retries: 3
+      when:
+        - ansible_os_family == "Debian"
+        - "'gnupg' not in ansible_facts.packages or 'apt-transport-https' not in ansible_facts.packages"
+
+    # (optional) Command or script to be executed before the Postgres cluster deployment.
+    - block:
+        - name: Print pre-deploy command
+          ansible.builtin.debug:
+            var: pre_deploy_command
+          when: pre_deploy_command_print | default(false) | bool
+
+        - name: Run pre-deploy command
+          ansible.builtin.shell: "{{ pre_deploy_command }} > {{ pre_deploy_command_log | default('/var/tmp/pre_deploy_command.log') }} 2>&1"
+          args:
+            executable: /bin/bash
+          register: pre_deploy_result
+          delegate_to: "{{ item }}"
+          loop: "{{ pre_deploy_command_hosts.split(',') | map('extract', groups) | list | flatten }}"
+          async: "{{ pre_deploy_command_timeout | default(3600) }}" # run the command asynchronously
+          poll: 0
+
+        - name: Wait for the pre-deploy command to complete
+          ansible.builtin.async_status:
+            jid: "{{ item.ansible_job_id }}"
+          register: pre_deploy_job_result
+          delegate_to: "{{ item.item }}"
+          loop: "{{ pre_deploy_result.results }}"
+          loop_control:
+            label: "{{ item.item }}"
+          until: pre_deploy_job_result.finished
+          retries: "{{ (pre_deploy_command_timeout | default(3600) | int) // 10 }}"
+          delay: 10
+          ignore_errors: true # allows to collect logs before stopping execution (in case of failure)
+          when:
+            - pre_deploy_result.results is defined
+            - item.ansible_job_id is defined
+
+        - name: Get pre-deploy command log
+          ansible.builtin.command: "cat {{ pre_deploy_command_log | default('/var/tmp/pre_deploy_command.log') }}"
+          register: pre_deploy_log_content
+          delegate_to: "{{ item }}"
+          loop: "{{ pre_deploy_command_hosts | default('postgres_cluster') | split(',') | map('extract', groups) | list | flatten }}"
+          changed_when: false
+          when: pre_deploy_command_print_result | default(false) | bool
+
+        - name: Print pre-deploy command result
+          ansible.builtin.debug:
+            msg: "{{ item.stdout_lines }}"
+          loop: "{{ pre_deploy_log_content.results }}"
+          loop_control:
+            label: "{{ item.item }}"
+          when:
+            - pre_deploy_log_content.results is defined
+            - item.stdout_lines is defined
+
+        - name: Stop if pre-deploy command failed
+          ansible.builtin.fail:
+            msg: "Pre-deploy command failed. See log for details."
+          when: pre_deploy_job_result.results | json_query('[?failed]') | length > 0
+      run_once: true # noqa run-once
+      when: pre_deploy_command | default('') | length > 0
+      tags: pre_deploy, pre_deploy_command
+
+  roles:
+    # (optional) if 'ssh_public_keys' is defined
+    - role: vitabaks.autobase.authorized_keys
+      tags: ssh_public_keys
+
+    - role: vitabaks.autobase.pre_checks
+      vars:
+        minimal_ansible_version: 2.19.0
+        timescale_minimal_pg_version: 12 # if enable_timescale is defined
+      tags: always
+
+    - role: vitabaks.autobase.hostname
+
+- name: vitabaks.autobase.deploy_pgcluster | Deploy etcd cluster
+  ansible.builtin.import_playbook: etcd_cluster.yml
+  when: not dcs_exists | default(false) | bool and dcs_type | default('etcd') == "etcd"
+  tags: etcd
+
+- name: vitabaks.autobase.deploy_pgcluster | Deploy Consul
+  ansible.builtin.import_playbook: consul_cluster.yml
+  when: dcs_type | default('etcd') == "consul"
+  tags: consul
+
+- name: vitabaks.autobase.deploy_pgcluster | Postgres Cluster Configuration
+  hosts: postgres_cluster
+  become: true
+  become_method: sudo
+  gather_facts: true
+  any_errors_fatal: true
+  environment: "{{ proxy_env | default({}) }}"
+
+  pre_tasks:
+    - name: Build a firewall_ports_dynamic_var
+      ansible.builtin.set_fact:
+        firewall_ports_dynamic_var: "{{ firewall_ports_dynamic_var | default([]) + (firewall_allowed_tcp_ports_for[item] | default([])) }}"
+      loop: "{{ hostvars[inventory_hostname].group_names }}"
+      when: firewall_enabled_at_boot | default(false) | bool
+      tags: firewall
+
+    - name: Build a firewall_rules_dynamic_var
+      ansible.builtin.set_fact:
+        firewall_rules_dynamic_var: "{{ firewall_rules_dynamic_var | default([]) + (firewall_additional_rules_for[item] | default([])) }}"
+      loop: "{{ hostvars[inventory_hostname].group_names }}"
+      when: firewall_enabled_at_boot | default(false) | bool
+      tags: firewall
+
+    # if 'dcs_type' is 'consul'
+    - name: Add a nameserver entry poining to localhost for dnsmasq
+      ansible.builtin.set_fact:
+        nameservers: "{{ ['127.0.0.1'] + (nameservers | default([])) }}"
+      when: dcs_type | default('etcd') == "consul" and consul_dnsmasq_enable | default(true) | bool and ('127.0.0.1' not in (nameservers | default([])))
+
+  roles:
+    - role: vitabaks.autobase.firewall
+      vars:
+        firewall_allowed_tcp_ports: "{{ firewall_ports_dynamic_var | default([]) | unique }}"
+        firewall_additional_rules: "{{ firewall_rules_dynamic_var | default([]) | unique }}"
+      when: firewall_enabled_at_boot | default(false) | bool
+      tags: firewall
+
+    - role: vitabaks.autobase.resolv_conf
+    - role: vitabaks.autobase.etc_hosts
+    - role: vitabaks.autobase.add_repository
+    - role: vitabaks.autobase.packages
+    - role: vitabaks.autobase.sudo
+    - role: vitabaks.autobase.mount
+    - role: vitabaks.autobase.swap
+    - role: vitabaks.autobase.sysctl
+    - role: vitabaks.autobase.transparent_huge_pages
+    - role: vitabaks.autobase.pam_limits
+    - role: vitabaks.autobase.io_scheduler
+    - role: vitabaks.autobase.locales
+    - role: vitabaks.autobase.timezone
+    - role: vitabaks.autobase.ntp
+    - role: vitabaks.autobase.ssh_keys
+    - role: vitabaks.autobase.copy
+
+- name: vitabaks.autobase.deploy_pgcluster | Deploy balancers
+  ansible.builtin.import_playbook: balancers.yml
+  when: with_haproxy_load_balancing | default(false) | bool
+  tags: load_balancing, haproxy
+
+- name: vitabaks.autobase.deploy_pgcluster | Install and configure pgBackRest
+  hosts: pgbackrest:postgres_cluster
+  become: true
+  become_method: sudo
+  gather_facts: true
+  any_errors_fatal: true
+
+  pre_tasks:
+    # if 'cloud_provider' is 'aws', 'gcp', or 'azure'
+    # set_fact: 'pgbackrest_install' to configure Postgres backups if not disabled explicitly.
+    - name: "Set variable: 'pgbackrest_install' to configure Postgres backups"
+      ansible.builtin.set_fact:
+        pgbackrest_install: true
+      when:
+        - not (pgbackrest_install | default(false) | bool or wal_g_install | default(false) | bool)
+        - cloud_backup_provider | default(cloud_provider | default('')) | lower in ['aws', 'gcp', 'azure']
+        - pgbackrest_auto_conf | default(true) | bool # to be able to disable auto backup settings
+      tags: always
+  roles:
+    - role: vitabaks.autobase.pgbackrest
+      when: pgbackrest_install | default(false) | bool
+
+- name: vitabaks.autobase.deploy_pgcluster | PostgreSQL Cluster Deployment
+  hosts: postgres_cluster
+  become: true
+  become_method: sudo
+  gather_facts: true
+  any_errors_fatal: true
+
+  pre_tasks:
+    # if 'cloud_provider' is 'aws', 'gcp', or 'azure'
+    # set_fact: 'pgbackrest_install' to configure Postgres backups if not disabled explicitly.
+    - name: "Set variable: 'pgbackrest_install' to configure Postgres backups"
+      ansible.builtin.set_fact:
+        pgbackrest_install: true
+      when:
+        - not (pgbackrest_install | default(false) | bool or wal_g_install | default(false) | bool)
+        - cloud_backup_provider | default(cloud_provider | default('')) | lower in ['aws', 'gcp', 'azure']
+        - pgbackrest_auto_conf | default(true) | bool # to be able to disable auto backup settings
+      tags: always
+
+    - name: Generate Postgres TLS certificate
+      ansible.builtin.import_role:
+        name: vitabaks.autobase.tls_certificate
+      vars:
+        tls_group_name: "postgres_cluster"
+        tls_cert_regenerate: "{{ postgres_tls_cert_regenerate | default(false) }}" # Do not generate new certificates if they already exist.
+      when: tls_cert_generate | default(true) | bool
+
+    - name: Copy Postgres TLS certificate, key and CA to all nodes
+      ansible.builtin.import_role:
+        name: vitabaks.autobase.tls_certificate
+        tasks_from: copy
+      when: tls_cert_generate | default(true) | bool
+
+  roles:
+    - role: vitabaks.autobase.wal_g
+      when: wal_g_install | default(false) | bool
+
+    - role: vitabaks.autobase.pg_probackup
+      when: pg_probackup_install | default(false) | bool
+
+    - role: vitabaks.autobase.cron
+
+    - role: vitabaks.autobase.pgbouncer
+      when: pgbouncer_install | default(true) | bool
+
+    - role: vitabaks.autobase.pgpass
+
+    - role: vitabaks.autobase.patroni
+
+    - role: vitabaks.autobase.vip_manager
+      when: not with_haproxy_load_balancing | default(false) | bool and
+        (cluster_vip is defined and cluster_vip | length > 0)
+
+    # optional
+    - role: vitabaks.autobase.postgresql_users
+      when: inventory_hostname == groups['master'][0]
+
+    - role: vitabaks.autobase.postgresql_databases
+      when: inventory_hostname == groups['master'][0]
+
+    - role: vitabaks.autobase.postgresql_schemas
+      when: inventory_hostname == groups['master'][0]
+
+    - role: vitabaks.autobase.postgresql_privs
+      when: inventory_hostname == groups['master'][0]
+
+    - role: vitabaks.autobase.postgresql_extensions
+      when: inventory_hostname == groups['master'][0]
+
+    - role: vitabaks.autobase.postgresql_index_maintenance
+
+    - role: vitabaks.autobase.netdata
+
+  tasks:
+    - name: Create pgbackrest stanza
+      ansible.builtin.import_role:
+        name: vitabaks.autobase.pgbackrest
+        tasks_from: stanza_create
+      when: pgbackrest_install | default(false) | bool
+
+    - name: Install and configure pgbouncer
+      ansible.builtin.import_role:
+        name: vitabaks.autobase.pgbouncer
+        tasks_from: config
+      when: pgbouncer_install | default(true) | bool
+
+    # (optional) Command or script to be executed after the Postgres cluster deployment.
+    - block:
+        - name: Print post-deploy command
+          ansible.builtin.debug:
+            var: post_deploy_command
+          when: post_deploy_command_print | default(false) | bool
+
+        - name: Run post-deploy command
+          ansible.builtin.shell: "{{ post_deploy_command }} > {{ post_deploy_command_log | default('/var/tmp/post_deploy_command.log') }} 2>&1"
+          args:
+            executable: /bin/bash
+          register: post_deploy_result
+          delegate_to: "{{ item }}"
+          loop: "{{ post_deploy_command_hosts.split(',') | map('extract', groups) | list | flatten }}"
+          async: "{{ post_deploy_command_timeout }}" # run the command asynchronously
+          poll: 0
+
+        - name: Wait for the post-deploy command to complete
+          ansible.builtin.async_status:
+            jid: "{{ item.ansible_job_id }}"
+          register: post_deploy_job_result
+          delegate_to: "{{ item.item }}"
+          loop: "{{ post_deploy_result.results }}"
+          loop_control:
+            label: "{{ item.item }}"
+          until: post_deploy_job_result.finished
+          retries: "{{ (post_deploy_command_timeout | int) // 10 }}"
+          delay: 10
+          ignore_errors: true # allows to collect logs before stopping execution (in case of failure)
+          when:
+            - post_deploy_result.results is defined
+            - item.ansible_job_id is defined
+
+        - name: Get post-deploy command log
+          ansible.builtin.command: "cat {{ post_deploy_command_log | default('/var/tmp/post_deploy_command.log') }}"
+          register: post_deploy_log_content
+          delegate_to: "{{ item }}"
+          loop: "{{ post_deploy_command_hosts.split(',') | map('extract', groups) | list | flatten }}"
+          changed_when: false
+          when: post_deploy_command_print_result | default(false) | bool
+
+        - name: Print post-deploy command result
+          ansible.builtin.debug:
+            msg: "{{ item.stdout_lines }}"
+          loop: "{{ post_deploy_log_content.results }}"
+          loop_control:
+            label: "{{ item.item }}"
+          when:
+            - post_deploy_log_content.results is defined
+            - item.stdout_lines is defined
+
+        - name: Stop if post-deploy command failed
+          ansible.builtin.fail:
+            msg: "Post-deploy command failed. See log for details."
+          when: post_deploy_job_result.results | json_query('[?failed]') | length > 0
+      run_once: true # noqa run-once
+      when: post_deploy_command | default('') | length > 0
+      tags: post_deploy, post_deploy_command
+
+    # finish (info)
+    - name: Cluster deployment completed
+      ansible.builtin.import_role:
+        name: vitabaks.autobase.deploy_finish
+
+    - name: Synchronize external secrets
+      ansible.builtin.import_role:
+        name: vitabaks.autobase.secrets
+      when: secrets_provider | default('') | length > 0
+      tags: secrets

@@ -1,0 +1,26 @@
+---
+skip_list:
+  - command-instead-of-module
+  - command-instead-of-shell
+  - experimental
+  - ignore-errors
+  - no-changed-when
+  - no-handler
+  - no-relative-paths
+  - package-latest
+  - key-order[task]
+  - var-naming[no-role-prefix]
+  - yaml[indentation]
+  - yaml[line-length]
+  - name[missing]
+  - name[unique]
+  - name[template]
+  - name[casing] # TODO: All names should start with an uppercase letter.
+  - risky-file-permissions # TODO: File permissions unset or incorrect.
+  - role-name # TODO: Avoid using paths when importing roles. Role name XXX does not match ``^*$`` pattern.
+  - schema[playbook] # TODO: Use FQCN for `become_method`.
+  - schema[tasks] # TODO: Use FQCN for `become_method`.
+  - galaxy[no-changelog]
+
+exclude_paths:
+  - automation/molecule/

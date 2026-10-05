@@ -1,0 +1,216 @@
+{% macro default_server(rise) %}
+default-server inter {{ haproxy_default_server.inter }} fastinter {{ haproxy_default_server.fastinter }} fall {{ haproxy_default_server.fall }} rise {{ rise }}{% if haproxy_default_server.on_marked_down | default('') | length > 0 %} on-marked-down {{ haproxy_default_server.on_marked_down }}{% endif %}{% if patroni_restapi_protocol == 'https' %} check-ssl verify none{% endif %}
+{%- endmacro %}
+global
+    maxconn {{ haproxy_maxconn.global }}
+    log /dev/log    local0
+    log /dev/log    local1 notice
+    chroot /var/lib/haproxy
+    stats socket /run/haproxy/admin.sock mode 660 level admin expose-fd listeners
+    stats timeout 30s
+    user haproxy
+    group haproxy
+    daemon
+
+defaults
+    mode               tcp
+    log                global
+    option             tcplog
+{% if haproxy_log_format is defined %}
+    log-format         '{{ haproxy_log_format }}'
+{% endif %}
+    retries            2
+    timeout queue      5s
+    timeout connect    5s
+    timeout client     {{ haproxy_timeout.client }}
+    timeout server     {{ haproxy_timeout.server }}
+    timeout check      15s
+
+listen stats
+    mode http
+    bind {{ haproxy_bind_address | default(bind_address, true) }}:{{ haproxy_listen_port.stats }}
+    stats enable
+    stats uri /
+
+listen master
+{% if cluster_vip is defined and cluster_vip | length > 0 %}
+    bind {{ cluster_vip }}:{{ haproxy_listen_port.master }}
+{% else %}
+    bind {{ haproxy_bind_address | default(bind_address, true) }}:{{ haproxy_listen_port.master }}
+{% endif %}
+    maxconn {{ haproxy_maxconn.master }}
+    option httpchk OPTIONS /primary
+    http-check expect status 200
+    {{ default_server(haproxy_default_server.rise_master) }}
+{% if pgbouncer_install|bool %}
+  {% for host in groups['postgres_cluster'] %}
+server {{ hostvars[host]['ansible_hostname'] }} {{ hostvars[host]['patroni_bind_address'] | default(hostvars[host]['bind_address'], true) }}:{{ pgbouncer_listen_port }} check port {{ patroni_restapi_port }}
+  {% endfor %}
+{% endif %}
+{% if ( pgbouncer_install is not defined ) or ( not pgbouncer_install|bool ) %}
+  {% for host in groups['postgres_cluster'] %}
+server {{ hostvars[host]['ansible_hostname'] }} {{ hostvars[host]['patroni_bind_address'] | default(hostvars[host]['bind_address'], true) }}:{{ postgresql_port }} check port {{ patroni_restapi_port }}
+  {% endfor %}
+{% endif %}
+
+{% if pgbouncer_install|bool and haproxy_listen_port.master_direct is defined %}
+listen master_direct
+{% if cluster_vip is defined and cluster_vip | length > 0 %}
+    bind {{ cluster_vip }}:{{ haproxy_listen_port.master_direct }}
+{% else %}
+    bind {{ haproxy_bind_address | default(bind_address, true) }}:{{ haproxy_listen_port.master_direct }}
+{% endif %}
+    maxconn {{ haproxy_maxconn.master }}
+    option httpchk OPTIONS /primary
+    http-check expect status 200
+    {{ default_server(haproxy_default_server.rise_master) }}
+  {% for host in groups['postgres_cluster'] %}
+server {{ hostvars[host]['ansible_hostname'] }} {{ hostvars[host]['patroni_bind_address'] | default(hostvars[host]['bind_address'], true) }}:{{ postgresql_port }} check port {{ patroni_restapi_port }}
+  {% endfor %}
+{% endif %}
+
+listen replicas
+{% if cluster_vip is defined and cluster_vip | length > 0 %}
+    bind {{ cluster_vip }}:{{ haproxy_listen_port.replicas }}
+{% else %}
+    bind {{ haproxy_bind_address | default(bind_address, true) }}:{{ haproxy_listen_port.replicas }}
+{% endif %}
+    maxconn {{ haproxy_maxconn.replica }}
+    {% if balancer_tags | default('') | length > 0 %}
+    option httpchk OPTIONS /replica?lag={{ patroni_maximum_lag_on_replica }}{{ '&' + balancer_tags.split(',') | map('trim') | map('regex_replace', '([^=]+)=(.*)', 'tag_\\1=\\2') | join('&') }}
+    {% else %}
+    option httpchk OPTIONS /replica?lag={{ patroni_maximum_lag_on_replica }}
+    {% endif %}
+    balance roundrobin
+    http-check expect status 200
+    {{ default_server(haproxy_default_server.rise_replica) }}
+{% if pgbouncer_install|bool %}
+  {% for host in groups['postgres_cluster'] %}
+server {{ hostvars[host]['ansible_hostname'] }} {{ hostvars[host]['patroni_bind_address'] | default(hostvars[host]['bind_address'], true) }}:{{ pgbouncer_listen_port }} check port {{ patroni_restapi_port }}
+  {% endfor %}
+{% endif %}
+{% if ( pgbouncer_install is not defined ) or ( not pgbouncer_install|bool ) %}
+  {% for host in groups['postgres_cluster'] %}
+server {{ hostvars[host]['ansible_hostname'] }} {{ hostvars[host]['patroni_bind_address'] | default(hostvars[host]['bind_address'], true) }}:{{ postgresql_port }} check port {{ patroni_restapi_port }}
+  {% endfor %}
+{% endif %}
+
+{% if pgbouncer_install|bool and haproxy_listen_port.replicas_direct is defined %}
+listen replicas_direct
+{% if cluster_vip is defined and cluster_vip | length > 0 %}
+    bind {{ cluster_vip }}:{{ haproxy_listen_port.replicas_direct }}
+{% else %}
+    bind {{ haproxy_bind_address | default(bind_address, true) }}:{{ haproxy_listen_port.replicas_direct }}
+{% endif %}
+    maxconn {{ haproxy_maxconn.replica }}
+    {% if balancer_tags | default('') | length > 0 %}
+    option httpchk OPTIONS /replica?lag={{ patroni_maximum_lag_on_replica }}{{ '&' + balancer_tags.split(',') | map('trim') | map('regex_replace', '([^=]+)=(.*)', 'tag_\\1=\\2') | join('&') }}
+    {% else %}
+    option httpchk OPTIONS /replica?lag={{ patroni_maximum_lag_on_replica }}
+    {% endif %}
+    balance roundrobin
+    http-check expect status 200
+    {{ default_server(haproxy_default_server.rise_replica) }}
+  {% for host in groups['postgres_cluster'] %}
+server {{ hostvars[host]['ansible_hostname'] }} {{ hostvars[host]['patroni_bind_address'] | default(hostvars[host]['bind_address'], true) }}:{{ postgresql_port }} check port {{ patroni_restapi_port }}
+  {% endfor %}
+{% endif %}
+
+{% if haproxy_replicas_sync_enabled | bool %}
+listen replicas_sync
+{% if cluster_vip is defined and cluster_vip | length > 0 %}
+    bind {{ cluster_vip }}:{{ haproxy_listen_port.replicas_sync }}
+{% else %}
+    bind {{ haproxy_bind_address | default(bind_address, true) }}:{{ haproxy_listen_port.replicas_sync }}
+{% endif %}
+    maxconn {{ haproxy_maxconn.replica }}
+    {% if balancer_tags | default('') | length > 0 %}
+    option httpchk OPTIONS /sync{{ '?' + balancer_tags.split(',') | map('trim') | map('regex_replace', '([^=]+)=(.*)', 'tag_\\1=\\2') | join('&') }}
+    {% else %}
+    option httpchk OPTIONS /sync
+    {% endif %}
+    balance roundrobin
+    http-check expect status 200
+    {{ default_server(haproxy_default_server.rise_replica) }}
+{% if pgbouncer_install|bool %}
+  {% for host in groups['postgres_cluster'] %}
+server {{ hostvars[host]['ansible_hostname'] }} {{ hostvars[host]['patroni_bind_address'] | default(hostvars[host]['bind_address'], true) }}:{{ pgbouncer_listen_port }} check port {{ patroni_restapi_port }}
+  {% endfor %}
+{% endif %}
+{% if ( pgbouncer_install is not defined ) or ( not pgbouncer_install|bool ) %}
+  {% for host in groups['postgres_cluster'] %}
+server {{ hostvars[host]['ansible_hostname'] }} {{ hostvars[host]['patroni_bind_address'] | default(hostvars[host]['bind_address'], true) }}:{{ postgresql_port }} check port {{ patroni_restapi_port }}
+  {% endfor %}
+{% endif %}
+
+{% if pgbouncer_install|bool and haproxy_listen_port.replicas_sync_direct is defined %}
+listen replicas_sync_direct
+{% if cluster_vip is defined and cluster_vip | length > 0 %}
+    bind {{ cluster_vip }}:{{ haproxy_listen_port.replicas_sync_direct }}
+{% else %}
+    bind {{ haproxy_bind_address | default(bind_address, true) }}:{{ haproxy_listen_port.replicas_sync_direct }}
+{% endif %}
+    maxconn {{ haproxy_maxconn.replica }}
+    {% if balancer_tags | default('') | length > 0 %}
+    option httpchk OPTIONS /sync{{ '?' + balancer_tags.split(',') | map('trim') | map('regex_replace', '([^=]+)=(.*)', 'tag_\\1=\\2') | join('&') }}
+    {% else %}
+    option httpchk OPTIONS /sync
+    {% endif %}
+    balance roundrobin
+    http-check expect status 200
+    {{ default_server(haproxy_default_server.rise_replica) }}
+  {% for host in groups['postgres_cluster'] %}
+server {{ hostvars[host]['ansible_hostname'] }} {{ hostvars[host]['patroni_bind_address'] | default(hostvars[host]['bind_address'], true) }}:{{ postgresql_port }} check port {{ patroni_restapi_port }}
+  {% endfor %}
+{% endif %}
+{% endif %}
+
+{% if haproxy_replicas_async_enabled | bool %}
+listen replicas_async
+{% if cluster_vip is defined and cluster_vip | length > 0 %}
+    bind {{ cluster_vip }}:{{ haproxy_listen_port.replicas_async }}
+{% else %}
+    bind {{ haproxy_bind_address | default(bind_address, true) }}:{{ haproxy_listen_port.replicas_async }}
+{% endif %}
+    maxconn {{ haproxy_maxconn.replica }}
+    {% if balancer_tags | default('') | length > 0 %}
+    option httpchk OPTIONS /async?lag={{ patroni_maximum_lag_on_replica }}{{ '&' + balancer_tags.split(',') | map('trim') | map('regex_replace', '([^=]+)=(.*)', 'tag_\\1=\\2') | join('&') }}
+    {% else %}
+    option httpchk OPTIONS /async?lag={{ patroni_maximum_lag_on_replica }}
+    {% endif %}
+    balance roundrobin
+    http-check expect status 200
+    {{ default_server(haproxy_default_server.rise_replica) }}
+{% if pgbouncer_install|bool %}
+  {% for host in groups['postgres_cluster'] %}
+server {{ hostvars[host]['ansible_hostname'] }} {{ hostvars[host]['patroni_bind_address'] | default(hostvars[host]['bind_address'], true) }}:{{ pgbouncer_listen_port }} check port {{ patroni_restapi_port }}
+  {% endfor %}
+{% endif %}
+{% if ( pgbouncer_install is not defined ) or ( not pgbouncer_install|bool ) %}
+  {% for host in groups['postgres_cluster'] %}
+server {{ hostvars[host]['ansible_hostname'] }} {{ hostvars[host]['patroni_bind_address'] | default(hostvars[host]['bind_address'], true) }}:{{ postgresql_port }} check port {{ patroni_restapi_port }}
+  {% endfor %}
+{% endif %}
+
+{% if pgbouncer_install|bool and haproxy_listen_port.replicas_async_direct is defined %}
+listen replicas_async_direct
+{% if cluster_vip is defined and cluster_vip | length > 0 %}
+    bind {{ cluster_vip }}:{{ haproxy_listen_port.replicas_async_direct }}
+{% else %}
+    bind {{ haproxy_bind_address | default(bind_address, true) }}:{{ haproxy_listen_port.replicas_async_direct }}
+{% endif %}
+    maxconn {{ haproxy_maxconn.replica }}
+    {% if balancer_tags | default('') | length > 0 %}
+    option httpchk OPTIONS /async?lag={{ patroni_maximum_lag_on_replica }}{{ '&' + balancer_tags.split(',') | map('trim') | map('regex_replace', '([^=]+)=(.*)', 'tag_\\1=\\2') | join('&') }}
+    {% else %}
+    option httpchk OPTIONS /async?lag={{ patroni_maximum_lag_on_replica }}
+    {% endif %}
+    balance roundrobin
+    http-check expect status 200
+    {{ default_server(haproxy_default_server.rise_replica) }}
+  {% for host in groups['postgres_cluster'] %}
+server {{ hostvars[host]['ansible_hostname'] }} {{ hostvars[host]['patroni_bind_address'] | default(hostvars[host]['bind_address'], true) }}:{{ postgresql_port }} check port {{ patroni_restapi_port }}
+  {% endfor %}
+{% endif %}
+{% endif %}
+

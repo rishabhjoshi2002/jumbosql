@@ -1,0 +1,19 @@
+---
+- name: Create or modify PostgreSQL schemas
+  become: true
+  become_user: postgres
+  community.postgresql.postgresql_schema:
+    name: "{{ item.schema }}"
+    owner: "{{ item.owner }}"
+    login_db: "{{ item.db }}"
+    login_host: "127.0.0.1"
+    login_port: "{{ postgresql_port }}"
+    login_user: "{{ patroni_superuser_username }}"
+    login_password: "{{ patroni_superuser_password }}"
+    state: present
+  ignore_errors: "{{ postgresql_schemas_ignore_errors | default(false) }}"
+  loop: "{{ postgresql_schemas | flatten(1) }}"
+  when:
+    - postgresql_schemas | default('') | length > 0
+    - patroni_standby_cluster.host | default('') | length < 1 # do not perform on the standby cluster
+  tags: postgresql_schemas
