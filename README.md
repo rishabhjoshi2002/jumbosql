@@ -138,6 +138,15 @@ hostnames, IPs, suggested roles and the key to paste into JumboSQL. Sizes: `RAM_
 The VMs must be prepared as for your Ansible runs today: RHEL 9, registered, `glibc-langpack-en`, chrony,
 root SSH access, and the HA playbook not yet run on them.
 
+## Backups
+
+The HA automation creates the pgBackRest stanza and takes a first full backup at the end of every deployment.
+It only **schedules** backups when `backrest_backup_schedule` is set, so JumboSQL sets a default on the pgBackRest
+repository VM: **full on Sunday, incremental Monday to Saturday, at 01:00** (VM time zone), run as the PostgreSQL
+OS user through the automation's wrapper, which backs up only when Patroni reports a leader. They are systemd
+timers (`systemctl list-timers | grep jumbosql-backup` on the repository VM). If your `group_vars` set
+`backrest_backup_schedule`, yours is used instead. Check with `pgbackrest info` on the repository VM.
+
 ## Run the cluster (Patroni console)
 
 | Button | patronictl | What it does |
