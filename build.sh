@@ -41,6 +41,39 @@ build_console() {
   echo "built $CONSOLE_IMAGE"
 }
 
+# KVM host (libvirt NAT network): libvirt rejects new connections into its VM networks (virbr*) that come
+# from other networks, so the console container (docker0) can't reach Patroni on the VMs. Deploy containers use
+# the host network and are not affected. Allow docker0 -> virbr*, now and every time libvirt (re)starts a network.
+allow_console_to_vms() {
+  [[ -e /sys/class/net/docker0 ]] || return 0
+  ls /sys/class/net | grep -q '^virbr' || return 0
+  local nft_rule='iifname "docker0" oifname "virbr*" accept'
+  if nft list table ip libvirt_network >/dev/null 2>&1; then
+    nft list chain ip libvirt_network guest_input 2>/dev/null | grep -qF "$nft_rule" \
+      || nft insert rule ip libvirt_network guest_input $nft_rule
+  elif iptables -S LIBVIRT_FWI >/dev/null 2>&1; then
+    iptables -C LIBVIRT_FWI -i docker0 -o 'virbr+' -j ACCEPT 2>/dev/null \
+      || iptables -I LIBVIRT_FWI -i docker0 -o 'virbr+' -j ACCEPT
+  fi
+  if [[ -d /etc/libvirt && ! -e /etc/libvirt/hooks/network ]]; then
+    install -d /etc/libvirt/hooks
+    cat >/etc/libvirt/hooks/network <<'HOOK'
+#!/bin/bash
+# JumboSQL: let the console container (docker0) reach the VMs on libvirt networks (virbr*)
+if [ "$2" = started ]; then
+  nft list table ip libvirt_network >/dev/null 2>&1 \
+    && { nft list chain ip libvirt_network guest_input | grep -qF 'iifname "docker0" oifname "virbr*" accept' \
+         || nft insert rule ip libvirt_network guest_input iifname "docker0" oifname "virbr*" accept; } \
+    || { iptables -C LIBVIRT_FWI -i docker0 -o 'virbr+' -j ACCEPT 2>/dev/null \
+         || iptables -I LIBVIRT_FWI -i docker0 -o 'virbr+' -j ACCEPT; }
+fi
+HOOK
+    chmod +x /etc/libvirt/hooks/network
+    echo "installed /etc/libvirt/hooks/network (keeps the console -> VM rule after libvirt restarts)"
+  fi
+  echo "console container may reach the libvirt VM networks (docker0 -> virbr*)"
+}
+
 run_console() {
   if [[ -z "${JUMBOSQL_TOKEN:-}" ]]; then
     read -rsp "Console API token (also the first admin password): " JUMBOSQL_TOKEN; echo
@@ -78,6 +111,7 @@ run_console() {
     --volume /tmp/ansible:/tmp/ansible \
     --restart=unless-stopped \
     "$CONSOLE_IMAGE"
+  allow_console_to_vms || echo "warning: could not open docker0 -> virbr* (see README, KVM host)" >&2
   echo "JumboSQL console is starting on port ${JUMBOSQL_PORT:-80}. Sign in as: admin (first start only creates it)"
 }
 

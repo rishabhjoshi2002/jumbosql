@@ -73,6 +73,11 @@ Or step by step: `./build.sh automation`, `./build.sh console`, `./build.sh run`
 `JUMBOSQL_PORT=8081` picks another port. If your Patroni REST API needs a password, add
 `PATRONI_USERNAME=... PATRONI_PASSWORD=...`.
 
+**KVM host:** when the console runs on the same host as the libvirt VMs, `./build.sh run` also lets the console
+container (`docker0`) reach the VM networks (`virbr*`); libvirt rejects that traffic by default, which shows up as
+`connection refused` on the Patroni port. A hook in `/etc/libvirt/hooks/network` keeps the rule after libvirt
+restarts its networks.
+
 **4. Sign in** as `admin`. On the very first start the password is your token (`JUMBOSQL_TOKEN`), or
 `JUMBOSQL_ADMIN_PASSWORD` if you set it. Change it from the user menu, then add people in **Settings → Users**.
 
