@@ -22,6 +22,8 @@
 # DHCP reservations, the SSH key and the state file).
 
 set -Eeuo pipefail
+export LC_ALL=C LANG=C                                         # virsh/ip output in English, whatever the host locale
+export LIBVIRT_DEFAULT_URI="${LIBVIRT_DEFAULT_URI:-qemu:///system}"
 
 # ================================ settings (edit or override via env) ================================
 BASE_IMAGE="${BASE_IMAGE:-/root/rhel-9.8-x86_64-kvm.qcow2}"   # RHEL 9.x KVM guest image (qcow2)
@@ -126,6 +128,24 @@ ask_secret() {
 
 # ============================================== steps ==============================================
 
+check_network() {   # output captured first: no locale or pipefail/SIGPIPE surprises
+  local active all info vm used net_of_vms=""
+  active=$(virsh net-list --name 2>&1) || die "virsh cannot reach libvirt ($LIBVIRT_DEFAULT_URI): $active"
+  if grep -qxF "$NET" <<<"$active"; then return 0; fi
+
+  all=$(virsh net-list --all 2>&1 || true)
+  info=$(virsh net-info "$NET" 2>&1 || true)
+  # which network or bridge do the VMs already running here use?
+  for vm in $(virsh list --name 2>/dev/null); do
+    used=$(virsh domiflist "$vm" 2>/dev/null | awk 'NR>2 && NF {print $2 ":" $3}' || true)
+    [[ -n $used ]] && net_of_vms+="      $vm -> $used"$'\n'
+  done
+  printf '\n    libvirt networks on this host:\n%s\n' "$(sed 's/^/      /' <<<"$all")" >&2
+  printf '    virsh net-info %s:\n%s\n' "$NET" "$(sed 's/^/      /' <<<"$info")" >&2
+  [[ -n $net_of_vms ]] && printf '    running VMs use (type:source):\n%s' "$net_of_vms" >&2
+  die "libvirt network '$NET' is missing or not active. Start it (virsh net-start $NET; virsh net-autostart $NET) or run with NET=<name> SUBNET=<a.b.c> matching your VMs"
+}
+
 preflight() {
   step "Check the KVM host"
   [[ $EUID -eq 0 ]] || die "run this script as root"
@@ -139,7 +159,7 @@ preflight() {
   fi
   ok "required tools present"
 
-  virsh net-info "$NET" 2>/dev/null | grep -Eq '^Active:\s+yes' || die "libvirt network '$NET' is missing or not active"
+  check_network
   ok "libvirt network '$NET' is active"
 
   if [[ -e $TEMPLATE ]]; then
@@ -380,7 +400,7 @@ destroy_set() {
   confirm "Unregister and permanently delete these VMs and their disks?"
   SSH_KEY=$key
   while read -r n ip mac disk; do
-    if virsh domstate "$n" 2>/dev/null | grep -q running; then
+    if [[ $(virsh domstate "$n" 2>/dev/null || true) == running* ]]; then
       if [[ -f $SSH_KEY ]]; then
         run_secret "unregister $n from Red Hat" on "$ip" "subscription-manager unregister" || warn "could not unregister $n (remove it at console.redhat.com)"
       fi
