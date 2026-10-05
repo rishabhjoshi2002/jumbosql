@@ -8,6 +8,7 @@ import GithubIcon from '@assets/githubIcon.svg?react';
 import DocumentationIcon from '@assets/docsIcon.svg?react';
 import SupportIcon from '@assets/supportIcon.svg?react';
 import { DBDESK_URL } from '@shared/config/constants.ts';
+import ObservabilityIcon from '@mui/icons-material/InsightsOutlined';
 
 export const sidebarData = (t: TFunction) => {
   const items = [
@@ -25,6 +26,13 @@ export const sidebarData = (t: TFunction) => {
       path: RouterPaths.sqlEditor.absolutePath,
     });
   }
+
+  // JumboSQL: Grafana / Prometheus / Alertmanager per cluster
+  items.push({
+    icon: ObservabilityIcon,
+    label: t('observability', { ns: 'shared' }),
+    path: RouterPaths.observability.absolutePath,
+  });
 
   items.push({
     icon: OperationsIcon,

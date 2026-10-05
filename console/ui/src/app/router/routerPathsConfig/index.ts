@@ -2,6 +2,7 @@ import routerClustersPathsConfig from '@app/router/routerPathsConfig/routerClust
 import routerOperationsPathsConfig from '@app/router/routerPathsConfig/routerOperationsPathsConfig.ts';
 import routerSettingsPathsConfig from '@app/router/routerPathsConfig/routerSettingsPathsConfig.ts';
 import routerSqlEditorPathsConfig from '@app/router/routerPathsConfig/routerSqlEditorPathsConfig.ts';
+import routerObservabilityPathsConfig from '@app/router/routerPathsConfig/routerObservabilityPathsConfig.ts';
 
 /*
   Combines route paths into one config
@@ -17,6 +18,7 @@ const RouterPaths = {
   operations: routerOperationsPathsConfig,
   settings: routerSettingsPathsConfig,
   sqlEditor: routerSqlEditorPathsConfig,
+  observability: routerObservabilityPathsConfig,
 } as const;
 
 export default RouterPaths;
