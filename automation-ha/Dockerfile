@@ -23,13 +23,15 @@ COPY bundle/project     /ha/project
 
 COPY json_log.py         /ha/callback/json_log.py
 COPY inventory_to_ha.py  /ha/inventory_to_ha.py
-COPY jumbosql-deploy.yml /ha/project/jumbosql-deploy.yml
+COPY jumbosql-deploy.yml /ha/jumbosql-deploy.template.yml
+COPY make_deploy_playbook.py /ha/make_deploy_playbook.py
 COPY make_ansible_cfg.py /ha/make_ansible_cfg.py
 COPY entrypoint.sh       /ha/entrypoint.sh
 
 RUN set -e; \
     chmod +x /ha/entrypoint.sh; \
     test -f /ha/project/keen-ha.playbook.yml || { echo "keen-ha.playbook.yml missing in bundle/project - re-run pack-from-ansible-vm.sh"; exit 1; }; \
+    python3 /ha/make_deploy_playbook.py /ha/jumbosql-deploy.template.yml /ha/project/keen-ha.playbook.yml /ha/project/jumbosql-deploy.yml; \
     python3 /ha/make_ansible_cfg.py; \
     ANSIBLE_CONFIG=/ha/ansible.cfg ansible-galaxy collection list
 

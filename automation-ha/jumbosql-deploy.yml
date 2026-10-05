@@ -1,6 +1,9 @@
 ---
-# jumbosql-deploy.yml - copied into the HA playbook directory (next to keen-ha.playbook.yml, group_vars/ and
-# files/), so every relative path in the playbook resolves exactly as on the Ansible VM.
+# jumbosql-deploy.yml - template. At image build, make_deploy_playbook.py replaces the "Keen PostgreSQL HA"
+# entry below with the plays of keen-ha.playbook.yml (the HA collection needs `hosts:` on every play of the
+# playbook it runs, so import_playbook can't be used), and the result lands in the HA playbook directory next to
+# group_vars/ and files/, so every relative path resolves exactly as on the Ansible VM.
+# `roles: []` on our own plays: the HA collection also reads each play's roles.
 #
 # The two debug tasks are read by the JumboSQL console from the JSON log, by task name:
 #   "System info"                                       -> the database servers shown on the cluster page
@@ -10,6 +13,7 @@
 - name: JumboSQL - register database servers in the console
   hosts: patroni_cluster
   gather_facts: false
+  roles: []
   tasks:
     - name: System info
       ansible.builtin.debug:
@@ -25,6 +29,7 @@
 - name: JumboSQL - connection info for the console and the SQL editor
   hosts: haproxy_cluster
   gather_facts: false
+  roles: []
   tasks:
     - name: "vitabaks.autobase.deploy_finish : Connection info"
       run_once: true
