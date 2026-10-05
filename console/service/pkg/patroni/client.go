@@ -16,7 +16,7 @@ import (
 
 // Port is the Patroni REST API port used by the status client (JumboSQL: set from PG_CONSOLE_PATRONI_PORT at
 // startup, so the cluster status and the Patroni console use the same port).
-var Port = 8008
+var Port = 8009
 
 type IClient interface {
 	GetMonitoringInfo(ctx context.Context, host string) (*MonitoringInfo, error)

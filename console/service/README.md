@@ -67,7 +67,7 @@ PG_CONSOLE_CLUSTERWATCHER_POOLSIZE    Integer             4                     
 JumboSQL: Patroni REST API access for the switchover / restart / reinitialize actions:
 
 ```
-PG_CONSOLE_PATRONI_PORT               Integer             8008                                             Patroni REST API port on the database nodes
+PG_CONSOLE_PATRONI_PORT               Integer             8009                                             Patroni REST API port on the database nodes
 PG_CONSOLE_PATRONI_USERNAME           String                                                               Basic-auth user, if Patroni's restapi.authentication is set
 PG_CONSOLE_PATRONI_PASSWORD           String                                                               Basic-auth password
 PG_CONSOLE_PATRONI_TIMEOUT            Duration            30s                                              Timeout for Patroni actions

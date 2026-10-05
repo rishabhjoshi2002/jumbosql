@@ -53,7 +53,7 @@ type actions struct {
 
 func NewActions(cfg ActionsConfig) IActions {
 	if cfg.Port == 0 {
-		cfg.Port = 8008
+		cfg.Port = 8009
 	}
 	if cfg.Timeout == 0 {
 		cfg.Timeout = 30 * time.Second

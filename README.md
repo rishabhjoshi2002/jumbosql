@@ -28,7 +28,7 @@ collection (version **2.2.0**). Based on [Autobase](https://github.com/autobase-
                 ▼
             your RHEL 9 VMs: etcd · PostgreSQL + Patroni · HAProxy · PgBouncer · pgBackRest · monitoring
                 ▲
- console API ───┘  Patroni REST API (port 8008) for the Patroni console
+ console API ───┘  Patroni REST API (port 8009, the HA automation default) for cluster status and the Patroni console
 ```
 
 ## Install on the console VM (RHEL 9 with Docker)

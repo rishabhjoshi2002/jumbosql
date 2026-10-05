@@ -70,7 +70,7 @@ type Config struct {
 	}
 	// JumboSQL: Patroni REST API access for switchover / restart / reinitialize from the console.
 	Patroni struct {
-		Port     int           `envconfig:"patroni_port" default:"8008" desc:"Patroni REST API port on the database nodes"`
+		Port     int           `envconfig:"patroni_port" default:"8009" desc:"Patroni REST API port on the database nodes (the HA automation listens on 8009)"`
 		Username string        `envconfig:"patroni_username" default:"" desc:"Patroni REST API basic-auth user (restapi.authentication), if set"`
 		Password string        `envconfig:"patroni_password" default:"" desc:"Patroni REST API basic-auth password"`
 		Timeout  time.Duration `envconfig:"patroni_timeout" default:"30s" desc:"Timeout for Patroni actions (switchover, restart, reinitialize)"`
