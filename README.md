@@ -91,6 +91,24 @@ The token in `JUMBOSQL_TOKEN` stays valid as an **API token** for scripts.
 LDAP / SSO later: the API checks credentials through a provider interface (`console/service/internal/auth`),
 so an LDAP or OIDC provider is added next to the local one without touching the UI or the role rules.
 
+## Create the VMs (KVM host)
+
+`tools/jumbosql-vms.sh` creates and prepares RHEL 9 VMs and nothing else (no Ansible, no PostgreSQL). Run it as
+root on the KVM host:
+
+```bash
+./tools/jumbosql-vms.sh --dry-run            # real checks, prints every action, changes nothing
+./tools/jumbosql-vms.sh --name test1         # 3 VMs (default); --count 6 for a split layout
+./tools/jumbosql-vms.sh --list               # sets made by the script
+./tools/jumbosql-vms.sh --destroy test1      # unregister from Red Hat and delete the set
+```
+
+It picks free IPs on `192.168.122.0/24` (or `--ips A,B,C`), builds the VMs from the RHEL 9 KVM guest image
+(`BASE_IMAGE`, default `/root/rhel-9.8-x86_64-kvm.qcow2`), sets static IPs and DHCP reservations, registers them
+with Red Hat (prompted), installs `glibc-langpack-en` and `chrony`, and creates an SSH key for the set
+(`/root/.ssh/jumbosql-<set>`). If any step fails, everything that run created is rolled back. The summary prints the
+hostnames, IPs, suggested roles and the key to paste into JumboSQL. Sizes: `RAM_MB=4096 VCPUS=2 DISK=40G`.
+
 ## Create a cluster
 
 1. **Clusters → Create cluster**. In **Inventory (virtual machines)** add each VM (hostname, IP) and tick its roles.
@@ -138,6 +156,7 @@ console through an SSH tunnel, use a SOCKS proxy (`ssh -D 1080 root@<kvm-host>`)
 | `automation-ha` | the HA automation image: entrypoint, inventory check and conversion, wrapper playbook, pack script |
 | `automation` | Autobase's own automation (unused by JumboSQL, kept for upstream merges) |
 | `build.sh` | builds and runs everything |
+| `tools/jumbosql-vms.sh` | creates and prepares RHEL 9 VMs on the KVM host for a cluster |
 
 ## Tests
 
