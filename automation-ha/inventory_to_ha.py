@@ -11,7 +11,10 @@ The layout is checked again here, so a request sent straight to the API can't st
 
 Usage: inventory_to_ha.py INVENTORY_JSON EXTRA_VARS_JSON OUT_INVENTORY_YML OUT_EXTRA_VARS_JSON
 """
+import glob
 import json
+import os
+import re
 import sys
 
 HA_GROUPS = [
@@ -54,6 +57,36 @@ def check_layout(children):
     if clash:
         problems.append(f"HAProxy and PostgreSQL can't share a server (port 5432): {', '.join(clash)}")
     return problems
+
+
+def supported_pg_versions(root="/ha/collections/ansible_collections"):
+    """PostgreSQL major versions in the HA automation's package list (roles/pkgmgr), e.g. {13, 14, 15, 16, 17}.
+    Read from the collection itself, so a newer automation bundle brings its own list. Empty set = unknown."""
+    found = set()
+    pat = re.compile(r"\b(?:PG|pg|postgresql)[_-]?(1[0-9])\b|\bpostgresql(1[0-9])-server\b")
+    for f in glob.glob(os.path.join(root, "*", "*", "roles", "pkgmgr", "**", "*"), recursive=True):
+        if not os.path.isfile(f) or os.path.getsize(f) > 5_000_000:
+            continue
+        try:
+            with open(f, errors="ignore") as fh:
+                for m in pat.finditer(fh.read()):
+                    found.add(int(m.group(1) or m.group(2)))
+        except OSError:
+            pass
+    return found
+
+
+def check_pg_version(version):
+    if version in (None, "") or os.environ.get("JUMBOSQL_SKIP_VERSION_CHECK") == "1":
+        return
+    try:
+        major = int(str(version).split(".")[0])
+    except ValueError:
+        die(f"PostgreSQL version '{version}' is not a number")
+    known = supported_pg_versions()
+    if known and major not in known:
+        die(f"PostgreSQL {major} is not in this HA automation's package list (it has: "
+            f"{', '.join(str(v) for v in sorted(known))}). Choose one of those versions in the cluster form.")
 
 
 def yaml_scalar(v):
@@ -118,6 +151,7 @@ def main():
     # Only these console values reach the playbook; other form variables are dropped so they can't
     # override your group_vars.
     ha_ev = {}
+    check_pg_version(ev.get("postgresql_version"))
     if ev.get("postgresql_version") not in (None, ""):
         ha_ev["postgresql_version"] = str(ev["postgresql_version"])
     if ev.get("patroni_cluster_name"):
