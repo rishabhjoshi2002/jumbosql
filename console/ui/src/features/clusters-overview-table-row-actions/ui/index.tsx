@@ -17,6 +17,7 @@ import {
   usePostServersByIdRestartMutation,
 } from '@shared/api/api/patroni.ts';
 import { useParams } from 'react-router-dom';
+import { canManage, getSessionUser } from '@shared/lib/session.ts';
 
 const isLeaderRole = (role?: string) => role === 'leader' || role === 'standby_leader';
 
@@ -77,6 +78,14 @@ const ClustersOverviewTableRowActions: FC<TableRowActionsProps> = ({ closeMenu, 
       closeMenu();
     }
   };
+
+  if (!canManage(getSessionUser())) {
+    return [
+      <MenuItem key="readonly" disabled sx={{ m: 0 }}>
+        {t('readOnlyRole', { ns: 'clusters' })}
+      </MenuItem>,
+    ];
+  }
 
   return [
     <MenuItem key="switchover" onClick={handleSwitchover} disabled={isLeader} sx={{ m: 0 }}>

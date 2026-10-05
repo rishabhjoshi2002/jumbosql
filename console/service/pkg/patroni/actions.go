@@ -37,6 +37,12 @@ type IActions interface {
 	Restart(ctx context.Context, host string) (string, error)
 	// Reinitialize rebuilds the replica on host from the leader.
 	Reinitialize(ctx context.Context, host string) (string, error)
+	// Failover promotes candidate even without a healthy leader (patronictl failover).
+	Failover(ctx context.Context, host, candidate string) (string, error)
+	// Reload makes Patroni re-read its configuration on host (patronictl reload).
+	Reload(ctx context.Context, host string) (string, error)
+	// Raw sends any request and returns the decoded JSON (or the text) - used for history and config.
+	Raw(ctx context.Context, method, host, path string, body interface{}) (interface{}, error)
 }
 
 type actions struct {
@@ -165,4 +171,26 @@ func (a *actions) Restart(ctx context.Context, host string) (string, error) {
 func (a *actions) Reinitialize(ctx context.Context, host string) (string, error) {
 	body, err := a.do(ctx, http.MethodPost, host, "/reinitialize", map[string]interface{}{})
 	return strings.TrimSpace(string(body)), err
+}
+
+func (a *actions) Failover(ctx context.Context, host, candidate string) (string, error) {
+	body, err := a.do(ctx, http.MethodPost, host, "/failover", map[string]string{"candidate": candidate})
+	return strings.TrimSpace(string(body)), err
+}
+
+func (a *actions) Reload(ctx context.Context, host string) (string, error) {
+	body, err := a.do(ctx, http.MethodPost, host, "/reload", nil)
+	return strings.TrimSpace(string(body)), err
+}
+
+func (a *actions) Raw(ctx context.Context, method, host, path string, body interface{}) (interface{}, error) {
+	raw, err := a.do(ctx, method, host, path, body)
+	if err != nil {
+		return nil, err
+	}
+	var out interface{}
+	if json.Unmarshal(raw, &out) == nil {
+		return out, nil
+	}
+	return strings.TrimSpace(string(raw)), nil
 }

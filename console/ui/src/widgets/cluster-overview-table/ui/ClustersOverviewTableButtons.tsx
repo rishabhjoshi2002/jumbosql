@@ -8,6 +8,7 @@ import { usePostClustersByIdSwitchoverMutation } from '@shared/api/api/patroni.t
 import { handleRequestErrorCatch } from '@shared/lib/functions.ts';
 import { useParams } from 'react-router-dom';
 import RefreshGroup from '@features/refresh-group';
+import { canManage, getSessionUser } from '@shared/lib/session.ts';
 
 const ClustersOverviewTableButtons: FC = () => {
   const { t } = useTranslation('clusters');
@@ -34,14 +35,16 @@ const ClustersOverviewTableButtons: FC = () => {
 
   return (
     <Stack direction="row" justifyContent="flex-end" alignItems="center" gap="8px">
-      <Button
-        variant="outlined"
-        size="small"
-        startIcon={<SwapVertIcon />}
-        disabled={switchoverState.isLoading}
-        onClick={handleSwitchover}>
-        {t('patroniSwitchover')}
-      </Button>
+      {canManage(getSessionUser()) ? (
+        <Button
+          variant="outlined"
+          size="small"
+          startIcon={<SwapVertIcon />}
+          disabled={switchoverState.isLoading}
+          onClick={handleSwitchover}>
+          {t('patroniSwitchover')}
+        </Button>
+      ) : null}
       <RefreshGroup context="clusterOverview" onRefresh={handleRefresh} />
     </Stack>
   );

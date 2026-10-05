@@ -9,6 +9,7 @@ import { useQueryPolling } from '@shared/lib/hooks.tsx';
 import { useAppSelector } from '@app/redux/store/hooks.ts';
 import { selectPollingInterval } from '@app/redux/slices/pollingIntervalSlice/pollingIntervalSlice.ts';
 import Spinner from '@shared/ui/spinner';
+import PatroniConsole from '@widgets/patroni-console';
 
 const OverviewCluster: FC = () => {
   const { clusterId } = useParams();
@@ -30,6 +31,10 @@ const OverviewCluster: FC = () => {
           isLoading={cluster.isFetching}
           refetch={cluster.refetch}
         />
+      </Grid>
+      {/* JumboSQL: patronictl-equivalent commands for this cluster */}
+      <Grid item size={{ xs: 12 }}>
+        <PatroniConsole clusterId={Number(clusterId)} onChanged={cluster.refetch} />
       </Grid>
       <Grid item size={{ xs: 6 }}>
         <ConnectionInfo connectionInfo={connectionInfo} servers={cluster.data?.servers} />

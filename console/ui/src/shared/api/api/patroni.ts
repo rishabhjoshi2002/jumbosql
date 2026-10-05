@@ -11,6 +11,11 @@ const injectedRtkApi = api.injectEndpoints({
       }),
       invalidatesTags: (result, error, { id }) => [{ type: 'Clusters', id }],
     }),
+    postClustersByIdPatroni: build.mutation<PatroniCommandResponse, PatroniCommandArg>({
+      query: ({ id, ...body }) => ({ url: `/clusters/${id}/patroni`, method: 'POST', body }),
+      invalidatesTags: (result, error, { id, command }) =>
+        ['list', 'history', 'show-config'].includes(command) ? [] : [{ type: 'Clusters', id }],
+    }),
     postServersByIdRestart: build.mutation<PatroniActionResponse, ServerActionApiArg>({
       query: (queryArg) => ({ url: `/servers/${queryArg.id}/restart`, method: 'POST' }),
       invalidatesTags: (result, error, { clusterId }) => [{ type: 'Clusters', id: clusterId }],
@@ -41,7 +46,43 @@ export type ServerActionApiArg = {
   clusterId?: number | string;
 };
 
+export type PatroniCommand =
+  | 'list'
+  | 'history'
+  | 'show-config'
+  | 'edit-config'
+  | 'pause'
+  | 'resume'
+  | 'switchover'
+  | 'failover'
+  | 'restart'
+  | 'reinit'
+  | 'reload';
+export type PatroniCommandArg = {
+  id: number;
+  command: PatroniCommand;
+  member?: string;
+  candidate?: string;
+  config?: Record<string, unknown>;
+};
+export type PatroniMember = {
+  name: string;
+  role: string;
+  state: string;
+  host: string;
+  timeline?: number;
+  lag?: number | string;
+  pending_restart?: boolean;
+};
+export type PatroniCommandResponse = {
+  /** the equivalent patronictl command line */
+  command?: string;
+  message?: string;
+  data?: unknown;
+};
+
 export const {
+  usePostClustersByIdPatroniMutation,
   usePostClustersByIdSwitchoverMutation,
   usePostServersByIdRestartMutation,
   usePostServersByIdReinitializeMutation,
