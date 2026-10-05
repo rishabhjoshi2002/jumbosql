@@ -8,10 +8,15 @@ import (
 	"io"
 	"net/http"
 	"postgresql-cluster-console/pkg/tracer"
+	"strconv"
 	"time"
 
 	"github.com/rs/zerolog"
 )
+
+// Port is the Patroni REST API port used by the status client (JumboSQL: set from PG_CONSOLE_PATRONI_PORT at
+// startup, so the cluster status and the Patroni console use the same port).
+var Port = 8008
 
 type IClient interface {
 	GetMonitoringInfo(ctx context.Context, host string) (*MonitoringInfo, error)
@@ -46,7 +51,7 @@ func (c pClient) getJSON(ctx context.Context, host, path string, out interface{}
 	}
 
 	// Try HTTPS first
-	httpsURL := "https://" + host + ":8008" + path
+	httpsURL := "https://" + host + ":" + strconv.Itoa(Port) + path
 	reqHTTPS, err := http.NewRequestWithContext(ctx, http.MethodGet, httpsURL, nil)
 	var httpsErr error
 	if err == nil {
@@ -75,7 +80,7 @@ func (c pClient) getJSON(ctx context.Context, host, path string, out interface{}
 	}
 
 	// HTTP fallback
-	httpURL := "http://" + host + ":8008" + path
+	httpURL := "http://" + host + ":" + strconv.Itoa(Port) + path
 	reqHTTP, err := http.NewRequestWithContext(ctx, http.MethodGet, httpURL, nil)
 	if err != nil {
 		if httpsErr != nil {

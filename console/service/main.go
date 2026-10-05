@@ -98,6 +98,7 @@ func main() {
 	logAggregator := watcher.NewLogCollector(str, dockerManager)
 	defer logAggregator.Stop()
 
+	patroni.Port = cfg.Patroni.Port // JumboSQL: same Patroni port for cluster status and the Patroni console
 	clusterWatcher := watcher.NewServerWatcher(str, patroni.NewClient(log.Logger), cfg)
 	clusterWatcher.Run()
 	defer clusterWatcher.Stop()

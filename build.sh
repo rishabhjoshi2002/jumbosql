@@ -10,6 +10,7 @@
 #   JUMBOSQL_TOKEN       API token for scripts; also the first admin's password unless JUMBOSQL_ADMIN_PASSWORD is set
 #                        (asked for if unset on 'run'). People sign in as admin / <that password>.
 #   JUMBOSQL_PORT        published UI port                     (default 80)
+#   PATRONI_PORT                          Patroni REST API port on the database VMs (default 8008)
 #   PATRONI_USERNAME / PATRONI_PASSWORD   Patroni REST API basic auth, if your group_vars set restapi authentication
 #   JUMBOSQL_ADMIN_PASSWORD               first admin's password (default: the login token)
 #   JUMBOSQL_VAULT_PASSWORD               Ansible vault password for vault.yml (asked for if unset and not saved yet)
@@ -69,6 +70,7 @@ run_console() {
     ${JUMBOSQL_ADMIN_PASSWORD:+--env PG_CONSOLE_AUTH_ADMIN_PASSWORD="$JUMBOSQL_ADMIN_PASSWORD"} \
     --env PG_CONSOLE_DOCKER_IMAGE="$AUTOMATION_IMAGE" \
     "${VAULT_ARGS[@]}" \
+    ${PATRONI_PORT:+--env PG_CONSOLE_PATRONI_PORT="$PATRONI_PORT"} \
     ${PATRONI_USERNAME:+--env PG_CONSOLE_PATRONI_USERNAME="$PATRONI_USERNAME"} \
     ${PATRONI_PASSWORD:+--env PG_CONSOLE_PATRONI_PASSWORD="$PATRONI_PASSWORD"} \
     --volume jumbosql_console_db:/var/lib/postgresql \
