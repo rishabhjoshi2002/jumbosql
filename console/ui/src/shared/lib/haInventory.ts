@@ -127,6 +127,31 @@ export const buildHaInventory = (servers: HaServer[], ansibleUser = 'root'): HaI
   });
   if (Object.keys(monGroups).length) children.pgmonitor_cluster = { children: monGroups };
 
+  // every host needs a name variable: the HA preflight crashes on a host with no etcd_name / patroni_name /
+  // node_jobname, which happens when HAProxy, PgBouncer or a monitoring tool has a VM of its own
+  const NAME_VARS = ['etcd_name', 'patroni_name', 'node_jobname'];
+  const SHORT: Record<string, string> = {
+    haproxy_cluster: 'haproxy',
+    pgbouncer_cluster: 'pgbouncer',
+    prometheus_cluster: 'prometheus',
+    alertmanager_cluster: 'alertmanager',
+    grafana_cluster: 'grafana',
+  };
+  const named = new Set(
+    Object.values(children).flatMap((g) =>
+      Object.entries(g.hosts ?? {})
+        .filter(([, v]) => NAME_VARS.some((k) => v[k]))
+        .map(([ip]) => ip),
+    ),
+  );
+  Object.entries(SHORT).forEach(([group, short]) => {
+    Object.keys(children[group]?.hosts ?? {}).forEach((ip) => {
+      if (named.has(ip)) return;
+      children[group].hosts![ip] = { ...children[group].hosts![ip], node_jobname: `ip${octet(ip)}_${short}` };
+      named.add(ip);
+    });
+  });
+
   // console bookkeeping (server count / health), ignored by the automation
   children.master = { hosts: hosts(patroni.slice(0, 1), (s) => ({ hostname: s.hostname ?? s.ip! })) };
   children.replica = { hosts: hosts(patroni.slice(1), (s) => ({ hostname: s.hostname ?? s.ip! })) };

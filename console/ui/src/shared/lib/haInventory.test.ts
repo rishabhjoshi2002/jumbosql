@@ -49,6 +49,12 @@ describe('buildHaInventory', () => {
     expect(c.pgmonitor_cluster).toBeUndefined();
   });
 
+  it('adds no extra names on the combined layout (every host already has one)', () => {
+    const c = buildHaInventory(combined).all.children;
+    expect(c.haproxy_cluster.hosts).toEqual({ '192.168.122.27': {} });
+    expect(c.grafana_cluster.hosts).toEqual({ '192.168.122.27': {} });
+  });
+
   it('passes a custom SSH port as ansible_port', () => {
     const servers = combined.map((s, i) => (i === 1 ? { ...s, sshPort: '2222' } : s));
     expect(buildHaInventory(servers).all.children.patroni_cluster.hosts!['192.168.122.24'].ansible_port).toBe(2222);
@@ -141,8 +147,9 @@ describe('separate VM for every role', () => {
       'alertmanager_cluster',
       'grafana_cluster',
     ]);
-    expect(Object.keys(c.haproxy_cluster.hosts!)).toEqual(['10.0.0.26']);
-    expect(Object.keys(c.pgbouncer_cluster.hosts!)).toEqual(['10.0.0.27']);
+    expect(c.haproxy_cluster.hosts).toEqual({ '10.0.0.26': { node_jobname: 'ip26_haproxy' } });
+    expect(c.pgbouncer_cluster.hosts).toEqual({ '10.0.0.27': { node_jobname: 'ip27_pgbouncer' } });
+    expect(c.grafana_cluster.hosts).toEqual({ '10.0.0.31': { node_jobname: 'ip31_grafana' } });
     expect(c.backrest_cluster.hosts).toEqual({ '10.0.0.28': { node_jobname: 'ip28_util' } });
     expect(Object.keys(c.patroni_cluster.hosts!)).toHaveLength(3);
   });
