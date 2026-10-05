@@ -14,7 +14,7 @@ collection (version **2.2.0**). Based on [Autobase](https://github.com/autobase-
 | **Create cluster** | **Inventory step**: add each VM (or **Import VM list** from the VM script), tick its roles (etcd, PostgreSQL + Patroni, HAProxy, PgBouncer, pgBackRest repo, Prometheus, Alertmanager, Grafana). One VM can hold one role or several. Live `inventory.yml` preview and download; the layout rules are checked as you type. |
 | **Patroni console** | On each cluster page: `list`, `history`, `show-config`, `edit-config`, `pause`/`resume`, `switchover`, `failover`, `restart`, `reload`, `reinit` and a **rolling restart**. Every result shows the equivalent `patronictl` command. |
 | **Observability** | One page with each cluster's **Grafana, Prometheus and Alertmanager**, taken from the VMs with those roles; URLs can be overridden per cluster; Grafana can be shown inside the console. |
-| **SQL editor** | Connects through HAProxy's read-write port, so it always reaches the current Patroni leader. |
+| **SQL editor** | Built-in, pgAdmin-style query tool: object browser (schemas, tables with columns, views, functions, sequences), query tabs, every statement's result (also `SHOW`, `EXPLAIN`, `RETURNING`), Messages with notices and errors (SQLSTATE, detail, hint, position marked in the editor), Explain / Explain analyze, Cancel, CSV export, query history. Runs through HAProxy's read-write port, so always on the current Patroni leader. Admin and operator only. |
 | **Branding** | JumboSQL look (navy and logo blue), with a light watermark on every page: *JumboSQL, managed by Keen & Able Computers Pvt. Ltd.* |
 
 ## How it fits together

@@ -7,7 +7,6 @@ import SqlEditorIcon from '@assets/SqlEditorIcon.svg?react';
 import GithubIcon from '@assets/githubIcon.svg?react';
 import DocumentationIcon from '@assets/docsIcon.svg?react';
 import SupportIcon from '@assets/supportIcon.svg?react';
-import { DBDESK_URL } from '@shared/config/constants.ts';
 import ObservabilityIcon from '@mui/icons-material/InsightsOutlined';
 
 export const sidebarData = (t: TFunction) => {
@@ -19,13 +18,12 @@ export const sidebarData = (t: TFunction) => {
     },
   ];
 
-  if (DBDESK_URL) {
-    items.push({
-      icon: SqlEditorIcon,
-      label: t('sqlEditor', { ns: 'shared' }),
-      path: RouterPaths.sqlEditor.absolutePath,
-    });
-  }
+  // JumboSQL: built-in SQL editor (pgAdmin-style query tool, runs through the console API)
+  items.push({
+    icon: SqlEditorIcon,
+    label: t('sqlEditor', { ns: 'shared' }),
+    path: RouterPaths.sqlEditor.absolutePath,
+  });
 
   // JumboSQL: Grafana / Prometheus / Alertmanager per cluster
   items.push({

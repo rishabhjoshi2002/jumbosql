@@ -153,6 +153,11 @@ func NewService(
 	api.ClusterPostServersIDReinitializeHandler = cluster.NewPostServerReinitializeHandler(db, log.Logger, patroniActions, clusterWatcher)
 	api.ClusterPostClustersIDPatroniHandler = cluster.NewPostClusterPatroniHandler(db, log.Logger, patroniActions, clusterWatcher)
 
+	// JumboSQL: SQL editor (runs scripts through HAProxy's read-write port, returns every result set)
+	sqlRun, sqlCancel := cluster.NewSQLHandlers(db, log.Logger, cfg.DbDesk.SSLMode)
+	api.ClusterPostClustersIDSQLHandler = sqlRun
+	api.ClusterPostClustersIDSQLCancelHandler = sqlCancel
+
 	api.SystemGetVersionHandler = system.GetVersionHandlerFunc(func(params system.GetVersionParams) middleware.Responder {
 		return system.NewGetVersionOK().WithPayload(&models.ResponseVersion{
 			Version: version,

@@ -657,6 +657,56 @@ paths:
           schema:
             $ref: "#/definitions/Response.Error"
 
+  /clusters/{id}/sql:
+    post:
+      summary: "JumboSQL: run a SQL script on the cluster (through HAProxy's read-write port) and return every result set"
+      tags:
+        - cluster
+      parameters:
+        - name: id
+          in: path
+          required: true
+          type: integer
+        - name: body
+          in: body
+          required: true
+          schema:
+            $ref: "#/definitions/Request.SqlRun"
+      responses:
+        '200':
+          description: OK (SQL errors are reported in the payload's error field)
+          schema:
+            $ref: "#/definitions/Response.SqlRun"
+        '400':
+          description: Error
+          schema:
+            $ref: "#/definitions/Response.Error"
+
+  /clusters/{id}/sql/cancel:
+    post:
+      summary: "JumboSQL: cancel a running SQL editor script"
+      tags:
+        - cluster
+      parameters:
+        - name: id
+          in: path
+          required: true
+          type: integer
+        - name: body
+          in: body
+          required: true
+          schema:
+            $ref: "#/definitions/Request.SqlCancel"
+      responses:
+        '200':
+          description: OK
+          schema:
+            $ref: "#/definitions/Response.SqlCancel"
+        '400':
+          description: Error
+          schema:
+            $ref: "#/definitions/Response.Error"
+
   /projects:
     post:
       summary: "Create new project"
@@ -1080,6 +1130,117 @@ definitions:
         type: string
       data:
         type: object
+
+  Request.SqlRun:
+    type: object
+    required: [sql]
+    properties:
+      sql:
+        type: string
+        description: One or more SQL statements
+      database:
+        type: string
+        description: Database to connect to (default postgres)
+      max_rows:
+        type: integer
+        description: Rows kept per result set (default 1000, max 100000)
+      timeout_seconds:
+        type: integer
+        description: Stop the script after this many seconds (default 300)
+      run_id:
+        type: string
+        description: Client-chosen id, used to cancel the run
+
+  Response.SqlRun:
+    type: object
+    properties:
+      results:
+        type: array
+        items:
+          $ref: "#/definitions/SqlResultSet"
+      notices:
+        type: array
+        items:
+          type: string
+      error:
+        $ref: "#/definitions/SqlError"
+      cancelled:
+        type: boolean
+      duration_ms:
+        type: number
+      server:
+        type: string
+        description: Address of the PostgreSQL node that ran the script (the leader)
+      database:
+        type: string
+
+  SqlResultSet:
+    type: object
+    properties:
+      statement:
+        type: integer
+      columns:
+        type: array
+        items:
+          $ref: "#/definitions/SqlColumn"
+      rows:
+        type: array
+        items:
+          type: array
+          items:
+            type: string
+            x-nullable: true
+      row_count:
+        type: integer
+      truncated:
+        type: boolean
+      command_tag:
+        type: string
+      duration_ms:
+        type: number
+
+  SqlColumn:
+    type: object
+    properties:
+      name:
+        type: string
+      type:
+        type: string
+      type_oid:
+        type: integer
+
+  SqlError:
+    type: object
+    properties:
+      message:
+        type: string
+      severity:
+        type: string
+      sqlstate:
+        type: string
+      detail:
+        type: string
+      hint:
+        type: string
+      position:
+        type: integer
+      where:
+        type: string
+      statement:
+        type: integer
+
+  Request.SqlCancel:
+    type: object
+    required: [run_id]
+    properties:
+      run_id:
+        type: string
+
+  Response.SqlCancel:
+    type: object
+    properties:
+      cancelled:
+        type: boolean
 
   Response.Error:
     title: Error object
