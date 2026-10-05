@@ -1,0 +1,10 @@
+JumboSQL
+Copyright (c) 2026 Rishabh Joshi
+
+This product is a modified version of Autobase (https://github.com/autobase-tech/autobase),
+Copyright (c) 2019-2026 Vitaliy Kukharik, Autobase.tech, released under the MIT License (see LICENSE).
+Imported from upstream commit fd9c946.
+
+JumboSQL deploys clusters with Crunchy Postgres for Ansible (crunchydata.pg 2.2.0), which is licensed
+separately by Crunchy Data. The CPA collection is NOT part of this repository; it is copied from your own
+licensed installation at build time (automation-cpa/pack-from-ansible-vm.sh).
