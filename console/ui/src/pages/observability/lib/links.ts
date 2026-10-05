@@ -1,6 +1,6 @@
 /**
  * JumboSQL: where each cluster's monitoring lives. The monitoring VM comes from the cluster's inventory
- * (the VM with the Monitoring role -> prometheus/grafana/alertmanager groups); the ports are the pgMonitor
+ * (the VMs with the Prometheus, Grafana and Alertmanager roles -> their inventory groups); the ports are the pgMonitor
  * defaults. Any URL can be overridden per cluster, e.g. when Grafana sits behind a proxy or a DNS name.
  */
 export const OBSERVABILITY_TOOLS = ['grafana', 'prometheus', 'alertmanager'] as const;

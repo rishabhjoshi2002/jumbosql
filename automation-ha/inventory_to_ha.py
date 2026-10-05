@@ -44,6 +44,12 @@ def check_layout(children):
         problems.append("PgBouncer needs at least 1 server")
     if len(backrest) != 1:
         problems.append(f"pgBackRest repo must be exactly 1 server (got {len(backrest)})")
+    mon = {g: hosts(children, g) for g in ("prometheus_cluster", "alertmanager_cluster", "grafana_cluster")}
+    for g, h in mon.items():
+        if len(h) > 1:
+            problems.append(f"{g.split('_')[0]} can be on 1 server at most (got {len(h)})")
+    if any(mon.values()) and not all(mon.values()):
+        problems.append("Prometheus, Alertmanager and Grafana go together: give each one a VM, or none")
     clash = sorted(set(haproxy) & set(patroni))
     if clash:
         problems.append(f"HAProxy and PostgreSQL can't share a server (port 5432): {', '.join(clash)}")
@@ -122,10 +128,10 @@ def main():
         json.dump(ha_ev, f)
 
     for g in ("etcd_cluster", "patroni_cluster", "haproxy_cluster", "pgbouncer_cluster", "backrest_cluster",
-              "prometheus_cluster"):
+              "prometheus_cluster", "alertmanager_cluster", "grafana_cluster"):
         if g in children:
-            print(f"[jumbosql] {g:<18} {', '.join(hosts(children, g))}")
-    print(f"[jumbosql] variables          {json.dumps(ha_ev)}")
+            print(f"[jumbosql] {g:<20} {', '.join(hosts(children, g))}")
+    print(f"[jumbosql] variables            {json.dumps(ha_ev)}")
 
 
 if __name__ == "__main__":

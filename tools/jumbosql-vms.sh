@@ -3,21 +3,30 @@
 # jumbosql-vms.sh - create RHEL 9 VMs for a JumboSQL cluster on a KVM host. Nothing else: no Ansible,
 #                   no PostgreSQL. JumboSQL deploys the cluster onto these VMs from its web console.
 #
+# Layouts:
+#   combined (default)  --count N VMs (default 3): VM 1 = util (etcd, HAProxy, PgBouncer, pgBackRest,
+#                       Prometheus, Alertmanager, Grafana), the others = PostgreSQL + Patroni (+ etcd)
+#   split               one VM per role: 3 etcd, --db N PostgreSQL + Patroni (default 3), HAProxy,
+#                       PgBouncer, pgBackRest, Prometheus, Alertmanager, Grafana  (12 VMs by default)
+#
 # Each VM gets:
 #   - a free static IP on the libvirt network (picked automatically, or --ips), reserved in libvirt DHCP
-#   - hostname <set>-<last octet>-vm<n>, root password (prompted), root SSH login
+#   - hostname <set>-<role> (e.g. js1-etcd1, js1-pg2, js1-grafana), root password (prompted), root SSH login
 #   - an SSH key made for this set (/root/.ssh/jumbosql-<set>) - paste the private key into JumboSQL
 #   - Red Hat registration (prompted), glibc-langpack-en, chrony, python3
 #
 # Usage (as root on the KVM host):
-#   ./jumbosql-vms.sh [--name SET] [--count N] [--ips A,B,C]   create a set (default: 3 VMs)
+#   ./jumbosql-vms.sh [--name SET] [--count N] [--ips A,B,C]   create a set (default: 3 VMs, combined)
+#   ./jumbosql-vms.sh --layout split [--db N] [--name SET]      a separate VM for every role
 #   ./jumbosql-vms.sh --dry-run [...]                          real checks, print every action, change nothing
 #   ./jumbosql-vms.sh --no-rollback [...]                      keep what was built if a step fails
 #   ./jumbosql-vms.sh --list                                   list sets made by this script
 #   ./jumbosql-vms.sh --destroy SET                            unregister and delete a set's VMs
 #   ./jumbosql-vms.sh --yes                                    don't ask for confirmation
 #
-# Sizes per VM (env): RAM_MB=4096 VCPUS=2 DISK=40G.  Other settings: see "settings" below.
+# Sizes (env): combined: RAM_MB=4096 DISK=40G for every VM.  split: PostgreSQL VMs RAM_DB=4096 DISK_DB=40G,
+# pgBackRest VM RAM_SMALL + DISK_REPO=60G, all others RAM_SMALL=2048 DISK_SMALL=20G.  VCPUS=2 for all.
+# The VM list for JumboSQL's "Import VM list" is written to /root/jumbosql-<set>-vms.txt.
 # On failure everything this run created is undone in reverse order (Red Hat registrations, VMs, disks,
 # DHCP reservations, the SSH key and the state file).
 
@@ -41,14 +50,20 @@ TIMEZONE="${TIMEZONE:-Asia/Kolkata}"
 RAM_MB="${RAM_MB:-4096}"
 VCPUS="${VCPUS:-2}"
 DISK="${DISK:-40G}"
+RAM_DB="${RAM_DB:-4096}"                                      # split layout sizes
+DISK_DB="${DISK_DB:-40G}"
+RAM_SMALL="${RAM_SMALL:-2048}"
+DISK_SMALL="${DISK_SMALL:-20G}"
+DISK_REPO="${DISK_REPO:-60G}"
 EXTRA_PUBKEYS="${EXTRA_PUBKEYS:-/root/.ssh/id_rsa.pub /root/.ssh/id_ed25519.pub}"  # also allowed to log in, if present
 STATE_DIR="${STATE_DIR:-/var/lib/jumbosql-vms}"
 # ======================================================================================================
 
 DRY_RUN=0 NO_ROLLBACK=0 ASSUME_YES=0 MODE=create
-SET_NAME="" COUNT=3 IPS_ARG="" DESTROY_SET=""
+SET_NAME="" COUNT=3 COUNT_SET=0 LAYOUT=combined DB_COUNT=3 IPS_ARG="" DESTROY_SET=""
 UNDO=() STEP_NO=0 CURRENT_STEP="startup" WORKDIR="" LOG="" ROOT_PART="" SSH_KEY=""
 V_NAME=() V_IP=() V_MAC=()
+L_SUFFIX=() L_ROLES=() L_RAM=() L_DISK=()   # the layout: one entry per VM
 SSH_OPTS=(-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR
           -o BatchMode=yes -o ConnectTimeout=5 -o ServerAliveInterval=30)
 
@@ -146,6 +161,31 @@ check_network() {   # output captured first: no locale or pipefail/SIGPIPE surpr
   die "libvirt network '$NET' is missing or not active. Start it (virsh net-start $NET; virsh net-autostart $NET) or run with NET=<name> SUBNET=<a.b.c> matching your VMs"
 }
 
+add_vm() { L_SUFFIX+=("$1"); L_ROLES+=("$2"); L_RAM+=("$3"); L_DISK+=("$4"); }
+
+build_layout() {   # role names are the ones JumboSQL's inventory step uses
+  local i etcd_n
+  if [[ $LAYOUT == split ]]; then
+    for i in 1 2 3; do add_vm "etcd$i" etcd "$RAM_SMALL" "$DISK_SMALL"; done
+    for (( i = 1; i <= DB_COUNT; i++ )); do add_vm "pg$i" patroni "$RAM_DB" "$DISK_DB"; done
+    add_vm haproxy      haproxy      "$RAM_SMALL" "$DISK_SMALL"
+    add_vm pgbouncer    pgbouncer    "$RAM_SMALL" "$DISK_SMALL"
+    add_vm backrest     backrest     "$RAM_SMALL" "$DISK_REPO"
+    add_vm prometheus   prometheus   "$RAM_SMALL" "$DISK_SMALL"
+    add_vm alertmanager alertmanager "$RAM_SMALL" "$DISK_SMALL"
+    add_vm grafana      grafana      "$RAM_SMALL" "$DISK_SMALL"
+  else
+    # etcd on an odd number of VMs (max 5), starting with the util VM
+    etcd_n=$(( COUNT % 2 ? COUNT : COUNT - 1 )); (( etcd_n > 5 )) && etcd_n=5
+    add_vm util "etcd,haproxy,pgbouncer,backrest,prometheus,alertmanager,grafana" "$RAM_MB" "$DISK"
+    for (( i = 2; i <= COUNT; i++ )); do
+      if (( i <= etcd_n )); then add_vm "db$((i - 1))" "etcd,patroni" "$RAM_MB" "$DISK"
+      else add_vm "db$((i - 1))" patroni "$RAM_MB" "$DISK"; fi
+    done
+  fi
+  COUNT=${#L_SUFFIX[@]}
+}
+
 preflight() {
   step "Check the KVM host"
   [[ $EUID -eq 0 ]] || die "run this script as root"
@@ -173,12 +213,12 @@ preflight() {
   if [[ -z $ROOT_PART ]]; then ROOT_PART=/dev/sda4; warn "could not detect the root partition, assuming $ROOT_PART"; fi
   ok "root partition $ROOT_PART"
 
-  local need avail free
-  need=$(( COUNT * RAM_MB ))
+  local need=0 avail free r
+  for r in "${L_RAM[@]}"; do need=$(( need + r )); done
   avail=$(awk '/MemAvailable/ {print int($2/1024)}' /proc/meminfo)
   if (( avail < need )); then warn "the VMs need ${need} MB RAM, only ${avail} MB available"; else ok "RAM: ${need} MB needed, ${avail} MB available"; fi
   free=$(df -Pm "$IMG_DIR" | awk 'NR==2 {print int($4/1024)}')
-  if (( free < 20 * COUNT )); then warn "only ${free} GB free in $IMG_DIR"; else ok "disk: ${free} GB free in $IMG_DIR"; fi
+  if (( free < 25 * COUNT )); then warn "only ${free} GB free in $IMG_DIR"; else ok "disk: ${free} GB free in $IMG_DIR"; fi
 }
 
 ip_in_use() {   # libvirt leases/reservations, ARP neighbours, ping
@@ -217,7 +257,7 @@ choose_ips() {
 
   local i
   for i in "${!V_IP[@]}"; do
-    V_NAME+=("$SET_NAME-${V_IP[i]##*.}-vm$((i + 1))")
+    V_NAME+=("$SET_NAME-${L_SUFFIX[i]}")
     V_MAC+=("$(printf '52:54:00:%02x:%02x:%02x' $((RANDOM % 256)) $((RANDOM % 256)) $((RANDOM % 256)))")
     if virsh dominfo "${V_NAME[i]}" &>/dev/null; then die "VM ${V_NAME[i]} already exists"; fi
     if [[ -e $IMG_DIR/${V_NAME[i]}.qcow2 ]]; then die "disk $IMG_DIR/${V_NAME[i]}.qcow2 already exists"; fi
@@ -243,9 +283,9 @@ collect_inputs() {
 show_plan() {
   step "Plan"
   local i
-  printf '    %-24s %-16s %-8s %-6s %s\n' NAME IP RAM_MB VCPUS DISK
+  printf '    %-26s %-16s %-7s %-6s %-5s %s\n' NAME IP RAM_MB VCPUS DISK ROLES
   for i in "${!V_NAME[@]}"; do
-    printf '    %-24s %-16s %-8s %-6s %s\n' "${V_NAME[i]}" "${V_IP[i]}" "$RAM_MB" "$VCPUS" "$DISK"
+    printf '    %-26s %-16s %-7s %-6s %-5s %s\n' "${V_NAME[i]}" "${V_IP[i]}" "${L_RAM[i]}" "$VCPUS" "${L_DISK[i]}" "${L_ROLES[i]}"
   done
   echo "    RHEL 9, registered with Red Hat, glibc-langpack-en + chrony; no PostgreSQL, no Ansible."
   echo "    SSH key for JumboSQL: /root/.ssh/jumbosql-$SET_NAME"
@@ -305,7 +345,7 @@ EOF
     else
       warn "could not reserve $ip in libvirt DHCP (the VM uses a static IP anyway)"
     fi
-    run qemu-img create -q -f qcow2 "$disk" "$DISK"
+    run qemu-img create -q -f qcow2 "$disk" "${L_DISK[i]}"
     push_undo "rm -f '$disk'"
     run virt-resize --quiet --expand "$ROOT_PART" "$TEMPLATE" "$disk"
     run virt-customize -q -a "$disk" \
@@ -317,7 +357,7 @@ EOF
       --chmod "0600:/etc/NetworkManager/system-connections/jumbosql-static.nmconnection" \
       "${hosts[@]}" \
       --selinux-relabel
-    run virt-install --name "$n" --memory "$RAM_MB" --vcpus "$VCPUS" \
+    run virt-install --name "$n" --memory "${L_RAM[i]}" --vcpus "$VCPUS" \
       --disk "path=$disk,format=qcow2,bus=virtio" \
       --network "network=$NET,model=virtio,mac=$mac" \
       --os-variant "$OS_VARIANT" --import --autostart \
@@ -376,7 +416,8 @@ save_state() {
   install -d -m 700 "$STATE_DIR"
   local i f=$STATE_DIR/$SET_NAME.state
   { echo "# jumbosql-vms set $SET_NAME, created $(date -Is)"; echo "KEY=$SSH_KEY"
-    for i in "${!V_NAME[@]}"; do echo "VM=${V_NAME[i]} ${V_IP[i]} ${V_MAC[i]} $IMG_DIR/${V_NAME[i]}.qcow2"; done; } >"$f"
+    for i in "${!V_NAME[@]}"; do echo "VM=${V_NAME[i]} ${V_IP[i]} ${V_MAC[i]} $IMG_DIR/${V_NAME[i]}.qcow2"; done
+    for i in "${!V_NAME[@]}"; do echo "ROLE=${V_NAME[i]} ${L_ROLES[i]}"; done; } >"$f"
   push_undo "rm -f '$f'"
 }
 
@@ -386,7 +427,8 @@ list_sets() {
   for f in "$STATE_DIR"/*.state; do
     found=1
     echo "== $(basename "$f" .state)   ($(sed -n 1p "$f" | sed 's/.*created //'))"
-    awk '/^VM=/ {sub("VM=",""); printf "   %-24s %-16s %s\n", $1, $2, $4}' "$f"
+    awk '/^ROLE=/ {sub("ROLE=",""); role[$1]=$2} /^VM=/ {sub("VM=",""); n[++c]=$1; ip[c]=$2}
+         END {for (i = 1; i <= c; i++) printf "   %-26s %-16s %s\n", n[i], ip[i], role[n[i]]}' "$f"
   done
   (( found )) || echo "no sets in $STATE_DIR"
 }
@@ -412,22 +454,22 @@ destroy_set() {
     run ssh-keygen -R "$ip" >/dev/null 2>&1 || true
   done < <(awk '/^VM=/ {sub("VM=",""); print}' "$f")
   if [[ -n $key ]]; then run rm -f "$key" "$key.pub"; fi
-  run rm -f "$f"
+  run rm -f "$f" "/root/jumbosql-$DESTROY_SET-vms.txt"
   ok "set $DESTROY_SET removed"
 }
 
 summary() {
   step "Done: set $SET_NAME"
-  local i
+  local i list=/root/jumbosql-$SET_NAME-vms.txt
+  if (( ! DRY_RUN )); then
+    { echo "# JumboSQL VM list, set $SET_NAME ($LAYOUT layout): hostname ip roles"
+      for i in "${!V_NAME[@]}"; do printf '%-26s %-16s %s\n' "${V_NAME[i]}" "${V_IP[i]}" "${L_ROLES[i]}"; done
+    } >"$list"
+  fi
   echo
-  echo "    Enter these in JumboSQL: Clusters -> Create cluster -> Inventory (virtual machines)"
+  echo "    JumboSQL: Clusters -> Create cluster -> Inventory -> Import VM list, paste this ($list):"
   echo
-  printf '    %-8s %-24s %-16s %s\n' SERVER HOSTNAME IP "SUGGESTED ROLES"
-  for i in "${!V_NAME[@]}"; do
-    local roles="etcd, PostgreSQL + Patroni"
-    if (( i == 0 )); then roles="etcd, HAProxy, PgBouncer, pgBackRest repo, Monitoring"; fi
-    printf '    %-8s %-24s %-16s %s\n' "$((i + 1))" "${V_NAME[i]}" "${V_IP[i]}" "$roles"
-  done
+  for i in "${!V_NAME[@]}"; do printf '      %-26s %-16s %s\n' "${V_NAME[i]}" "${V_IP[i]}" "${L_ROLES[i]}"; done
   cat <<EOF
 
     Authentication in the form:  SSH key,  username: root
@@ -444,7 +486,9 @@ main() {
   while (( $# )); do
     case $1 in
       --name)        SET_NAME=${2:?--name needs a value}; shift ;;
-      --count)       COUNT=${2:?--count needs a value}; shift ;;
+      --count)       COUNT=${2:?--count needs a value}; COUNT_SET=1; shift ;;
+      --layout)      LAYOUT=${2:?--layout needs combined or split}; shift ;;
+      --db)          DB_COUNT=${2:?--db needs a value}; shift ;;
       --ips)         IPS_ARG=${2:?--ips needs a value}; shift ;;
       --dry-run)     DRY_RUN=1 ;;
       --no-rollback) NO_ROLLBACK=1 ;;
@@ -456,7 +500,13 @@ main() {
     esac
     shift
   done
+  [[ $LAYOUT == combined || $LAYOUT == split ]] || { echo "--layout must be combined or split"; exit 2; }
+  if [[ $LAYOUT == split ]]; then
+    (( ! COUNT_SET )) || { echo "--count is for the combined layout; use --db N with --layout split"; exit 2; }
+    [[ $DB_COUNT =~ ^[0-9]+$ ]] && (( DB_COUNT >= 2 && DB_COUNT <= 5 )) || { echo "--db must be 2-5"; exit 2; }
+  fi
   [[ $COUNT =~ ^[0-9]+$ ]] && (( COUNT >= 1 && COUNT <= 9 )) || { echo "--count must be 1-9"; exit 2; }
+  build_layout
   SET_NAME=${SET_NAME:-js-$(date +%m%d-%H%M)}
   [[ $SET_NAME =~ ^[a-z0-9][a-z0-9-]{0,20}$ ]] || { echo "--name: lowercase letters, digits and '-', max 21"; exit 2; }
 

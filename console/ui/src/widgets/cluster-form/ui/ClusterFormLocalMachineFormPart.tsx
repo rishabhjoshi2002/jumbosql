@@ -4,7 +4,7 @@ import AuthenticationMethodFormBlock from '@entities/authentification-method-for
 
 /**
  * JumboSQL: deployments to your own machines use the HA inventory step (DatabaseServersBlock), where each VM
- * gets its roles (etcd, PostgreSQL + Patroni, HAProxy, PgBouncer, pgBackRest, monitoring). The separate
+ * gets its roles (etcd, PostgreSQL + Patroni, HAProxy, PgBouncer, pgBackRest, Prometheus, Alertmanager, Grafana). The separate
  * Autobase blocks for DCS, VIP and load balancers are replaced by those roles.
  */
 const ClusterFormLocalMachineFormPart: FC = () => (

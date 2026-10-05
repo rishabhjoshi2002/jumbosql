@@ -148,7 +148,7 @@
   "databaseNumber": "Database {{number}}",
   "connectionPoolNumber": "Connection pool {{number}}",
   "haInventory": "Inventory (virtual machines)",
-  "haInventoryHelp": "Add each VM once and tick what runs on it. This becomes the cluster's inventory: etcd needs an odd number of members (3 or 5), PostgreSQL + Patroni at least 2, and exactly one pgBackRest repo. HAProxy and PostgreSQL can't share a VM.",
+  "haInventoryHelp": "Add each VM once and tick what runs on it, or import the list printed by the VM script. A VM can have one role or several. Rules: etcd needs an odd number of members (3 or 5), PostgreSQL + Patroni at least 2, exactly one pgBackRest repo, and Prometheus, Alertmanager and Grafana together (on one VM or each on its own). HAProxy and PostgreSQL can't share a VM.",
   "haRoles": "Roles",
   "addVirtualMachine": "Add virtual machine",
   "haInventoryPreview": "inventory.yml",
@@ -193,5 +193,8 @@
   "patroniOutput": "Output",
   "patroniOutputEmpty": "Run a command to see its output here.",
   "clear": "Clear",
-  "readOnlyRole": "Read-only access"
+  "readOnlyRole": "Read-only access",
+  "importVmList": "Import VM list",
+  "importVmListHelp": "One VM per line: hostname, IP and roles separated by commas (etcd, patroni, haproxy, pgbouncer, backrest, prometheus, alertmanager, grafana; 'monitoring' means all three monitoring tools). The VM script writes this list to /root/jumbosql-<set>-vms.txt. Importing replaces the VMs in the form.",
+  "importVmListApply": "Import"
 }
