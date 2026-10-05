@@ -1,5 +1,5 @@
 import { FC, useEffect, useMemo, useRef, useState } from 'react';
-import { Box, CircularProgress, Typography } from '@mui/material';
+import { Alert, Box, CircularProgress, Typography } from '@mui/material';
 import { useTranslation } from 'react-i18next';
 import { DBDESK_URL } from '@shared/config/constants.ts';
 import { useAppSelector } from '@app/redux/store/hooks.ts';
@@ -16,7 +16,7 @@ const getDbdeskOrigin = (): string | null => {
 };
 
 const SqlEditor: FC = () => {
-  const { t } = useTranslation('shared');
+  const { t } = useTranslation(['shared', 'clusters']);
   const actualTheme = useAppSelector(selectActualTheme);
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -57,6 +57,10 @@ const SqlEditor: FC = () => {
         overflow: 'hidden',
         position: 'relative',
       }}>
+      {/* JumboSQL: the editor's connections are registered against HAProxy's read-write port (see automation-cpa) */}
+      <Alert severity="info" sx={{ borderRadius: 0, py: 0 }}>
+        {t('sqlEditorLeaderNote', { ns: 'clusters' })}
+      </Alert>
       {isLoading && (
         <Box
           sx={{

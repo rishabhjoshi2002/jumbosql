@@ -13,6 +13,7 @@ import (
 	"postgresql-cluster-console/internal/watcher"
 	"postgresql-cluster-console/internal/xdocker"
 	"postgresql-cluster-console/models"
+	"postgresql-cluster-console/pkg/patroni"
 	"postgresql-cluster-console/restapi"
 	"postgresql-cluster-console/restapi/operations"
 	"postgresql-cluster-console/restapi/operations/system"
@@ -104,6 +105,17 @@ func NewService(
 	api.ClusterGetClustersDefaultNameHandler = cluster.NewGetClusterDefaultNameHandler(db, log.Logger)
 	api.ClusterDeleteServersIDHandler = cluster.NewDeleteServerHandler(db, log.Logger)
 	api.ClusterPostClustersIDRefreshHandler = cluster.NewPostClusterRefreshHandler(db, log.Logger, clusterWatcher)
+
+	// JumboSQL: Patroni panel (switchover / restart / reinitialize)
+	patroniActions := patroni.NewActions(patroni.ActionsConfig{
+		Port:     cfg.Patroni.Port,
+		Username: cfg.Patroni.Username,
+		Password: cfg.Patroni.Password,
+		Timeout:  cfg.Patroni.Timeout,
+	})
+	api.ClusterPostClustersIDSwitchoverHandler = cluster.NewPostClusterSwitchoverHandler(db, log.Logger, patroniActions, clusterWatcher)
+	api.ClusterPostServersIDRestartHandler = cluster.NewPostServerRestartHandler(db, log.Logger, patroniActions, clusterWatcher)
+	api.ClusterPostServersIDReinitializeHandler = cluster.NewPostServerReinitializeHandler(db, log.Logger, patroniActions, clusterWatcher)
 
 	api.SystemGetVersionHandler = system.GetVersionHandlerFunc(func(params system.GetVersionParams) middleware.Responder {
 		return system.NewGetVersionOK().WithPayload(&models.ResponseVersion{

@@ -57,11 +57,20 @@ PG_CONSOLE_DB_MIGRATIONDIR            String              /etc/db/migrations    
 PG_CONSOLE_ENCRYPTIONKEY              String              super_secret                                     Encryption key for secret storage
 PG_CONSOLE_DOCKER_HOST                String              unix:///var/run/docker.sock                      Docker host
 PG_CONSOLE_DOCKER_LOGDIR              String              /tmp/ansible                                     Directory inside docker container for ansible json log
-PG_CONSOLE_DOCKER_IMAGE               String              autobase/automation:2.11.0                        Docker image for autobase automation
+PG_CONSOLE_DOCKER_IMAGE               String              jumbosql/automation-cpa:2.2.0                     Docker image for the CPA automation
 PG_CONSOLE_LOGWATCHER_RUNEVERY        Duration            1m                                               LogWatcher run interval
 PG_CONSOLE_LOGWATCHER_ANALYZEPAST     Duration            48h                                              LogWatcher gets operations to analyze which created_at > now() - AnalyzePast
 PG_CONSOLE_CLUSTERWATCHER_RUNEVERY    Duration            1m                                               ClusterWatcher run interval
 PG_CONSOLE_CLUSTERWATCHER_POOLSIZE    Integer             4                                                Amount of async request from ClusterWatcher
+```
+
+JumboSQL: Patroni REST API access for the switchover / restart / reinitialize actions:
+
+```
+PG_CONSOLE_PATRONI_PORT               Integer             8008                                             Patroni REST API port on the database nodes
+PG_CONSOLE_PATRONI_USERNAME           String                                                               Basic-auth user, if Patroni's restapi.authentication is set
+PG_CONSOLE_PATRONI_PASSWORD           String                                                               Basic-auth password
+PG_CONSOLE_PATRONI_TIMEOUT            Duration            30s                                              Timeout for Patroni actions
 ```
 
 Note: Be attention to use `TRACE` level of logging. With `TRACE` level some kind of secrets can be present in logs.
@@ -71,7 +80,7 @@ Optional settings for automatic registration PostgreSQL clusters in the [dbdesk-
 KEY                                   TYPE                DEFAULT                              REQUIRED    DESCRIPTION
 PG_CONSOLE_DBDESK_STUDIO_ENABLED      True or False       true                                             Enable automatic dbdesk-studio registration after successful cluster deploy
 PG_CONSOLE_DBDESK_STUDIO_API_URL      String              http://dbdesk-studio:6789                        dbdesk-studio API base URL
-PG_CONSOLE_DBDESK_STUDIO_SSLMODE      String              require                                          SSL mode for dbdesk-studio postgres connection profiles
+PG_CONSOLE_DBDESK_STUDIO_SSLMODE      String              prefer                                           SSL mode for dbdesk-studio postgres connection profiles
 PG_CONSOLE_DBDESK_STUDIO_TIMEOUT      Duration            5s                                               HTTP timeout for dbdesk-studio health and registration requests
 ```
 

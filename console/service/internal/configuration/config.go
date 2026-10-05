@@ -43,7 +43,7 @@ type Config struct {
 	Docker        struct {
 		Host   string `default:"unix:///var/run/docker.sock" desc:"Docker host"`
 		LogDir string `default:"/tmp/ansible" desc:"Directory inside docker container for ansible json log"`
-		Image  string `default:"autobase/automation:2.11.0" desc:"Docker image for autobase automation"`
+		Image  string `default:"jumbosql/automation-cpa:2.2.0" desc:"Docker image for the CPA automation (built locally by build.sh)"`
 	}
 	LogWatcher struct {
 		RunEvery    time.Duration `default:"1m" desc:"LogWatcher run interval"`
@@ -56,8 +56,15 @@ type Config struct {
 	DbDesk struct {
 		Enabled bool          `envconfig:"dbdesk_studio_enabled" default:"true" desc:"Enable automatic dbdesk-studio registration after successful cluster deploy"`
 		URL     string        `envconfig:"dbdesk_studio_api_url" default:"http://dbdesk-studio:6789" desc:"dbdesk-studio API base URL"`
-		SSLMode string        `envconfig:"dbdesk_studio_sslmode" default:"require" desc:"SSL mode for dbdesk-studio postgres connection profiles"`
+		SSLMode string        `envconfig:"dbdesk_studio_sslmode" default:"prefer" desc:"SSL mode for dbdesk-studio postgres connection profiles"`
 		Timeout time.Duration `envconfig:"dbdesk_studio_timeout" default:"5s" desc:"HTTP timeout for dbdesk-studio health and registration requests"`
+	}
+	// JumboSQL: Patroni REST API access for switchover / restart / reinitialize from the console.
+	Patroni struct {
+		Port     int           `envconfig:"patroni_port" default:"8008" desc:"Patroni REST API port on the database nodes"`
+		Username string        `envconfig:"patroni_username" default:"" desc:"Patroni REST API basic-auth user (restapi.authentication), if set"`
+		Password string        `envconfig:"patroni_password" default:"" desc:"Patroni REST API basic-auth password"`
+		Timeout  time.Duration `envconfig:"patroni_timeout" default:"30s" desc:"Timeout for Patroni actions (switchover, restart, reinitialize)"`
 	}
 }
 
@@ -102,5 +109,6 @@ func (c *Config) Redacted() Config {
 	out.Authorization.Token = mask(out.Authorization.Token)
 	out.Db.Password = mask(out.Db.Password)
 	out.EncryptionKey = mask(out.EncryptionKey)
+	out.Patroni.Password = mask(out.Patroni.Password)
 	return out
 }

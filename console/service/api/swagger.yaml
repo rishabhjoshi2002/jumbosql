@@ -434,6 +434,71 @@ paths:
           schema:
             $ref: "#/definitions/Response.Error"
 
+  /clusters/{id}/switchover:
+    post:
+      summary: "JumboSQL: Patroni switchover (leader moves to the candidate, or to the healthiest replica)"
+      tags:
+        - cluster
+      parameters:
+        - name: id
+          in: path
+          required: true
+          type: integer
+        - name: body
+          in: body
+          required: false
+          schema:
+            $ref: "#/definitions/Request.PatroniSwitchover"
+      responses:
+        '200':
+          description: OK
+          schema:
+            $ref: "#/definitions/Response.PatroniAction"
+        '400':
+          description: Error
+          schema:
+            $ref: "#/definitions/Response.Error"
+
+  /servers/{id}/restart:
+    post:
+      summary: "JumboSQL: restart PostgreSQL on this node through Patroni"
+      tags:
+        - cluster
+      parameters:
+        - name: id
+          in: path
+          required: true
+          type: integer
+      responses:
+        '200':
+          description: OK
+          schema:
+            $ref: "#/definitions/Response.PatroniAction"
+        '400':
+          description: Error
+          schema:
+            $ref: "#/definitions/Response.Error"
+
+  /servers/{id}/reinitialize:
+    post:
+      summary: "JumboSQL: reinitialize this replica from the leader through Patroni"
+      tags:
+        - cluster
+      parameters:
+        - name: id
+          in: path
+          required: true
+          type: integer
+      responses:
+        '200':
+          description: OK
+          schema:
+            $ref: "#/definitions/Response.PatroniAction"
+        '400':
+          description: Error
+          schema:
+            $ref: "#/definitions/Response.Error"
+
   /projects:
     post:
       summary: "Create new project"
@@ -736,6 +801,23 @@ definitions:
       version:
         type: string
         example: v1.0.0
+
+  Request.PatroniSwitchover:
+    type: object
+    properties:
+      candidate_server_id:
+        type: integer
+        description: Server that becomes the new leader. Empty = let Patroni pick a healthy replica.
+
+  Response.PatroniAction:
+    type: object
+    properties:
+      action:
+        type: string
+      member:
+        type: string
+      message:
+        type: string
 
   Response.Error:
     title: Error object
