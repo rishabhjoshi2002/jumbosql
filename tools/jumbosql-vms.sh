@@ -6,18 +6,19 @@
 # Layouts:
 #   combined (default)  --count N VMs (default 3): VM 1 = util (etcd, HAProxy, PgBouncer, pgBackRest,
 #                       Prometheus, Alertmanager, Grafana), the others = PostgreSQL + Patroni (+ etcd)
-#   split               one VM per role: 3 etcd, --db N PostgreSQL + Patroni (default 3), HAProxy,
-#                       PgBouncer, pgBackRest, Prometheus, Alertmanager, Grafana  (12 VMs by default)
+#   split               3 etcd, --db N PostgreSQL + Patroni (default 3), 1 proxy (HAProxy + PgBouncer),
+#                       1 pgBackRest repo, 1 monitor (Prometheus + Alertmanager + Grafana, which the HA
+#                       automation connects through localhost, so they stay on one VM)   (9 VMs by default)
 #
 # Each VM gets:
 #   - a free static IP on the libvirt network (picked automatically, or --ips), reserved in libvirt DHCP
-#   - hostname <set>-<role> (e.g. js1-etcd1, js1-pg2, js1-grafana), root password (prompted), root SSH login
+#   - hostname <set>-<role> (e.g. js1-etcd1, js1-pg2, js1-proxy, js1-monitor), root password (prompted), root SSH login
 #   - an SSH key made for this set (/root/.ssh/jumbosql-<set>) - paste the private key into JumboSQL
 #   - Red Hat registration (prompted), glibc-langpack-en, chrony, python3
 #
 # Usage (as root on the KVM host):
 #   ./jumbosql-vms.sh [--name SET] [--count N] [--ips A,B,C]   create a set (default: 3 VMs, combined)
-#   ./jumbosql-vms.sh --layout split [--db N] [--name SET]      a separate VM for every role
+#   ./jumbosql-vms.sh --layout split [--db N] [--name SET]      etcd, DB, proxy, backup and monitoring VMs
 #   ./jumbosql-vms.sh --dry-run [...]                          real checks, print every action, change nothing
 #   ./jumbosql-vms.sh --no-rollback [...]                      keep what was built if a step fails
 #   ./jumbosql-vms.sh --list                                   list sets made by this script
@@ -25,7 +26,8 @@
 #   ./jumbosql-vms.sh --yes                                    don't ask for confirmation
 #
 # Sizes (env): combined: RAM_MB=4096 DISK=40G for every VM.  split: PostgreSQL VMs RAM_DB=4096 DISK_DB=40G,
-# pgBackRest VM RAM_SMALL + DISK_REPO=60G, all others RAM_SMALL=2048 DISK_SMALL=20G.  VCPUS=2 for all.
+# monitor RAM_MON=4096 DISK_MON=40G, pgBackRest RAM_SMALL + DISK_REPO=60G, etcd and proxy RAM_SMALL=2048
+# DISK_SMALL=20G.  VCPUS=2 for all.
 # The VM list for JumboSQL's "Import VM list" is written to /root/jumbosql-<set>-vms.txt.
 # On failure everything this run created is undone in reverse order (Red Hat registrations, VMs, disks,
 # DHCP reservations, the SSH key and the state file).
@@ -55,6 +57,8 @@ DISK_DB="${DISK_DB:-40G}"
 RAM_SMALL="${RAM_SMALL:-2048}"
 DISK_SMALL="${DISK_SMALL:-20G}"
 DISK_REPO="${DISK_REPO:-60G}"
+RAM_MON="${RAM_MON:-4096}"
+DISK_MON="${DISK_MON:-40G}"
 EXTRA_PUBKEYS="${EXTRA_PUBKEYS:-/root/.ssh/id_rsa.pub /root/.ssh/id_ed25519.pub}"  # also allowed to log in, if present
 STATE_DIR="${STATE_DIR:-/var/lib/jumbosql-vms}"
 # ======================================================================================================
@@ -168,16 +172,13 @@ build_layout() {   # role names are the ones JumboSQL's inventory step uses
   if [[ $LAYOUT == split ]]; then
     for i in 1 2 3; do add_vm "etcd$i" etcd "$RAM_SMALL" "$DISK_SMALL"; done
     for (( i = 1; i <= DB_COUNT; i++ )); do add_vm "pg$i" patroni "$RAM_DB" "$DISK_DB"; done
-    add_vm haproxy      haproxy      "$RAM_SMALL" "$DISK_SMALL"
-    add_vm pgbouncer    pgbouncer    "$RAM_SMALL" "$DISK_SMALL"
-    add_vm backrest     backrest     "$RAM_SMALL" "$DISK_REPO"
-    add_vm prometheus   prometheus   "$RAM_SMALL" "$DISK_SMALL"
-    add_vm alertmanager alertmanager "$RAM_SMALL" "$DISK_SMALL"
-    add_vm grafana      grafana      "$RAM_SMALL" "$DISK_SMALL"
+    add_vm proxy    "haproxy,pgbouncer" "$RAM_SMALL" "$DISK_SMALL"
+    add_vm backrest backrest            "$RAM_SMALL" "$DISK_REPO"
+    add_vm monitor  monitoring          "$RAM_MON"   "$DISK_MON"
   else
     # etcd on an odd number of VMs (max 5), starting with the util VM
     etcd_n=$(( COUNT % 2 ? COUNT : COUNT - 1 )); (( etcd_n > 5 )) && etcd_n=5
-    add_vm util "etcd,haproxy,pgbouncer,backrest,prometheus,alertmanager,grafana" "$RAM_MB" "$DISK"
+    add_vm util "etcd,haproxy,pgbouncer,backrest,monitoring" "$RAM_MB" "$DISK"
     for (( i = 2; i <= COUNT; i++ )); do
       if (( i <= etcd_n )); then add_vm "db$((i - 1))" "etcd,patroni" "$RAM_MB" "$DISK"
       else add_vm "db$((i - 1))" patroni "$RAM_MB" "$DISK"; fi

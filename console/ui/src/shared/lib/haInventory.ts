@@ -13,20 +13,22 @@ export const HA_ROLES = Object.freeze({
   HAPROXY: 'haproxy',
   PGBOUNCER: 'pgbouncer',
   BACKREST: 'backrest',
-  PROMETHEUS: 'prometheus',
-  ALERTMANAGER: 'alertmanager',
-  GRAFANA: 'grafana',
+  MONITORING: 'monitoring',
 });
 
 export type HaRole = (typeof HA_ROLES)[keyof typeof HA_ROLES];
 
-/** `monitoring` is the old combined role (Prometheus + Alertmanager + Grafana on one VM); still accepted. */
-export type HaRoles = Partial<Record<HaRole | 'monitoring', boolean>>;
+/**
+ * Monitoring = Prometheus + Alertmanager + Grafana on ONE VM: the HA automation wires them together through
+ * localhost (Grafana's data source, Prometheus' Alertmanager target). Forms saved by the version that had three
+ * separate monitoring roles still load; any of those three counts as Monitoring.
+ */
+export type HaRoles = Partial<Record<HaRole | 'prometheus' | 'alertmanager' | 'grafana', boolean>>;
 
-export const MONITORING_ROLES: HaRole[] = [HA_ROLES.PROMETHEUS, HA_ROLES.ALERTMANAGER, HA_ROLES.GRAFANA];
+const OLD_MONITORING_KEYS = ['prometheus', 'alertmanager', 'grafana'] as const;
 
 export const hasRole = (s: HaServer, role: HaRole) =>
-  !!s.roles?.[role] || (MONITORING_ROLES.includes(role) && !!s.roles?.monitoring);
+  !!s.roles?.[role] || (role === HA_ROLES.MONITORING && OLD_MONITORING_KEYS.some((k) => !!s.roles?.[k]));
 
 export const HA_ROLE_ORDER: HaRole[] = [
   HA_ROLES.ETCD,
@@ -34,9 +36,7 @@ export const HA_ROLE_ORDER: HaRole[] = [
   HA_ROLES.HAPROXY,
   HA_ROLES.PGBOUNCER,
   HA_ROLES.BACKREST,
-  HA_ROLES.PROMETHEUS,
-  HA_ROLES.ALERTMANAGER,
-  HA_ROLES.GRAFANA,
+  HA_ROLES.MONITORING,
 ];
 
 export const HA_ROLE_LABELS: Record<HaRole, string> = {
@@ -45,23 +45,13 @@ export const HA_ROLE_LABELS: Record<HaRole, string> = {
   haproxy: 'HAProxy',
   pgbouncer: 'PgBouncer',
   backrest: 'pgBackRest repo',
-  prometheus: 'Prometheus',
-  alertmanager: 'Alertmanager',
-  grafana: 'Grafana',
+  monitoring: 'Monitoring (Prometheus, Alertmanager, Grafana)',
 };
 
 /** Default roles for a new server row: first VM is the util node, the rest are database nodes. */
 export const defaultHaRoles = (index: number): HaRoles =>
   index === 0
-    ? {
-        etcd: true,
-        haproxy: true,
-        pgbouncer: true,
-        backrest: true,
-        prometheus: true,
-        alertmanager: true,
-        grafana: true,
-      }
+    ? { etcd: true, haproxy: true, pgbouncer: true, backrest: true, monitoring: true }
     : { etcd: true, patroni: true };
 
 export interface HaServer {
@@ -97,9 +87,7 @@ export const buildHaInventory = (servers: HaServer[], ansibleUser = 'root'): HaI
   const haproxy = withRole(servers, HA_ROLES.HAPROXY);
   const pgbouncer = withRole(servers, HA_ROLES.PGBOUNCER);
   const backrest = withRole(servers, HA_ROLES.BACKREST);
-  const prometheus = withRole(servers, HA_ROLES.PROMETHEUS);
-  const alertmanager = withRole(servers, HA_ROLES.ALERTMANAGER);
-  const grafana = withRole(servers, HA_ROLES.GRAFANA);
+  const monitoring = withRole(servers, HA_ROLES.MONITORING);
 
   const hosts = (list: HaServer[], extra?: (s: HaServer, i: number) => HostVars) =>
     Object.fromEntries(list.map((s, i) => [s.ip as string, { ...connVars(s), ...(extra ? extra(s, i) : {}) }]));
@@ -117,25 +105,23 @@ export const buildHaInventory = (servers: HaServer[], ansibleUser = 'root'): HaI
     pgbouncer_cluster: { hosts: hosts(pgbouncer) },
   };
 
-  // each monitoring tool may sit on its own VM; pgmonitor_cluster groups whichever are present
-  const monGroups: Record<string, Group> = {};
-  if (prometheus.length) children.prometheus_cluster = { hosts: hosts(prometheus) };
-  if (alertmanager.length) children.alertmanager_cluster = { hosts: hosts(alertmanager) };
-  if (grafana.length) children.grafana_cluster = { hosts: hosts(grafana) };
-  ['prometheus_cluster', 'alertmanager_cluster', 'grafana_cluster'].forEach((g) => {
-    if (children[g]) monGroups[g] = {};
-  });
-  if (Object.keys(monGroups).length) children.pgmonitor_cluster = { children: monGroups };
+  // the Monitoring VM runs all three tools (they reach each other on localhost)
+  if (monitoring.length) {
+    children.prometheus_cluster = { hosts: hosts(monitoring) };
+    children.alertmanager_cluster = { hosts: hosts(monitoring) };
+    children.grafana_cluster = { hosts: hosts(monitoring) };
+    children.pgmonitor_cluster = {
+      children: { prometheus_cluster: {}, alertmanager_cluster: {}, grafana_cluster: {} },
+    };
+  }
 
   // every host needs a name variable: the HA preflight crashes on a host with no etcd_name / patroni_name /
-  // node_jobname, which happens when HAProxy, PgBouncer or a monitoring tool has a VM of its own
+  // node_jobname, which happens when HAProxy, PgBouncer or Monitoring has a VM of its own
   const NAME_VARS = ['etcd_name', 'patroni_name', 'node_jobname'];
   const SHORT: Record<string, string> = {
     haproxy_cluster: 'haproxy',
     pgbouncer_cluster: 'pgbouncer',
-    prometheus_cluster: 'prometheus',
-    alertmanager_cluster: 'alertmanager',
-    grafana_cluster: 'grafana',
+    prometheus_cluster: 'monitoring',
   };
   const named = new Set(
     Object.values(children).flatMap((g) =>
@@ -188,13 +174,10 @@ export const validateHaLayout = (servers: HaServer[]): string[] => {
   if (count(HA_ROLES.HAPROXY) < 1) errors.push('HAProxy needs at least 1 server');
   if (count(HA_ROLES.PGBOUNCER) < 1) errors.push('PgBouncer needs at least 1 server');
   if (count(HA_ROLES.BACKREST) !== 1) errors.push('pgBackRest repo must be exactly 1 server');
-  const mon = MONITORING_ROLES.map((r) => count(r));
-  MONITORING_ROLES.forEach((r, i) => {
-    if (mon[i] > 1) errors.push(`${HA_ROLE_LABELS[r]} can be on 1 server at most`);
-  });
-  if (mon.some((n) => n > 0) && mon.some((n) => n === 0)) {
-    errors.push('Prometheus, Alertmanager and Grafana go together: give each one a VM (the same or separate), or none');
-  }
+  if (count(HA_ROLES.MONITORING) > 1)
+    errors.push(
+      'Monitoring (Prometheus, Alertmanager, Grafana) can only be on one VM: the automation connects them through localhost',
+    );
 
   // HAProxy and PostgreSQL both listen on 5432 by default
   withRole(servers, HA_ROLES.HAPROXY)
@@ -255,10 +238,11 @@ const ROLE_WORDS: Record<string, HaRole[]> = {
   backrest: [HA_ROLES.BACKREST],
   pgbackrest: [HA_ROLES.BACKREST],
   repo: [HA_ROLES.BACKREST],
-  prometheus: [HA_ROLES.PROMETHEUS],
-  alertmanager: [HA_ROLES.ALERTMANAGER],
-  grafana: [HA_ROLES.GRAFANA],
-  monitoring: MONITORING_ROLES,
+  monitoring: [HA_ROLES.MONITORING],
+  monitor: [HA_ROLES.MONITORING],
+  prometheus: [HA_ROLES.MONITORING],
+  alertmanager: [HA_ROLES.MONITORING],
+  grafana: [HA_ROLES.MONITORING],
 };
 
 const IPV4 = /^(25[0-5]|2[0-4]\d|1?\d?\d)(\.(25[0-5]|2[0-4]\d|1?\d?\d)){3}$/;
@@ -266,7 +250,8 @@ const IPV4 = /^(25[0-5]|2[0-4]\d|1?\d?\d)(\.(25[0-5]|2[0-4]\d|1?\d?\d)){3}$/;
 /**
  * Parses a VM list, one VM per line: `[hostname] ip [roles]`, roles separated by commas, e.g.
  *   js1-etcd1  192.168.122.41  etcd
- *   js1-util   192.168.122.40  haproxy,pgbouncer,backrest,prometheus,alertmanager,grafana
+ *   js1-proxy  192.168.122.40  haproxy,pgbouncer
+ *   js1-monitor 192.168.122.48 monitoring
  * This is the format tools/jumbosql-vms.sh writes. Lines starting with # and empty lines are skipped.
  * A line without roles gets the default roles for its position.
  */

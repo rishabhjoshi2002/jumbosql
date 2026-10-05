@@ -47,12 +47,14 @@ def check_layout(children):
         problems.append("PgBouncer needs at least 1 server")
     if len(backrest) != 1:
         problems.append(f"pgBackRest repo must be exactly 1 server (got {len(backrest)})")
+    # Prometheus, Alertmanager and Grafana reach each other through localhost in the HA automation's config
+    # (Grafana data source, Prometheus alerting target), so they must be on the same single VM.
     mon = {g: hosts(children, g) for g in ("prometheus_cluster", "alertmanager_cluster", "grafana_cluster")}
-    for g, h in mon.items():
-        if len(h) > 1:
-            problems.append(f"{g.split('_')[0]} can be on 1 server at most (got {len(h)})")
-    if any(mon.values()) and not all(mon.values()):
-        problems.append("Prometheus, Alertmanager and Grafana go together: give each one a VM, or none")
+    if any(mon.values()):
+        sets = {tuple(sorted(h)) for h in mon.values()}
+        if len(sets) != 1 or len(next(iter(sets))) != 1:
+            problems.append("Prometheus, Alertmanager and Grafana must all be on the same single VM (Monitoring role): "
+                            + ", ".join(f"{g.split('_')[0]}={','.join(h) or '-'}" for g, h in mon.items()))
     clash = sorted(set(haproxy) & set(patroni))
     if clash:
         problems.append(f"HAProxy and PostgreSQL can't share a server (port 5432): {', '.join(clash)}")
@@ -91,8 +93,8 @@ def check_pg_version(version):
 
 NAME_VARS = ("etcd_name", "patroni_name", "node_jobname")
 SHORT = {"etcd_cluster": "etcd", "patroni_cluster": "pg", "backrest_cluster": "util", "haproxy_cluster": "haproxy",
-         "pgbouncer_cluster": "pgbouncer", "prometheus_cluster": "prometheus",
-         "alertmanager_cluster": "alertmanager", "grafana_cluster": "grafana"}
+         "pgbouncer_cluster": "pgbouncer", "prometheus_cluster": "monitoring",
+         "alertmanager_cluster": "monitoring", "grafana_cluster": "monitoring"}
 
 
 def add_node_jobnames(children):

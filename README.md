@@ -11,9 +11,9 @@ collection (version **2.2.0**). Based on [Autobase](https://github.com/autobase-
 | Area | What you get |
 |---|---|
 | **Sign-in** | Username and password, roles **admin / operator / viewer**, users managed in **Settings → Users**. Accounts are stored in the console today; LDAP and SSO plug in later on the server side. |
-| **Create cluster** | **Inventory step**: add each VM (or **Import VM list** from the VM script), tick its roles (etcd, PostgreSQL + Patroni, HAProxy, PgBouncer, pgBackRest repo, Prometheus, Alertmanager, Grafana). One VM can hold one role or several. Live `inventory.yml` preview and download; the layout rules are checked as you type. |
+| **Create cluster** | **Inventory step**: add each VM (or **Import VM list** from the VM script), tick its roles (etcd, PostgreSQL + Patroni, HAProxy, PgBouncer, pgBackRest repo, Monitoring = Prometheus + Alertmanager + Grafana). One VM can hold one role or several. Live `inventory.yml` preview and download; the layout rules are checked as you type. |
 | **Patroni console** | On each cluster page: `list`, `history`, `show-config`, `edit-config`, `pause`/`resume`, `switchover`, `failover`, `restart`, `reload`, `reinit` and a **rolling restart**. Every result shows the equivalent `patronictl` command. |
-| **Observability** | One page with each cluster's **Grafana, Prometheus and Alertmanager**, taken from the VMs with those roles; URLs can be overridden per cluster; Grafana can be shown inside the console. |
+| **Observability** | One page with each cluster's **Grafana, Prometheus and Alertmanager**, taken from the VM with the Monitoring role; URLs can be overridden per cluster; Grafana can be shown inside the console. |
 | **SQL editor** | Built-in, pgAdmin-style query tool: object browser (schemas, tables with columns, views, functions, sequences), query tabs, every statement's result (also `SHOW`, `EXPLAIN`, `RETURNING`), Messages with notices and errors (SQLSTATE, detail, hint, position marked in the editor), Explain / Explain analyze, Cancel, CSV export, query history. Runs through HAProxy's read-write port, so always on the current Patroni leader. Admin and operator only. |
 | **Branding** | JumboSQL look (navy and logo blue), with a light watermark on every page: *JumboSQL, managed by Keen & Able Computers Pvt. Ltd.* |
 
@@ -104,7 +104,7 @@ root on the KVM host:
 ```bash
 ./tools/jumbosql-vms.sh --dry-run                       # real checks, prints every action, changes nothing
 ./tools/jumbosql-vms.sh --name test1                    # combined: 3 VMs (util + 2 DB); --count N for more DB VMs
-./tools/jumbosql-vms.sh --name js1 --layout split       # a separate VM for every role (12 VMs, --db 2 for 11)
+./tools/jumbosql-vms.sh --name js1 --layout split       # etcd, DB, proxy, backup, monitoring VMs (9, --db 2 for 8)
 ./tools/jumbosql-vms.sh --list                          # sets made by the script, with roles
 ./tools/jumbosql-vms.sh --destroy test1                 # unregister from Red Hat and delete the set
 ```
@@ -112,10 +112,11 @@ root on the KVM host:
 | Layout | VMs |
 |---|---|
 | `combined` (default) | `<set>-util` (etcd, HAProxy, PgBouncer, pgBackRest, Prometheus, Alertmanager, Grafana), `<set>-db1..` (etcd, PostgreSQL + Patroni) |
-| `split` | `<set>-etcd1..3`, `<set>-pg1..3` (`--db 2..5`), `<set>-haproxy`, `<set>-pgbouncer`, `<set>-backrest`, `<set>-prometheus`, `<set>-alertmanager`, `<set>-grafana` |
+| `split` | `<set>-etcd1..3`, `<set>-pg1..3` (`--db 2..5`), `<set>-proxy` (HAProxy + PgBouncer), `<set>-backrest`, `<set>-monitor` (Prometheus + Alertmanager + Grafana) |
 
-Sizes for `split`: PostgreSQL VMs `RAM_DB=4096 DISK_DB=40G`, pgBackRest `DISK_REPO=60G`, the rest `RAM_SMALL=2048
-DISK_SMALL=20G` (about 30 GB RAM in total with 3 DB VMs). The script writes the VM list with roles to
+Sizes for `split`: PostgreSQL VMs `RAM_DB=4096 DISK_DB=40G`, monitor `RAM_MON=4096 DISK_MON=40G`, pgBackRest
+`DISK_REPO=60G`, etcd and proxy `RAM_SMALL=2048 DISK_SMALL=20G` (about 24 GB RAM in total with 3 DB VMs).
+Prometheus, Alertmanager and Grafana stay on one VM: the HA automation connects them through `localhost`. The script writes the VM list with roles to
 `/root/jumbosql-<set>-vms.txt`; paste it into **Create cluster → Import VM list** and every VM gets its roles.
 
 It picks free IPs on `192.168.122.0/24` (or `--ips A,B,C`), builds the VMs from the RHEL 9 KVM guest image
@@ -130,8 +131,8 @@ hostnames, IPs, suggested roles and the key to paste into JumboSQL. Sizes: `RAM_
    The default is the combined layout: VM 1 = util (etcd, HAProxy, PgBouncer, pgBackRest, Prometheus, Alertmanager, Grafana),
    VM 2 and 3 = etcd + PostgreSQL + Patroni. For VMs from the VM script, click **Import VM list** and paste
    `/root/jumbosql-<set>-vms.txt`. Rules: odd etcd count (3 or 5), at least 2 Patroni nodes, exactly one pgBackRest
-   repo, Prometheus + Alertmanager + Grafana all or none (one VM each at most), HAProxy and PostgreSQL never on the
-   same VM (both use 5432).
+   repo, Monitoring on one VM at most (Prometheus, Alertmanager and Grafana reach each other on localhost), HAProxy
+   and PostgreSQL never on the same VM (both use 5432).
 2. SSH: user `root` and the private key that reaches the VMs (the Ansible VM's key works).
 3. Pick the PostgreSQL version and cluster name, then **Create cluster**. Follow the live log under **Operations**.
 
@@ -168,7 +169,7 @@ A major upgrade (16 → 17) is a different procedure and is not automated yet.
 ## Observability
 
 **Observability** in the sidebar lists, for each cluster, Grafana (`:3000`), Prometheus (`:9090`) and
-Alertmanager (`:9093`) on the VMs with those roles. Your browser must reach those VMs; if you reach the
+Alertmanager (`:9093`) on the VM with the Monitoring role. Your browser must reach those VMs; if you reach the
 console through an SSH tunnel, use a SOCKS proxy (`ssh -D 1080 root@<kvm-host>`) and set it in your browser.
 **Show here** embeds Grafana; that needs `allow_embedding = true` in Grafana's configuration.
 
