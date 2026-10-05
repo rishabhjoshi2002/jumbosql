@@ -30,7 +30,7 @@ export interface CloudProviderClustersSummary extends SharedClusterSummaryProps 
 }
 
 export interface LocalClustersSummary extends SharedClusterSummaryProps, DcsBlockFormValues {
-  [CLUSTER_FORM_FIELD_NAMES.DATABASE_SERVERS]: number;
+  [CLUSTER_FORM_FIELD_NAMES.DATABASE_SERVERS]: Record<string, unknown>[];
   [LOAD_BALANCERS_FIELD_NAMES.IS_HAPROXY_ENABLED]: boolean;
 }
 

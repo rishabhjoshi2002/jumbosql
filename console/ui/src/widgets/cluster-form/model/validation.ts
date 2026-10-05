@@ -15,8 +15,6 @@ import { INSTANCES_BLOCK_FIELD_NAMES } from '@entities/cluster/instances-block/m
 import { STORAGE_BLOCK_FIELDS } from '@entities/cluster/storage-block/model/const.ts';
 import { DatabaseServersBlockSchema } from '@entities/cluster/database-servers-block/model/validation.ts';
 import { SSH_KEY_BLOCK_FIELD_NAMES } from '@entities/cluster/ssh-key-block/model/const.ts';
-import { LoadBalancerBlockSchema } from '@entities/cluster/load-balancers-block/model/validation.ts';
-import { DcsBlockSchema } from '@entities/cluster/expert-mode/dcs-block/model/validation.ts';
 import { isValidSshPublicKeyList } from '@shared/lib/sshPublicKeyValidation.ts';
 import { isValidSshPrivateKey } from '@shared/lib/sshPrivateKeyValidation.ts';
 
@@ -191,9 +189,8 @@ export const LocalFormSchema = (t: TFunction) =>
               : schema.notRequired(),
         ),
     })
-    .concat(DatabaseServersBlockSchema(t))
-    .concat(LoadBalancerBlockSchema(t))
-    .concat(DcsBlockSchema(t));
+    // JumboSQL: load balancers and DCS are roles in the CPA inventory step, validated there
+    .concat(DatabaseServersBlockSchema(t));
 
 export const ClusterFormSchema = (t: TFunction) => {
   const defaultSchema = yup

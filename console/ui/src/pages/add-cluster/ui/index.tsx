@@ -1,4 +1,5 @@
 import { FC, SyntheticEvent, useEffect, useState } from 'react';
+import { PROVIDERS } from '@shared/config/constants.ts';
 import ClusterForm from '@widgets/cluster-form';
 import ClusterSummary from '@widgets/cluster-summary';
 import { Box, Divider, Stack, Tab } from '@mui/material';
@@ -48,11 +49,13 @@ const AddCluster: FC = () => {
       environments.data?.data &&
       clusterName.data
     ) {
-      const providers = deployments.data.data;
+      // JumboSQL: CPA deploys onto existing VMs only, so cloud providers are not offered and
+      // "Your Own Machines" is the default destination.
+      const providers = deployments.data.data.filter((provider) => provider?.code === PROVIDERS.LOCAL);
       const { regionCode, datacenter } = getDefaultCloudRegionSelection(providers[0]);
       methods.reset({
         ...getClusterFormDefaultValues(),
-        [CLUSTER_FORM_FIELD_NAMES.PROVIDER]: providers[0],
+        [CLUSTER_FORM_FIELD_NAMES.PROVIDER]: { code: PROVIDERS.LOCAL },
         [CLUSTER_FORM_FIELD_NAMES.REGION]: regionCode,
         [CLUSTER_FORM_FIELD_NAMES.REGION_CONFIG]: datacenter,
         [CLUSTER_FORM_FIELD_NAMES.INSTANCE_CONFIG]: providers[0]?.instance_types?.small?.[0],
@@ -84,7 +87,7 @@ const AddCluster: FC = () => {
     <Stack direction="row">
       <Box width="100%" maxWidth="1000px">
         <ClusterForm
-          deploymentsData={deployments.data?.data ?? []}
+          deploymentsData={[] /* JumboSQL: own machines only */}
           environmentsData={environments.data?.data ?? []}
           postgresVersionsData={postgresVersions.data?.data ?? []}
         />

@@ -1,11 +1,19 @@
-import { FC } from 'react';
-import { Controller, useFieldArray, useFormContext } from 'react-hook-form';
+import { FC, useMemo } from 'react';
+import { useFieldArray, useFormContext, useWatch } from 'react-hook-form';
 import DatabaseServerBox from '@entities/cluster/database-servers-block/ui/DatabaseServerBox.tsx';
-import { Box, Button, Checkbox, FormControlLabel, Stack, Typography } from '@mui/material';
+import { Alert, Box, Button, Stack, Typography } from '@mui/material';
 import AddIcon from '@mui/icons-material/Add';
+import DownloadIcon from '@mui/icons-material/Download';
 import { useTranslation } from 'react-i18next';
 import { DATABASE_SERVERS_FIELD_NAMES } from '@entities/cluster/database-servers-block/model/const.ts';
+import { CLUSTER_FORM_FIELD_NAMES } from '@widgets/cluster-form/model/constants.ts';
+import { buildCpaInventory, cpaInventoryToYaml, defaultCpaRoles, validateCpaLayout } from '@shared/lib/cpaInventory.ts';
+import { formServersToCpaServers } from '@entities/cluster/database-servers-block/lib/functions.ts';
 
+/**
+ * JumboSQL: the "Inventory" step. Each card is one VM; its role checkboxes decide which CPA inventory
+ * groups it lands in. The live preview below is the exact inventory the deployment will use.
+ */
 const DatabaseServersBlock: FC = () => {
   const { t } = useTranslation('clusters');
   const { control } = useFormContext();
@@ -15,26 +23,46 @@ const DatabaseServersBlock: FC = () => {
     name: DATABASE_SERVERS_FIELD_NAMES.DATABASE_SERVERS,
   });
 
+  const watchServers = useWatch({ name: DATABASE_SERVERS_FIELD_NAMES.DATABASE_SERVERS });
+  const watchClusterName = useWatch({ name: CLUSTER_FORM_FIELD_NAMES.CLUSTER_NAME });
+
+  const cpaServers = useMemo(() => formServersToCpaServers(watchServers ?? []), [watchServers]);
+  const layoutErrors = useMemo(() => (cpaServers.some((s) => s.ip) ? validateCpaLayout(cpaServers) : []), [cpaServers]);
+  const yaml = useMemo(
+    () => cpaInventoryToYaml(buildCpaInventory(cpaServers), watchClusterName),
+    [cpaServers, watchClusterName],
+  );
+
   const removeServer = (index: number) => () => remove(index);
+
+  const addServer = () =>
+    append({
+      [DATABASE_SERVERS_FIELD_NAMES.DATABASE_HOSTNAME]: '',
+      [DATABASE_SERVERS_FIELD_NAMES.DATABASE_IP_ADDRESS]: '',
+      [DATABASE_SERVERS_FIELD_NAMES.DATABASE_SSH_PORT]: '',
+      [DATABASE_SERVERS_FIELD_NAMES.DATABASE_LOCATION]: '',
+      [DATABASE_SERVERS_FIELD_NAMES.ROLES]: defaultCpaRoles(fields.length),
+    });
+
+  const downloadInventory = () => {
+    const url = URL.createObjectURL(new Blob([yaml], { type: 'text/yaml' }));
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${watchClusterName || 'cluster'}.inventory.yml`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
 
   return (
     <Box>
-      <Typography fontWeight="bold" marginBottom="8px">
-        {t('databaseServers')}
+      <Typography fontWeight="bold" marginBottom="4px">
+        {t('cpaInventory')}
       </Typography>
-      <Controller
-        name={DATABASE_SERVERS_FIELD_NAMES.IS_CLUSTER_EXISTS}
-        control={control}
-        defaultValue={false}
-        render={({ field }) => (
-          <FormControlLabel control={<Checkbox {...field} checked={!!field.value} />} label={t('clusterExistsLabel')} />
-        )}
-      />
-      <Typography variant="caption" color="textSecondary" gutterBottom>
-        {t('clusterExistsHelp')}
+      <Typography variant="caption" color="textSecondary" component="p" marginBottom="12px">
+        {t('cpaInventoryHelp')}
       </Typography>
       <Stack direction="column" gap="16px" justifyContent="center" alignItems="flex-start">
-        <Box display="flex" gap="16px" flexWrap="wrap" justifyContent="flex-start" alignItems="center">
+        <Box display="flex" gap="16px" flexWrap="wrap" justifyContent="flex-start" alignItems="flex-start">
           {fields.map((field, index) => (
             <DatabaseServerBox
               key={field.id}
@@ -43,9 +71,41 @@ const DatabaseServersBlock: FC = () => {
             />
           ))}
         </Box>
-        <Button onClick={append}>
-          <AddIcon />
+        <Button onClick={addServer} startIcon={<AddIcon />}>
+          {t('addVirtualMachine')}
         </Button>
+        {layoutErrors.length ? (
+          <Alert severity="warning" sx={{ width: '100%' }}>
+            {layoutErrors.map((e) => (
+              <div key={e}>{e}</div>
+            ))}
+          </Alert>
+        ) : null}
+        <Box width="100%">
+          <Stack direction="row" alignItems="center" justifyContent="space-between" marginBottom="4px">
+            <Typography variant="body2" fontWeight="bold">
+              {t('cpaInventoryPreview')}
+            </Typography>
+            <Button size="small" startIcon={<DownloadIcon />} onClick={downloadInventory}>
+              {t('downloadInventory')}
+            </Button>
+          </Stack>
+          <Box
+            component="pre"
+            data-testid="cpa-inventory-preview"
+            sx={{
+              margin: 0,
+              padding: '12px',
+              maxHeight: '320px',
+              overflow: 'auto',
+              fontSize: '12px',
+              borderRadius: '4px',
+              backgroundColor: 'action.hover',
+              fontFamily: 'monospace',
+            }}>
+            {yaml}
+          </Box>
+        </Box>
       </Stack>
     </Box>
   );

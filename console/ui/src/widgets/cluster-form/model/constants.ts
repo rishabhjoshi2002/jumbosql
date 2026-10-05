@@ -1,3 +1,4 @@
+import { defaultCpaRoles } from '@shared/lib/cpaInventory.ts';
 import { AUTHENTICATION_METHODS, IS_EXPERT_MODE } from '@shared/model/constants.ts';
 import {
   BACKUP_DEFAULTS,
@@ -121,11 +122,12 @@ export const getClusterFormDefaultValues = () => ({
   [CLUSTER_FORM_FIELD_NAMES.SECRET_ID]: '',
   [DATABASE_SERVERS_FIELD_NAMES.DATABASE_SERVERS]: Array(3)
     .fill(0)
-    .map(() => ({
+    .map((_, index) => ({
       [DATABASE_SERVERS_FIELD_NAMES.DATABASE_HOSTNAME]: '',
       [DATABASE_SERVERS_FIELD_NAMES.DATABASE_IP_ADDRESS]: '',
       [DATABASE_SERVERS_FIELD_NAMES.DATABASE_SSH_PORT]: '',
       [DATABASE_SERVERS_FIELD_NAMES.DATABASE_LOCATION]: '',
+      [DATABASE_SERVERS_FIELD_NAMES.ROLES]: defaultCpaRoles(index), // JumboSQL: 1st VM = util node, others = DB nodes
     })),
   ...(IS_EXPERT_MODE
     ? {

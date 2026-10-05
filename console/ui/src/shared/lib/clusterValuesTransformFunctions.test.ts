@@ -18,88 +18,67 @@ describe('cluster form backup defaults', () => {
   });
 });
 
+// JumboSQL: getLocalMachineEnvs sends the CPA inventory built from the VM roles in the inventory step
 describe('getLocalMachineEnvs', () => {
-  it('maps per-host ssh port to ansible_ssh_port', async () => {
+  const values = (expert: boolean) => ({
+    authenticationMethod: 'ssh_key',
+    isUseDefinedSecret: false,
+    USERNAME: 'root',
+    // the expert-mode DCS / load balancer fields must be ignored: roles decide everything
+    ...(expert
+      ? {
+          isHaproxyEnabled: true,
+          loadBalancerDatabases: [{ loadBalancerDatabasesIpAddress: '10.0.1.1' }],
+          dcsDatabases: [{ dcsDatabaseIpAddress: '10.0.2.1' }],
+        }
+      : {}),
+    databaseServers: [
+      {
+        databaseServerHostname: 'util-1',
+        databaseServerIpAddress: '10.0.0.10',
+        databaseServerSshPort: '',
+        roles: { etcd: true, haproxy: true, pgbouncer: true, backrest: true, monitoring: true },
+      },
+      {
+        databaseServerHostname: 'db-1',
+        databaseServerIpAddress: '10.0.0.1',
+        databaseServerSshPort: '2222',
+        roles: { etcd: true, patroni: true },
+      },
+      {
+        databaseServerHostname: 'db-2',
+        databaseServerIpAddress: '10.0.0.2',
+        databaseServerSshPort: '2202',
+        roles: { etcd: true, patroni: true },
+      },
+    ],
+  });
+
+  it.each([false, true])('builds the CPA groups from the roles (expert mode: %s)', async (expert) => {
+    localStorage.setItem('isExpertMode', String(expert));
+    vi.resetModules();
+
+    const { getLocalMachineEnvs } = await import('@shared/lib/clusterValuesTransformFunctions.ts');
+    const inventory = getLocalMachineEnvs(values(expert) as never).ANSIBLE_INVENTORY_JSON.all.children;
+
+    expect(Object.keys(inventory.etcd_cluster.hosts)).toEqual(['10.0.0.10', '10.0.0.1', '10.0.0.2']);
+    expect(Object.keys(inventory.patroni_cluster.hosts)).toEqual(['10.0.0.1', '10.0.0.2']);
+    expect(Object.keys(inventory.haproxy_cluster.hosts)).toEqual(['10.0.0.10']);
+    expect(inventory.balancers).toBeUndefined();
+    // console bookkeeping: first Patroni node = master
+    expect(Object.keys(inventory.master.hosts)).toEqual(['10.0.0.1']);
+    expect(Object.keys(inventory.replica.hosts)).toEqual(['10.0.0.2']);
+  });
+
+  it('maps per-host ssh port to ansible_port', async () => {
     localStorage.setItem('isExpertMode', 'false');
     vi.resetModules();
 
     const { getLocalMachineEnvs } = await import('@shared/lib/clusterValuesTransformFunctions.ts');
+    const inventory = getLocalMachineEnvs(values(false) as never).ANSIBLE_INVENTORY_JSON.all.children;
 
-    const values = {
-      authenticationMethod: 'ssh_key',
-      isUseDefinedSecret: false,
-      USERNAME: 'root',
-      databaseServerExistingCluster: false,
-      databaseServers: [
-        {
-          databaseServerHostname: 'db-1',
-          databaseServerIpAddress: '10.0.0.1',
-          databaseServerSshPort: '2222',
-          databaseServerLocation: 'dc-1',
-        },
-        {
-          databaseServerHostname: 'db-2',
-          databaseServerIpAddress: '10.0.0.2',
-          databaseServerSshPort: '2202',
-          databaseServerLocation: 'dc-2',
-        },
-      ],
-    };
-
-    const envs = getLocalMachineEnvs(values as never);
-    const inventory = envs.ANSIBLE_INVENTORY_JSON.all.children;
-
-    expect(inventory.master.hosts['10.0.0.1'].ansible_ssh_port).toBe('2222');
-    expect(inventory.replica.hosts['10.0.0.2'].ansible_ssh_port).toBe('2202');
-    expect(inventory.etcd_cluster.hosts['10.0.0.1'].ansible_ssh_port).toBe('2222');
-    expect(inventory.etcd_cluster.hosts['10.0.0.2'].ansible_ssh_port).toBe('2202');
-  });
-
-  it('maps dcs and load balancer ssh port to ansible_ssh_port in expert mode', async () => {
-    localStorage.setItem('isExpertMode', 'true');
-    vi.resetModules();
-
-    const { getLocalMachineEnvs } = await import('@shared/lib/clusterValuesTransformFunctions.ts');
-
-    const values = {
-      authenticationMethod: 'ssh_key',
-      isUseDefinedSecret: false,
-      USERNAME: 'root',
-      databaseServerExistingCluster: false,
-      isHaproxyEnabled: true,
-      isDeployToDatabaseServers: false,
-      loadBalancerDatabases: [
-        {
-          loadBalancerDatabasesHostname: 'lb-1',
-          loadBalancerDatabasesIpAddress: '10.0.1.1',
-          loadBalancerDatabasesSshPort: '2244',
-        },
-      ],
-      type: 'etcd',
-      isDeployNewCluster: true,
-      isDeployToDbServers: false,
-      dcsDatabases: [
-        {
-          dcsDatabaseHostname: 'dcs-1',
-          dcsDatabaseIpAddress: '10.0.2.1',
-          dcsDatabaseSshPort: '2233',
-          dcsDatabasePort: '2379',
-        },
-      ],
-      databaseServers: [
-        {
-          databaseServerHostname: 'db-1',
-          databaseServerIpAddress: '10.0.0.1',
-          databaseServerSshPort: '2222',
-          databaseServerLocation: 'dc-1',
-        },
-      ],
-    };
-
-    const envs = getLocalMachineEnvs(values as never);
-    const inventory = envs.ANSIBLE_INVENTORY_JSON.all.children;
-
-    expect(inventory.etcd_cluster.hosts['10.0.2.1'].ansible_ssh_port).toBe('2233');
-    expect(inventory.balancers.hosts['10.0.1.1'].ansible_ssh_port).toBe('2244');
+    expect(inventory.patroni_cluster.hosts['10.0.0.1'].ansible_port).toBe(2222);
+    expect(inventory.etcd_cluster.hosts['10.0.0.2'].ansible_port).toBe(2202);
+    expect(inventory.etcd_cluster.hosts['10.0.0.10'].ansible_port).toBeUndefined();
   });
 });

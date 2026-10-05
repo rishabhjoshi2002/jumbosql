@@ -15,13 +15,12 @@ import {
   LocalClustersSummary,
   UseGetSummaryConfigProps,
 } from '@widgets/cluster-summary/model/types.ts';
-import { LOAD_BALANCERS_FIELD_NAMES } from '@/entities/cluster/load-balancers-block/model/const';
 import { STORAGE_BLOCK_FIELDS } from '@entities/cluster/storage-block/model/const.ts';
 import { DATABASE_SERVERS_FIELD_NAMES } from '@entities/cluster/database-servers-block/model/const.ts';
 import { INSTANCES_BLOCK_FIELD_NAMES } from '@entities/cluster/instances-block/model/const.ts';
 import { useWatch } from 'react-hook-form';
-import { DCS_BLOCK_FIELD_NAMES } from '@entities/cluster/expert-mode/dcs-block/model/const.ts';
-import { IS_EXPERT_MODE } from '@shared/model/constants.ts';
+import { CPA_ROLES, CpaRole } from '@shared/lib/cpaInventory.ts';
+import { formServersToCpaServers } from '@entities/cluster/database-servers-block/lib/functions.ts';
 
 const useGetCloudProviderConfig = () => {
   const { t } = useTranslation(['clusters', 'shared']);
@@ -170,23 +169,12 @@ const useGetLocalMachineConfig = () => {
   const { t } = useTranslation(['clusters', 'shared']);
   const theme = useTheme();
 
-  const isHighAvailability = (data: LocalClustersSummary) => {
-    if (
-      (IS_EXPERT_MODE &&
-        !data[DCS_BLOCK_FIELD_NAMES.IS_DEPLOY_NEW_CLUSTER] &&
-        data[DCS_BLOCK_FIELD_NAMES.DCS_DATABASES]?.length >= 3) ||
-      (IS_EXPERT_MODE &&
-        data[DCS_BLOCK_FIELD_NAMES.IS_DEPLOY_NEW_CLUSTER] &&
-        !data[DCS_BLOCK_FIELD_NAMES.IS_DEPLOY_TO_DB_SERVERS] &&
-        data[DCS_BLOCK_FIELD_NAMES.DCS_DATABASES]?.length >= 3) ||
-      (IS_EXPERT_MODE &&
-        data[DCS_BLOCK_FIELD_NAMES.IS_DEPLOY_NEW_CLUSTER] &&
-        data[DCS_BLOCK_FIELD_NAMES.IS_DEPLOY_TO_DB_SERVERS] &&
-        data[DATABASE_SERVERS_FIELD_NAMES.DATABASE_SERVERS]?.length >= 3) ||
-      (!IS_EXPERT_MODE && data[DATABASE_SERVERS_FIELD_NAMES.DATABASE_SERVERS]?.length >= 3)
-    )
-      return true;
-  };
+  // JumboSQL: HA and load balancing come from the CPA roles of the VMs
+  const servers = (data: LocalClustersSummary) =>
+    formServersToCpaServers(data[DATABASE_SERVERS_FIELD_NAMES.DATABASE_SERVERS] ?? []).filter((s) => s.ip);
+  const roleCount = (data: LocalClustersSummary, role: CpaRole) => servers(data).filter((s) => s.roles?.[role]).length;
+  const isHighAvailability = (data: LocalClustersSummary) =>
+    roleCount(data, CPA_ROLES.PATRONI) >= 2 && roleCount(data, CPA_ROLES.ETCD) >= 3;
 
   return (data: LocalClustersSummary) => [
     {
@@ -202,7 +190,7 @@ const useGetLocalMachineConfig = () => {
       children: (
         <Stack direction={'row'} spacing={0.5} alignItems="center">
           <InstanceIcon height="24px" width="24px" style={{ fill: theme.palette.text.primary }} />
-          <Typography>{data[CLUSTER_FORM_FIELD_NAMES.DATABASE_SERVERS]?.length}</Typography>
+          <Typography>{servers(data).length}</Typography>
         </Stack>
       ),
     },
@@ -212,9 +200,7 @@ const useGetLocalMachineConfig = () => {
         <Stack direction={'row'} spacing={0.5} alignItems="center">
           <LanIcon height="24px" width="24px" style={{ fill: theme.palette.text.primary }} />
           <Typography>
-            {data[LOAD_BALANCERS_FIELD_NAMES.IS_HAPROXY_ENABLED]
-              ? t('on', { ns: 'shared' })
-              : t('off', { ns: 'shared' })}
+            {roleCount(data, CPA_ROLES.HAPROXY) ? t('on', { ns: 'shared' }) : t('off', { ns: 'shared' })}
           </Typography>
         </Stack>
       ),

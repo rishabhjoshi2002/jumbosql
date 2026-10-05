@@ -1,12 +1,11 @@
 import { FC } from 'react';
 import { DatabaseServerBlockProps } from '@entities/cluster/database-servers-block/model/types.ts';
 import { Controller, useFormContext } from 'react-hook-form';
-import { Card, Checkbox, IconButton, Stack, TextField, Tooltip, Typography } from '@mui/material';
+import { Card, Checkbox, FormControlLabel, FormGroup, IconButton, Stack, TextField, Typography } from '@mui/material';
 import { useTranslation } from 'react-i18next';
 import CloseIcon from '@mui/icons-material/Close';
 import { DATABASE_SERVERS_FIELD_NAMES } from '@entities/cluster/database-servers-block/model/const.ts';
-import { IS_EXPERT_MODE } from '@shared/model/constants.ts';
-import HelpOutlineIcon from '@mui/icons-material/HelpOutline';
+import { CPA_ROLE_LABELS, CPA_ROLE_ORDER } from '@shared/lib/cpaInventory.ts';
 
 const DatabaseServerBox: FC<DatabaseServerBlockProps> = ({ index, remove }) => {
   const { t } = useTranslation(['clusters', 'shared']);
@@ -16,7 +15,7 @@ const DatabaseServerBox: FC<DatabaseServerBlockProps> = ({ index, remove }) => {
   } = useFormContext();
 
   return (
-    <Card sx={{ position: 'relative', padding: '16px', minWidth: '200px' }}>
+    <Card sx={{ position: 'relative', padding: '16px', minWidth: '240px' }}>
       {remove ? (
         <IconButton sx={{ position: 'absolute', right: '4px', top: '4px', cursor: 'pointer' }} onClick={remove}>
           <CloseIcon />
@@ -105,23 +104,25 @@ const DatabaseServerBox: FC<DatabaseServerBlockProps> = ({ index, remove }) => {
             />
           )}
         />
-        {IS_EXPERT_MODE ? (
-          <Controller
-            control={control}
-            name={`${DATABASE_SERVERS_FIELD_NAMES.DATABASE_SERVERS}.${index}.${DATABASE_SERVERS_FIELD_NAMES.IS_POSTGRESQL_EXISTS}`}
-            render={({ field }) => (
-              <Stack direction="row" alignItems="center">
-                <Stack direction="row" alignItems="center">
-                  <Typography marginRight={1}>{t('isPostgresqlExists')}</Typography>
-                  <Tooltip title={t('isPostgresqlExistsTooltip')}>
-                    <HelpOutlineIcon fontSize="small" />
-                  </Tooltip>
-                </Stack>
-                <Checkbox {...field} checked={!!field.value} />
-              </Stack>
-            )}
-          />
-        ) : null}
+        <Typography variant="body2" fontWeight="bold" marginTop={1}>
+          {t('cpaRoles', { ns: 'clusters' })}
+        </Typography>
+        <FormGroup>
+          {CPA_ROLE_ORDER.map((role) => (
+            <Controller
+              key={role}
+              control={control}
+              name={`${DATABASE_SERVERS_FIELD_NAMES.DATABASE_SERVERS}.${index}.${DATABASE_SERVERS_FIELD_NAMES.ROLES}.${role}`}
+              render={({ field }) => (
+                <FormControlLabel
+                  sx={{ marginY: '-4px' }}
+                  control={<Checkbox size="small" {...field} checked={!!field.value} />}
+                  label={<Typography variant="body2">{CPA_ROLE_LABELS[role]}</Typography>}
+                />
+              )}
+            />
+          ))}
+        </FormGroup>
       </Stack>
     </Card>
   );

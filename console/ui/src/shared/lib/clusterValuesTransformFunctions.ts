@@ -1,3 +1,5 @@
+import { buildCpaInventory } from '@shared/lib/cpaInventory.ts';
+import { formServersToCpaServers } from '@entities/cluster/database-servers-block/lib/functions.ts';
 import { ClusterFormValues } from '@features/cluster-secret-modal/model/types.ts';
 import { CLUSTER_CREATION_TYPES, CLUSTER_FORM_FIELD_NAMES } from '@widgets/cluster-form/model/constants.ts';
 import { INSTANCES_BLOCK_FIELD_NAMES } from '@entities/cluster/instances-block/model/const.ts';
@@ -151,161 +153,6 @@ export const getLocalMachineExtraVars = (values: ClusterFormValues, secretId?: n
 });
 
 /**
- * Function maps a field array into correct request format for DCS config.
- * @param values - Filled form values.
- * @param role - Optional role for Consul instances.
- * @param shouldAddHostname - An optional flag determines if field 'hostname' should be added. True by default.
- * @param isDbServers - An optional flag determines which db servers are mapping - Database servers or DCS. True by default.
- */
-const configureHosts = ({
-  values,
-  role,
-  shouldAddHostname = false,
-  isDbServers = true,
-}: {
-  values: ClusterFormValues;
-  role?: string;
-  shouldAddHostname?: boolean;
-  isDbServers?: boolean;
-}) => {
-  const dbServersKeys = {
-    servers: DATABASE_SERVERS_FIELD_NAMES.DATABASE_SERVERS,
-    ipAddress: DATABASE_SERVERS_FIELD_NAMES.DATABASE_IP_ADDRESS,
-    sshPort: DATABASE_SERVERS_FIELD_NAMES.DATABASE_SSH_PORT,
-  };
-
-  const dcsHostsKeys = {
-    servers: DCS_BLOCK_FIELD_NAMES.DCS_DATABASES,
-    ipAddress: DCS_BLOCK_FIELD_NAMES.DCS_DATABASE_IP_ADDRESS,
-    sshPort: DCS_BLOCK_FIELD_NAMES.DCS_DATABASE_SSH_PORT,
-    hostname: DCS_BLOCK_FIELD_NAMES.DCS_DATABASE_HOSTNAME,
-  };
-
-  const usedKeys = isDbServers ? dbServersKeys : dcsHostsKeys;
-
-  return values[usedKeys.servers].reduce(
-    (acc, server) => ({
-      ...acc,
-      [server[usedKeys.ipAddress]]: {
-        ansible_host: server[usedKeys.ipAddress],
-        ...(server[usedKeys.sshPort] ? { ansible_ssh_port: server[usedKeys.sshPort] } : {}),
-        bind_address: server[usedKeys.ipAddress],
-        ...(shouldAddHostname && usedKeys?.hostname ? { hostname: server[usedKeys.hostname] } : {}),
-        ...(role ? { consul_node_role: role } : {}),
-      },
-    }),
-    {},
-  );
-};
-
-/**
- * Function maps DCS fields into the correct request format.
- * @param values - Filled form values.
- */
-const constructDcsEnvs = (values: ClusterFormValues) => {
-  if (!IS_EXPERT_MODE) {
-    return {
-      etcd_cluster: {
-        hosts: configureHosts({ values }),
-      },
-      consul_instances: { hosts: {} },
-    };
-  }
-  if (IS_EXPERT_MODE) {
-    if (values[DCS_BLOCK_FIELD_NAMES.IS_DEPLOY_NEW_CLUSTER]) {
-      switch (values[DCS_BLOCK_FIELD_NAMES.TYPE]) {
-        case DCS_TYPES.ETCD:
-          return {
-            etcd_cluster: {
-              hosts: configureHosts({
-                values,
-                isDbServers: values[DCS_BLOCK_FIELD_NAMES.IS_DEPLOY_TO_DB_SERVERS],
-                shouldAddHostname: !values[DCS_BLOCK_FIELD_NAMES.IS_DEPLOY_TO_DB_SERVERS],
-              }),
-            },
-            consul_instances: { hosts: {} },
-          };
-        case DCS_TYPES.CONSUL:
-          return {
-            etcd_cluster: {
-              hosts: {},
-            },
-            consul_instances: {
-              hosts: values[DCS_BLOCK_FIELD_NAMES.IS_DEPLOY_TO_DB_SERVERS]
-                ? configureHosts({ values, role: 'server' })
-                : {
-                    ...configureHosts({ values, role: 'client' }),
-                    ...configureHosts({ values, role: 'server', isDbServers: false, shouldAddHostname: true }),
-                  },
-            },
-          };
-        default:
-          return {
-            etcd_cluster: { hosts: {} },
-            consul_instances: {
-              hosts: {},
-            },
-          };
-      }
-    } else {
-      if (values[DCS_BLOCK_FIELD_NAMES.TYPE] === DCS_TYPES.CONSUL) {
-        return {
-          consul_instances: {
-            hosts: configureHosts({ values, role: 'client' }),
-          },
-        };
-      }
-    }
-  }
-};
-
-/**
- * Function maps Load Balancers block form values into correct request format.
- * @param values - Filled form values.
- */
-const constructBalancersEnvs = (values: ClusterFormValues) => {
-  let balancerHosts = {};
-
-  if (values[LOAD_BALANCERS_FIELD_NAMES.IS_HAPROXY_ENABLED]) {
-    if (IS_EXPERT_MODE && !values[LOAD_BALANCERS_FIELD_NAMES.IS_DEPLOY_TO_DATABASE_SERVERS]) {
-      balancerHosts = values[LOAD_BALANCERS_FIELD_NAMES.LOAD_BALANCER_DATABASES].reduce(
-        (acc, server) => ({
-          ...acc,
-          [server[LOAD_BALANCERS_FIELD_NAMES.LOAD_BALANCER_DATABASES_IP_ADDRESS]]: {
-            ansible_host: server[LOAD_BALANCERS_FIELD_NAMES.LOAD_BALANCER_DATABASES_IP_ADDRESS],
-            ...(server[LOAD_BALANCERS_FIELD_NAMES.LOAD_BALANCER_DATABASES_SSH_PORT]
-              ? { ansible_ssh_port: server[LOAD_BALANCERS_FIELD_NAMES.LOAD_BALANCER_DATABASES_SSH_PORT] }
-              : {}),
-            bind_address: server[LOAD_BALANCERS_FIELD_NAMES.LOAD_BALANCER_DATABASES_IP_ADDRESS],
-          },
-        }),
-        {},
-      );
-    } else {
-      balancerHosts = values[DATABASE_SERVERS_FIELD_NAMES.DATABASE_SERVERS].reduce(
-        (acc, server) => ({
-          ...acc,
-          [server[DATABASE_SERVERS_FIELD_NAMES.DATABASE_IP_ADDRESS]]: {
-            ansible_host: server[DATABASE_SERVERS_FIELD_NAMES.DATABASE_IP_ADDRESS],
-            ...(server[DATABASE_SERVERS_FIELD_NAMES.DATABASE_SSH_PORT]
-              ? { ansible_ssh_port: server[DATABASE_SERVERS_FIELD_NAMES.DATABASE_SSH_PORT] }
-              : {}),
-            bind_address: server[DATABASE_SERVERS_FIELD_NAMES.DATABASE_IP_ADDRESS],
-          },
-        }),
-        {},
-      );
-    }
-  }
-
-  return {
-    balancers: {
-      hosts: balancerHosts,
-    },
-  };
-};
-
-/**
  * Functions creates an object with envs exclusive to local clusters.
  * @param values - Filled form values.
  * @param secretId - Optional ID of secret if exists.
@@ -318,90 +165,18 @@ export const getLocalMachineEnvs = (values: ClusterFormValues, secretId?: number
         SSH_PRIVATE_KEY_CONTENT: values[SECRET_MODAL_CONTENT_FORM_FIELD_NAMES.SSH_PRIVATE_KEY],
       }
     : {}),
-  ANSIBLE_INVENTORY_JSON: {
-    all: {
-      vars: {
-        ansible_user: values[SECRET_MODAL_CONTENT_FORM_FIELD_NAMES.USERNAME],
-        ...(values[CLUSTER_FORM_FIELD_NAMES.AUTHENTICATION_METHOD] === AUTHENTICATION_METHODS.PASSWORD
-          ? {
-              ansible_ssh_pass: values[SECRET_MODAL_CONTENT_FORM_FIELD_NAMES.PASSWORD],
-              ansible_sudo_pass: values[SECRET_MODAL_CONTENT_FORM_FIELD_NAMES.PASSWORD],
-            }
-          : {}),
-      },
-      children: {
-        ...constructBalancersEnvs(values),
-        ...constructDcsEnvs(values),
-        master: {
-          hosts: {
-            [values[DATABASE_SERVERS_FIELD_NAMES.DATABASE_SERVERS][0][
-              DATABASE_SERVERS_FIELD_NAMES.DATABASE_IP_ADDRESS
-            ]]: {
-              hostname:
-                values[DATABASE_SERVERS_FIELD_NAMES.DATABASE_SERVERS][0][
-                  DATABASE_SERVERS_FIELD_NAMES.DATABASE_HOSTNAME
-                ],
-              ansible_host:
-                values[DATABASE_SERVERS_FIELD_NAMES.DATABASE_SERVERS][0][
-                  DATABASE_SERVERS_FIELD_NAMES.DATABASE_IP_ADDRESS
-                ],
-              ...(values[DATABASE_SERVERS_FIELD_NAMES.DATABASE_SERVERS][0][DATABASE_SERVERS_FIELD_NAMES.DATABASE_SSH_PORT]
-                ? {
-                    ansible_ssh_port:
-                      values[DATABASE_SERVERS_FIELD_NAMES.DATABASE_SERVERS][0][
-                        DATABASE_SERVERS_FIELD_NAMES.DATABASE_SSH_PORT
-                      ],
-                  }
-                : {}),
-              bind_address:
-                values[DATABASE_SERVERS_FIELD_NAMES.DATABASE_SERVERS][0][
-                  DATABASE_SERVERS_FIELD_NAMES.DATABASE_IP_ADDRESS
-                ],
-              server_location:
-                values[DATABASE_SERVERS_FIELD_NAMES.DATABASE_SERVERS]?.[0]?.[
-                  DATABASE_SERVERS_FIELD_NAMES.DATABASE_LOCATION
-                ],
-              postgresql_exists: IS_EXPERT_MODE
-                ? values[DATABASE_SERVERS_FIELD_NAMES.DATABASE_SERVERS]?.[0]?.[
-                    DATABASE_SERVERS_FIELD_NAMES.IS_POSTGRESQL_EXISTS
-                  ]
-                : (values[DATABASE_SERVERS_FIELD_NAMES.IS_CLUSTER_EXISTS] ?? false),
-            },
-          },
-        },
-        ...(values[DATABASE_SERVERS_FIELD_NAMES.DATABASE_SERVERS].length > 1
-          ? {
-              replica: {
-                hosts: values[DATABASE_SERVERS_FIELD_NAMES.DATABASE_SERVERS].slice(1).reduce(
-                  (acc, server) => ({
-                    ...acc,
-                    [server[DATABASE_SERVERS_FIELD_NAMES.DATABASE_IP_ADDRESS]]: {
-                      hostname: server?.[DATABASE_SERVERS_FIELD_NAMES.DATABASE_HOSTNAME],
-                      ansible_host: server?.[DATABASE_SERVERS_FIELD_NAMES.DATABASE_IP_ADDRESS],
-                      ...(server?.[DATABASE_SERVERS_FIELD_NAMES.DATABASE_SSH_PORT]
-                        ? { ansible_ssh_port: server?.[DATABASE_SERVERS_FIELD_NAMES.DATABASE_SSH_PORT] }
-                        : {}),
-                      bind_address: server?.[DATABASE_SERVERS_FIELD_NAMES.DATABASE_IP_ADDRESS],
-                      server_location: server?.[DATABASE_SERVERS_FIELD_NAMES.DATABASE_LOCATION],
-                      postgresql_exists: IS_EXPERT_MODE
-                        ? server?.[DATABASE_SERVERS_FIELD_NAMES.IS_POSTGRESQL_EXISTS]
-                        : (values[DATABASE_SERVERS_FIELD_NAMES.IS_CLUSTER_EXISTS] ?? false),
-                    },
-                  }),
-                  {},
-                ),
-              },
-            }
-          : {}),
-        postgres_cluster: {
-          children: {
-            master: {},
-            replica: {},
-          },
-        },
-      },
-    },
-  },
+  // JumboSQL: the inventory is the CPA layout built from the VM roles (see shared/lib/cpaInventory.ts)
+  ANSIBLE_INVENTORY_JSON: (() => {
+    const inventory = buildCpaInventory(
+      formServersToCpaServers(values[DATABASE_SERVERS_FIELD_NAMES.DATABASE_SERVERS]),
+      values[SECRET_MODAL_CONTENT_FORM_FIELD_NAMES.USERNAME] || 'root',
+    );
+    if (values[CLUSTER_FORM_FIELD_NAMES.AUTHENTICATION_METHOD] === AUTHENTICATION_METHODS.PASSWORD) {
+      inventory.all.vars.ansible_ssh_pass = values[SECRET_MODAL_CONTENT_FORM_FIELD_NAMES.PASSWORD];
+      inventory.all.vars.ansible_become_pass = values[SECRET_MODAL_CONTENT_FORM_FIELD_NAMES.PASSWORD];
+    }
+    return inventory;
+  })(),
 });
 
 /**
