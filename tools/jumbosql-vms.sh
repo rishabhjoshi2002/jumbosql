@@ -90,7 +90,12 @@ run_secret() {   # the command contains a secret: only the description is printe
   printf '    + %s\n' "$desc"
   "$@"
 }
-on() { local ip=$1; shift; ssh "${SSH_OPTS[@]}" -i "$SSH_KEY" "root@$ip" "$@"; }
+# -n: never read this script's stdin (a loop reading a list from stdin would lose the rest of it to ssh)
+on() {
+  local ip=$1; shift
+  if [[ -n $SSH_KEY && -f $SSH_KEY ]]; then ssh -n "${SSH_OPTS[@]}" -i "$SSH_KEY" "root@$ip" "$@"
+  else ssh -n "${SSH_OPTS[@]}" "root@$ip" "$@"; fi   # key gone: try root's own keys (injected via EXTRA_PUBKEYS)
+}
 
 # -------------------------------------------- rollback --------------------------------------------
 push_undo() { UNDO+=("$1"); }
@@ -434,26 +439,51 @@ list_sets() {
   (( found )) || echo "no sets in $STATE_DIR"
 }
 
+# VMs of a set: from its state file, or (when that is gone) from libvirt by name "<set>-*".
+# Prints "name ip mac disk" per VM.
+set_vms() {
+  local f=$STATE_DIR/$1.state n ip mac disk
+  if [[ -f $f ]]; then awk '/^VM=/ {sub("VM=",""); print}' "$f"; return; fi
+  for n in $(virsh list --all --name 2>/dev/null | grep -E "^$1-" || true); do
+    mac=$(virsh domiflist "$n" 2>/dev/null | awk 'NR>2 && NF {print $5; exit}' || true)
+    ip=$(virsh net-dumpxml "$NET" 2>/dev/null | grep -oE "<host [^>]*name='$n'[^>]*>" | grep -oE "ip='[^']+'" | cut -d"'" -f2 | head -1 || true)
+    # no DHCP reservation: look the IP up in the ARP table by MAC
+    if [[ -z $ip && -n $mac ]]; then ip=$(ip neigh show 2>/dev/null | awk -v m="$mac" 'tolower($5)==tolower(m) {print $1; exit}' || true); fi
+    disk=$(virsh domblklist "$n" --details 2>/dev/null | awk '$2=="disk" {print $4; exit}' || true)
+    echo "$n ${ip:--} ${mac:--} ${disk:--}"
+  done
+}
+
 destroy_set() {
-  local f=$STATE_DIR/$DESTROY_SET.state n ip mac disk key
-  [[ -f $f ]] || die "no set '$DESTROY_SET' (see --list)"
+  local f=$STATE_DIR/$DESTROY_SET.state n ip mac disk key="" list left=0
+  list=$(set_vms "$DESTROY_SET")
+  [[ -n $list ]] || die "no set '$DESTROY_SET': no state file and no VMs named '$DESTROY_SET-*' (see --list, virsh list --all)"
   step "Destroy set $DESTROY_SET"
-  key=$(awk -F= '/^KEY=/ {print $2}' "$f")
-  awk '/^VM=/ {sub("VM=",""); print "    " $1 "  " $2}' "$f"
-  confirm "Unregister and permanently delete these VMs and their disks?"
+  if [[ -f $f ]]; then key=$(awk -F= '/^KEY=/ {print $2}' "$f"); else
+    warn "no state file for '$DESTROY_SET': found its VMs in libvirt by name"
+    [[ -f /root/.ssh/jumbosql-$DESTROY_SET ]] && key=/root/.ssh/jumbosql-$DESTROY_SET
+  fi
+  awk '{print "    " $1 "  " $2}' <<<"$list"
+  confirm "Unregister and permanently delete these $(wc -l <<<"$list") VMs and their disks?"
   SSH_KEY=$key
-  while read -r n ip mac disk; do
+  while read -r n ip mac disk <&3; do
+    info "$n"
     if [[ $(virsh domstate "$n" 2>/dev/null || true) == running* ]]; then
-      if [[ -f $SSH_KEY ]]; then
-        run_secret "unregister $n from Red Hat" on "$ip" "subscription-manager unregister" || warn "could not unregister $n (remove it at console.redhat.com)"
+      if [[ $ip != - ]]; then
+        run_secret "unregister $n from Red Hat" on "$ip" "subscription-manager unregister" \
+          || warn "could not unregister $n from Red Hat: remove it at console.redhat.com (Inventory > Systems)"
       fi
       run virsh destroy "$n" || warn "could not stop $n"
     fi
     if virsh dominfo "$n" &>/dev/null; then run virsh undefine "$n" --nvram || run virsh undefine "$n" || warn "could not undefine $n"; fi
-    run virsh net-update "$NET" delete ip-dhcp-host "<host mac='$mac' name='$n' ip='$ip'/>" --live --config || true
-    if [[ -e $disk ]]; then run rm -f "$disk"; fi
-    run ssh-keygen -R "$ip" >/dev/null 2>&1 || true
-  done < <(awk '/^VM=/ {sub("VM=",""); print}' "$f")
+    if [[ $ip != - && $mac != - ]]; then
+      run virsh net-update "$NET" delete ip-dhcp-host "<host mac='$mac' name='$n' ip='$ip'/>" --live --config || true
+    fi
+    if [[ $disk != - && -e $disk ]]; then run rm -f "$disk"; fi
+    [[ $ip != - ]] && { run ssh-keygen -R "$ip" >/dev/null 2>&1 || true; }
+    if (( ! DRY_RUN )) && virsh dominfo "$n" &>/dev/null; then left=$((left + 1)); warn "$n still exists"; fi
+  done 3<<<"$list"
+  if (( left )); then die "$left VM(s) of '$DESTROY_SET' are still there; the state file and SSH key are kept. Run --destroy $DESTROY_SET again."; fi
   if [[ -n $key ]]; then run rm -f "$key" "$key.pub"; fi
   run rm -f "$f" "/root/jumbosql-$DESTROY_SET-vms.txt"
   ok "set $DESTROY_SET removed"
