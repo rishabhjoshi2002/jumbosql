@@ -4,8 +4,8 @@ import { PROVIDERS } from '@shared/config/constants.ts';
 import ipRegex from 'ip-regex';
 import { TFunction } from 'i18next';
 import { DATABASE_SERVERS_FIELD_NAMES } from '@entities/cluster/database-servers-block/model/const.ts';
-import { validateCpaLayout } from '@shared/lib/cpaInventory.ts';
-import { formServersToCpaServers } from '@entities/cluster/database-servers-block/lib/functions.ts';
+import { validateHaLayout } from '@shared/lib/haInventory.ts';
+import { formServersToHaServers } from '@entities/cluster/database-servers-block/lib/functions.ts';
 
 export const DatabaseServersBlockSchema = (t: TFunction) =>
   yup.object({
@@ -35,9 +35,9 @@ export const DatabaseServersBlockSchema = (t: TFunction) =>
                 [DATABASE_SERVERS_FIELD_NAMES.DATABASE_LOCATION]: yup.string(),
               }),
             )
-              // JumboSQL: the roles must add up to a valid CPA layout (odd etcd, 2+ Patroni, one pgBackRest repo, ...)
-              .test('valid CPA layout', (value, ctx) => {
-                const problems = validateCpaLayout(formServersToCpaServers(value ?? []));
+              // JumboSQL: the roles must add up to a valid HA layout (odd etcd, 2+ Patroni, one pgBackRest repo, ...)
+              .test('valid HA layout', (value, ctx) => {
+                const problems = validateHaLayout(formServersToHaServers(value ?? []));
                 return problems.length ? ctx.createError({ message: problems.join('; ') }) : true;
               })
           : schema.notRequired(),

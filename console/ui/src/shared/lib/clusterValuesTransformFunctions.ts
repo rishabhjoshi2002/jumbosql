@@ -1,5 +1,5 @@
-import { buildCpaInventory } from '@shared/lib/cpaInventory.ts';
-import { formServersToCpaServers } from '@entities/cluster/database-servers-block/lib/functions.ts';
+import { buildHaInventory } from '@shared/lib/haInventory.ts';
+import { formServersToHaServers } from '@entities/cluster/database-servers-block/lib/functions.ts';
 import { ClusterFormValues } from '@features/cluster-secret-modal/model/types.ts';
 import { CLUSTER_CREATION_TYPES, CLUSTER_FORM_FIELD_NAMES } from '@widgets/cluster-form/model/constants.ts';
 import { INSTANCES_BLOCK_FIELD_NAMES } from '@entities/cluster/instances-block/model/const.ts';
@@ -165,10 +165,10 @@ export const getLocalMachineEnvs = (values: ClusterFormValues, secretId?: number
         SSH_PRIVATE_KEY_CONTENT: values[SECRET_MODAL_CONTENT_FORM_FIELD_NAMES.SSH_PRIVATE_KEY],
       }
     : {}),
-  // JumboSQL: the inventory is the CPA layout built from the VM roles (see shared/lib/cpaInventory.ts)
+  // JumboSQL: the inventory is the HA layout built from the VM roles (see shared/lib/haInventory.ts)
   ANSIBLE_INVENTORY_JSON: (() => {
-    const inventory = buildCpaInventory(
-      formServersToCpaServers(values[DATABASE_SERVERS_FIELD_NAMES.DATABASE_SERVERS]),
+    const inventory = buildHaInventory(
+      formServersToHaServers(values[DATABASE_SERVERS_FIELD_NAMES.DATABASE_SERVERS]),
       values[SECRET_MODAL_CONTENT_FORM_FIELD_NAMES.USERNAME] || 'root',
     );
     if (values[CLUSTER_FORM_FIELD_NAMES.AUTHENTICATION_METHOD] === AUTHENTICATION_METHODS.PASSWORD) {

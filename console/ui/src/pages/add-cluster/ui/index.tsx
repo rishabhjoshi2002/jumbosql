@@ -49,7 +49,7 @@ const AddCluster: FC = () => {
       environments.data?.data &&
       clusterName.data
     ) {
-      // JumboSQL: CPA deploys onto existing VMs only, so cloud providers are not offered and
+      // JumboSQL: the HA automation deploys onto existing VMs only, so cloud providers are not offered and
       // "Your Own Machines" is the default destination.
       const providers = deployments.data.data.filter((provider) => provider?.code === PROVIDERS.LOCAL);
       const { regionCode, datacenter } = getDefaultCloudRegionSelection(providers[0]);

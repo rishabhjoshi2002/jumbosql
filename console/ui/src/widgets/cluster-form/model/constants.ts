@@ -1,4 +1,4 @@
-import { defaultCpaRoles } from '@shared/lib/cpaInventory.ts';
+import { defaultHaRoles } from '@shared/lib/haInventory.ts';
 import { AUTHENTICATION_METHODS, IS_EXPERT_MODE } from '@shared/model/constants.ts';
 import {
   BACKUP_DEFAULTS,
@@ -127,7 +127,7 @@ export const getClusterFormDefaultValues = () => ({
       [DATABASE_SERVERS_FIELD_NAMES.DATABASE_IP_ADDRESS]: '',
       [DATABASE_SERVERS_FIELD_NAMES.DATABASE_SSH_PORT]: '',
       [DATABASE_SERVERS_FIELD_NAMES.DATABASE_LOCATION]: '',
-      [DATABASE_SERVERS_FIELD_NAMES.ROLES]: defaultCpaRoles(index), // JumboSQL: 1st VM = util node, others = DB nodes
+      [DATABASE_SERVERS_FIELD_NAMES.ROLES]: defaultHaRoles(index), // JumboSQL: 1st VM = util node, others = DB nodes
     })),
   ...(IS_EXPERT_MODE
     ? {

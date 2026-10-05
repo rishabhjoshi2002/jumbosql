@@ -7,7 +7,8 @@ import TextField from '@mui/material/TextField';
 import Toolbar from '@mui/material/Toolbar';
 import Typography from '@mui/material/Typography';
 import logoIcon from '@shared/assets/jumbosqlIcon.png';
-import LogoutButton from '@features/logout-button';
+import UserMenu from '@features/user-menu';
+import { BRAND } from '@shared/theme/theme.ts';
 import ThemeToggle from '@features/theme-toggle';
 import { useGetProjectsQuery } from '@shared/api/api/projects.ts';
 import { HEADER_HEIGHT } from '@shared/model/constants.ts';
@@ -33,42 +34,51 @@ const Header: FC = () => {
   };
 
   return (
-    <AppBar
-      position="fixed"
-      sx={(theme) => ({
-        zIndex: theme.zIndex.drawer + 1,
-        borderBottom: theme.palette.mode === 'light' ? '1px solid' : 'none',
-        borderBottomColor: theme.palette.mode === 'light' ? 'divider' : 'transparent',
-      })}
-      elevation={0}>
+    <AppBar position="fixed" data-surface="chrome" sx={(theme) => ({ zIndex: theme.zIndex.drawer + 1 })} elevation={0}>
       <Toolbar sx={{ minHeight: `${HEADER_HEIGHT} !important`, paddingLeft: '0 !important' }}>
         <Stack direction="row" justifyContent="space-between" alignItems="center" width="100%">
-          <Stack direction="row" alignItems="center">
+          <Stack direction="row" alignItems="center" gap="16px">
             <Stack
               direction="row"
               alignItems="center"
-              gap="16px"
+              gap="12px"
               width={OPEN_SIDEBAR_WIDTH}
               boxSizing="border-box"
               paddingLeft="16px">
-              <img src={logoIcon} alt="JumboSQL" style={{ width: '38px', height: '38px' }} data-logo="true" />
+              <Box
+                sx={{
+                  width: 38,
+                  height: 38,
+                  borderRadius: '10px',
+                  backgroundColor: '#fff',
+                  display: 'grid',
+                  placeItems: 'center',
+                  flexShrink: 0,
+                }}>
+                <img src={logoIcon} alt="JumboSQL" style={{ width: '32px', height: '32px' }} data-logo="true" />
+              </Box>
               <Box sx={{ lineHeight: 1 }}>
-                <Typography fontWeight="400" sx={{ color: 'text.primary', lineHeight: 1.2 }}>
-                  jumbosql
+                <Typography sx={{ color: BRAND.chromeText, fontWeight: 800, fontSize: '1.05rem', lineHeight: 1.15 }}>
+                  JumboSQL
                 </Typography>
-                <Typography
-                  fontSize="0.875rem"
-                  fontWeight="500"
-                  sx={(theme) => ({
-                    color: theme.palette.mode === 'light' ? 'rgba(75, 85, 99, 0.82)' : 'text.secondary',
-                    lineHeight: 1.15,
-                  })}>
-                  Crunchy Postgres HA
+                <Typography sx={{ color: BRAND.sky, fontSize: '0.74rem', fontWeight: 600, lineHeight: 1.2 }}>
+                  {t('productLine')}
                 </Typography>
               </Box>
             </Stack>
             <TextField
-              sx={{ minWidth: '120px', maxWidth: '150px' }}
+              sx={{
+                minWidth: '140px',
+                maxWidth: '180px',
+                '& .MuiOutlinedInput-root': {
+                  backgroundColor: 'rgba(255,255,255,0.08)',
+                  color: BRAND.chromeText,
+                  '& fieldset': { borderColor: 'rgba(255,255,255,0.18)' },
+                  '&:hover fieldset': { borderColor: BRAND.sky },
+                },
+                '& .MuiInputLabel-root': { color: BRAND.chromeMuted },
+                '& .MuiSelect-select': { color: BRAND.chromeText },
+              }}
               select
               size="small"
               value={currentProject}
@@ -81,9 +91,9 @@ const Header: FC = () => {
               )) ?? []}
             </TextField>
           </Stack>
-          <Stack direction="row" alignItems="center" gap="8px">
+          <Stack direction="row" alignItems="center" gap="8px" pr="4px">
             <ThemeToggle />
-            <LogoutButton />
+            <UserMenu />
           </Stack>
         </Stack>
       </Toolbar>

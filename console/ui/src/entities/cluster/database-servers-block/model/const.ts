@@ -6,5 +6,5 @@ export const DATABASE_SERVERS_FIELD_NAMES = Object.freeze({
   DATABASE_SSH_PORT: 'databaseServerSshPort',
   DATABASE_LOCATION: 'databaseServerLocation',
   IS_POSTGRESQL_EXISTS: 'databaseServerIsPostgreSQLExist',
-  ROLES: 'roles', // JumboSQL: CPA roles of this VM (etcd, patroni, haproxy, pgbouncer, backrest, monitoring)
+  ROLES: 'roles', // JumboSQL: HA roles of this VM (etcd, patroni, haproxy, pgbouncer, backrest, monitoring)
 });

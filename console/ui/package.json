@@ -9,7 +9,7 @@
   "scripts": {
     "dev": "vite --open",
     "build": "vite build",
-    "tsc": "tsc --noEmit", 
+    "tsc": "tsc --noEmit",
     "lint": "eslint .",
     "preview": "vite build && vite preview",
     "apiGen": "npx @rtk-query/codegen-openapi src/shared/api/apiConfig.ts",
@@ -20,7 +20,8 @@
   "dependencies": {
     "@emotion/react": "^11.14.0",
     "@emotion/styled": "^11.14.1",
-    "@fontsource/roboto": "^5.2.10",
+    "@fontsource/jetbrains-mono": "^5.3.0",
+    "@fontsource/plus-jakarta-sans": "^5.3.0",
     "@hookform/resolvers": "^5.4.0",
     "@monaco-editor/react": "^4.7.0",
     "@mui/icons-material": "^7.3.11",

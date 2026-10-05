@@ -7,11 +7,11 @@ import DownloadIcon from '@mui/icons-material/Download';
 import { useTranslation } from 'react-i18next';
 import { DATABASE_SERVERS_FIELD_NAMES } from '@entities/cluster/database-servers-block/model/const.ts';
 import { CLUSTER_FORM_FIELD_NAMES } from '@widgets/cluster-form/model/constants.ts';
-import { buildCpaInventory, cpaInventoryToYaml, defaultCpaRoles, validateCpaLayout } from '@shared/lib/cpaInventory.ts';
-import { formServersToCpaServers } from '@entities/cluster/database-servers-block/lib/functions.ts';
+import { buildHaInventory, haInventoryToYaml, defaultHaRoles, validateHaLayout } from '@shared/lib/haInventory.ts';
+import { formServersToHaServers } from '@entities/cluster/database-servers-block/lib/functions.ts';
 
 /**
- * JumboSQL: the "Inventory" step. Each card is one VM; its role checkboxes decide which CPA inventory
+ * JumboSQL: the "Inventory" step. Each card is one VM; its role checkboxes decide which HA inventory
  * groups it lands in. The live preview below is the exact inventory the deployment will use.
  */
 const DatabaseServersBlock: FC = () => {
@@ -26,11 +26,11 @@ const DatabaseServersBlock: FC = () => {
   const watchServers = useWatch({ name: DATABASE_SERVERS_FIELD_NAMES.DATABASE_SERVERS });
   const watchClusterName = useWatch({ name: CLUSTER_FORM_FIELD_NAMES.CLUSTER_NAME });
 
-  const cpaServers = useMemo(() => formServersToCpaServers(watchServers ?? []), [watchServers]);
-  const layoutErrors = useMemo(() => (cpaServers.some((s) => s.ip) ? validateCpaLayout(cpaServers) : []), [cpaServers]);
+  const haServers = useMemo(() => formServersToHaServers(watchServers ?? []), [watchServers]);
+  const layoutErrors = useMemo(() => (haServers.some((s) => s.ip) ? validateHaLayout(haServers) : []), [haServers]);
   const yaml = useMemo(
-    () => cpaInventoryToYaml(buildCpaInventory(cpaServers), watchClusterName),
-    [cpaServers, watchClusterName],
+    () => haInventoryToYaml(buildHaInventory(haServers), watchClusterName),
+    [haServers, watchClusterName],
   );
 
   const removeServer = (index: number) => () => remove(index);
@@ -41,7 +41,7 @@ const DatabaseServersBlock: FC = () => {
       [DATABASE_SERVERS_FIELD_NAMES.DATABASE_IP_ADDRESS]: '',
       [DATABASE_SERVERS_FIELD_NAMES.DATABASE_SSH_PORT]: '',
       [DATABASE_SERVERS_FIELD_NAMES.DATABASE_LOCATION]: '',
-      [DATABASE_SERVERS_FIELD_NAMES.ROLES]: defaultCpaRoles(fields.length),
+      [DATABASE_SERVERS_FIELD_NAMES.ROLES]: defaultHaRoles(fields.length),
     });
 
   const downloadInventory = () => {
@@ -56,10 +56,10 @@ const DatabaseServersBlock: FC = () => {
   return (
     <Box>
       <Typography fontWeight="bold" marginBottom="4px">
-        {t('cpaInventory')}
+        {t('haInventory')}
       </Typography>
       <Typography variant="caption" color="textSecondary" component="p" marginBottom="12px">
-        {t('cpaInventoryHelp')}
+        {t('haInventoryHelp')}
       </Typography>
       <Stack direction="column" gap="16px" justifyContent="center" alignItems="flex-start">
         <Box display="flex" gap="16px" flexWrap="wrap" justifyContent="flex-start" alignItems="flex-start">
@@ -84,7 +84,7 @@ const DatabaseServersBlock: FC = () => {
         <Box width="100%">
           <Stack direction="row" alignItems="center" justifyContent="space-between" marginBottom="4px">
             <Typography variant="body2" fontWeight="bold">
-              {t('cpaInventoryPreview')}
+              {t('haInventoryPreview')}
             </Typography>
             <Button size="small" startIcon={<DownloadIcon />} onClick={downloadInventory}>
               {t('downloadInventory')}
@@ -92,7 +92,7 @@ const DatabaseServersBlock: FC = () => {
           </Stack>
           <Box
             component="pre"
-            data-testid="cpa-inventory-preview"
+            data-testid="ha-inventory-preview"
             sx={{
               margin: 0,
               padding: '12px',

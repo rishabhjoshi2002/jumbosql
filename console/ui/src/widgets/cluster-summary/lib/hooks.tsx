@@ -19,8 +19,8 @@ import { STORAGE_BLOCK_FIELDS } from '@entities/cluster/storage-block/model/cons
 import { DATABASE_SERVERS_FIELD_NAMES } from '@entities/cluster/database-servers-block/model/const.ts';
 import { INSTANCES_BLOCK_FIELD_NAMES } from '@entities/cluster/instances-block/model/const.ts';
 import { useWatch } from 'react-hook-form';
-import { CPA_ROLES, CpaRole } from '@shared/lib/cpaInventory.ts';
-import { formServersToCpaServers } from '@entities/cluster/database-servers-block/lib/functions.ts';
+import { HA_ROLES, HaRole } from '@shared/lib/haInventory.ts';
+import { formServersToHaServers } from '@entities/cluster/database-servers-block/lib/functions.ts';
 
 const useGetCloudProviderConfig = () => {
   const { t } = useTranslation(['clusters', 'shared']);
@@ -169,12 +169,12 @@ const useGetLocalMachineConfig = () => {
   const { t } = useTranslation(['clusters', 'shared']);
   const theme = useTheme();
 
-  // JumboSQL: HA and load balancing come from the CPA roles of the VMs
+  // JumboSQL: HA and load balancing come from the HA roles of the VMs
   const servers = (data: LocalClustersSummary) =>
-    formServersToCpaServers(data[DATABASE_SERVERS_FIELD_NAMES.DATABASE_SERVERS] ?? []).filter((s) => s.ip);
-  const roleCount = (data: LocalClustersSummary, role: CpaRole) => servers(data).filter((s) => s.roles?.[role]).length;
+    formServersToHaServers(data[DATABASE_SERVERS_FIELD_NAMES.DATABASE_SERVERS] ?? []).filter((s) => s.ip);
+  const roleCount = (data: LocalClustersSummary, role: HaRole) => servers(data).filter((s) => s.roles?.[role]).length;
   const isHighAvailability = (data: LocalClustersSummary) =>
-    roleCount(data, CPA_ROLES.PATRONI) >= 2 && roleCount(data, CPA_ROLES.ETCD) >= 3;
+    roleCount(data, HA_ROLES.PATRONI) >= 2 && roleCount(data, HA_ROLES.ETCD) >= 3;
 
   return (data: LocalClustersSummary) => [
     {
@@ -200,7 +200,7 @@ const useGetLocalMachineConfig = () => {
         <Stack direction={'row'} spacing={0.5} alignItems="center">
           <LanIcon height="24px" width="24px" style={{ fill: theme.palette.text.primary }} />
           <Typography>
-            {roleCount(data, CPA_ROLES.HAPROXY) ? t('on', { ns: 'shared' }) : t('off', { ns: 'shared' })}
+            {roleCount(data, HA_ROLES.HAPROXY) ? t('on', { ns: 'shared' }) : t('off', { ns: 'shared' })}
           </Typography>
         </Stack>
       ),

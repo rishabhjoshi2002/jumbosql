@@ -1,5 +1,5 @@
 import { UseFieldArrayRemove } from 'react-hook-form';
-import { CpaRoles } from '@shared/lib/cpaInventory.ts';
+import { HaRoles } from '@shared/lib/haInventory.ts';
 import { DATABASE_SERVERS_FIELD_NAMES } from '@entities/cluster/database-servers-block/model/const.ts';
 
 export interface DatabaseServerBlockProps {
@@ -15,6 +15,6 @@ export interface DatabaseServerBlockValues {
     [DATABASE_SERVERS_FIELD_NAMES.DATABASE_SSH_PORT]: string;
     [DATABASE_SERVERS_FIELD_NAMES.DATABASE_LOCATION]: string;
     [DATABASE_SERVERS_FIELD_NAMES.IS_POSTGRESQL_EXISTS]?: boolean;
-    [DATABASE_SERVERS_FIELD_NAMES.ROLES]?: CpaRoles;
+    [DATABASE_SERVERS_FIELD_NAMES.ROLES]?: HaRoles;
   }[];
 }

@@ -1,6 +1,6 @@
 ---
-# jumbosql-deploy.yml - copied into the CPA playbook directory (next to crunchy-postgres-ha.playbook.yml,
-# group_vars/ and files/), so every relative path in CPA resolves exactly as on the Ansible VM.
+# jumbosql-deploy.yml - copied into the HA playbook directory (next to keen-ha.playbook.yml, group_vars/ and
+# files/), so every relative path in the playbook resolves exactly as on the Ansible VM.
 #
 # The two debug tasks are read by the JumboSQL console from the JSON log, by task name:
 #   "System info"                                       -> the database servers shown on the cluster page
@@ -17,8 +17,8 @@
           server_name: "{{ jumbo_hostname | default(inventory_hostname) }}"
           ip_address: "{{ ansible_host | default(inventory_hostname) }}"
 
-- name: Crunchy Postgres HA (CPA 2.2.0)
-  ansible.builtin.import_playbook: crunchy-postgres-ha.playbook.yml
+- name: Keen PostgreSQL HA
+  ansible.builtin.import_playbook: keen-ha.playbook.yml
 
 # The SQL editor is registered against HAProxy's read-write port, which always routes to the current
 # Patroni leader - so the editor keeps working after a switchover or failover.

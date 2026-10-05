@@ -1,16 +1,16 @@
 import { describe, expect, it } from 'vitest';
-import { buildCpaInventory, cpaInventoryToYaml, CpaServer, defaultCpaRoles, validateCpaLayout } from './cpaInventory';
+import { buildHaInventory, haInventoryToYaml, HaServer, defaultHaRoles, validateHaLayout } from './haInventory';
 
-// The layout from the lab: one util VM + two DB VMs (cpa-rnd.sh "combined" layout)
-const combined: CpaServer[] = [
-  { hostname: 'util1', ip: '192.168.122.27', roles: defaultCpaRoles(0) },
-  { hostname: 'db1', ip: '192.168.122.24', roles: defaultCpaRoles(1) },
-  { hostname: 'db2', ip: '192.168.122.25', roles: defaultCpaRoles(2) },
+// The layout from the lab: one util VM + two DB VMs ("combined" layout)
+const combined: HaServer[] = [
+  { hostname: 'util1', ip: '192.168.122.27', roles: defaultHaRoles(0) },
+  { hostname: 'db1', ip: '192.168.122.24', roles: defaultHaRoles(1) },
+  { hostname: 'db2', ip: '192.168.122.25', roles: defaultHaRoles(2) },
 ];
 
-describe('buildCpaInventory', () => {
-  it('puts each VM in the CPA groups of its roles', () => {
-    const inv = buildCpaInventory(combined);
+describe('buildHaInventory', () => {
+  it('puts each VM in the HA groups of its roles', () => {
+    const inv = buildHaInventory(combined);
     const c = inv.all.children;
 
     expect(Object.keys(c.etcd_cluster.hosts!)).toEqual(['192.168.122.27', '192.168.122.24', '192.168.122.25']);
@@ -27,31 +27,31 @@ describe('buildCpaInventory', () => {
   });
 
   it('adds master/replica for the console from the Patroni nodes', () => {
-    const c = buildCpaInventory(combined).all.children;
+    const c = buildHaInventory(combined).all.children;
     expect(Object.keys(c.master.hosts!)).toEqual(['192.168.122.24']);
     expect(Object.keys(c.replica.hosts!)).toEqual(['192.168.122.25']);
   });
 
   it('leaves monitoring groups out when no VM has the role', () => {
     const noMon = combined.map((s) => ({ ...s, roles: { ...s.roles, monitoring: false } }));
-    const c = buildCpaInventory(noMon).all.children;
+    const c = buildHaInventory(noMon).all.children;
     expect(c.prometheus_cluster).toBeUndefined();
     expect(c.pgmonitor_cluster).toBeUndefined();
   });
 
   it('passes a custom SSH port as ansible_port', () => {
     const servers = combined.map((s, i) => (i === 1 ? { ...s, sshPort: '2222' } : s));
-    expect(buildCpaInventory(servers).all.children.patroni_cluster.hosts!['192.168.122.24'].ansible_port).toBe(2222);
+    expect(buildHaInventory(servers).all.children.patroni_cluster.hosts!['192.168.122.24'].ansible_port).toBe(2222);
   });
 });
 
-describe('validateCpaLayout', () => {
+describe('validateHaLayout', () => {
   it('accepts the combined layout', () => {
-    expect(validateCpaLayout(combined)).toEqual([]);
+    expect(validateHaLayout(combined)).toEqual([]);
   });
 
   it('accepts the split layout (3 etcd VMs, 2 DB VMs, 1 util VM)', () => {
-    const split: CpaServer[] = [
+    const split: HaServer[] = [
       { ip: '10.0.0.20', roles: { etcd: true } },
       { ip: '10.0.0.22', roles: { etcd: true } },
       { ip: '10.0.0.23', roles: { etcd: true } },
@@ -59,37 +59,37 @@ describe('validateCpaLayout', () => {
       { ip: '10.0.0.25', roles: { patroni: true } },
       { ip: '10.0.0.27', roles: { haproxy: true, pgbouncer: true, backrest: true, monitoring: true } },
     ];
-    expect(validateCpaLayout(split)).toEqual([]);
+    expect(validateHaLayout(split)).toEqual([]);
   });
 
   it('rejects an even etcd count, a single Patroni node and HAProxy on a DB node', () => {
-    const bad: CpaServer[] = [
+    const bad: HaServer[] = [
       { ip: '10.0.0.1', roles: { etcd: true, patroni: true, haproxy: true, pgbouncer: true, backrest: true } },
       { ip: '10.0.0.2', roles: { etcd: true } },
     ];
-    const errors = validateCpaLayout(bad).join('\n');
+    const errors = validateHaLayout(bad).join('\n');
     expect(errors).toMatch(/odd number/);
     expect(errors).toMatch(/at least 2/);
     expect(errors).toMatch(/can't share a server/);
   });
 
   it('rejects duplicate IPs, VMs without a role and two pgBackRest repos', () => {
-    const bad: CpaServer[] = [
+    const bad: HaServer[] = [
       ...combined,
       { ip: '192.168.122.24', roles: { backrest: true } },
       { ip: '192.168.122.30', roles: {} },
     ];
-    const errors = validateCpaLayout(bad).join('\n');
+    const errors = validateHaLayout(bad).join('\n');
     expect(errors).toMatch(/same IP/);
     expect(errors).toMatch(/has no role/);
     expect(errors).toMatch(/exactly 1 server/);
   });
 });
 
-describe('cpaInventoryToYaml', () => {
-  it('renders CPA groups only, with quoted templates', () => {
-    const yaml = cpaInventoryToYaml(buildCpaInventory(combined), 'cpa-ab1');
-    expect(yaml).toContain("for cluster 'cpa-ab1'");
+describe('haInventoryToYaml', () => {
+  it('renders HA groups only, with quoted templates', () => {
+    const yaml = haInventoryToYaml(buildHaInventory(combined), 'keen-ab1');
+    expect(yaml).toContain("for cluster 'keen-ab1'");
     expect(yaml).toContain('    primary_port: "{{ haproxy_client_pgport_rw }}"');
     expect(yaml).toContain(
       '    patroni_cluster:\n      hosts:\n        192.168.122.24:\n          patroni_name: ip24_pg1',

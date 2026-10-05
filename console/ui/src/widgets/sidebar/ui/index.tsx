@@ -7,6 +7,7 @@ import { useEffect, useRef, useState } from 'react';
 import CollapseIcon from '@shared/assets/collapseIcon.svg?react';
 import RouterPaths from '@app/router/routerPathsConfig';
 import { HEADER_HEIGHT } from '@shared/model/constants.ts';
+import { BRAND } from '@shared/theme/theme.ts';
 
 const Sidebar = () => {
   const { t } = useTranslation('shared');
@@ -67,19 +68,21 @@ const Sidebar = () => {
   return (
     <Drawer
       variant="permanent"
+      PaperProps={{ 'data-surface': 'chrome' } as object}
       sx={{
         width: isCollapsed ? COLLAPSED_SIDEBAR_WIDTH : OPEN_SIDEBAR_WIDTH,
         flexShrink: 0,
         overflow: 'auto',
         [`& .MuiDrawer-paper`]: {
           width: isCollapsed ? COLLAPSED_SIDEBAR_WIDTH : OPEN_SIDEBAR_WIDTH,
+          backgroundColor: BRAND.navy800,
           boxSizing: 'border-box',
           transition: 'width .1s ease-in-out',
         },
       }}>
       <Toolbar sx={{ minHeight: `${HEADER_HEIGHT} !important` }} />
       <Stack direction="column" height="100%" width="100%" alignItems="flex-start" justifyContent="center">
-        <List sx={{ width: '100%' }}>
+        <List sx={{ width: '100%', pt: '12px' }}>
           {sidebarData(t).map((item) => (
             <SidebarItem
               key={item.label + item.path}
@@ -90,25 +93,25 @@ const Sidebar = () => {
           ))}
         </List>
         <Box sx={{ height: '100%' }} />
-        <Divider flexItem />
+        <Divider flexItem sx={{ borderColor: 'rgba(255,255,255,0.08)' }} />
         <List sx={{ width: '100%', padding: '8px 0 8px 0' }}>
           {sidebarLowData(t).map((item) => (
             <SidebarItem key={item.label + item.path} isCollapsed={isCollapsed} target="_blank" {...item} />
           ))}
         </List>
-        <Divider flexItem />
+        <Divider flexItem sx={{ borderColor: 'rgba(255,255,255,0.08)' }} />
         <IconButton
           sx={{
             width: '100%',
             transform: isCollapsed ? 'scale(-1, 1)' : 'none',
             transition: 'transform .1s ease-in-out',
             borderRadius: 0,
-            color: 'text.primary',
+            color: BRAND.chromeMuted,
             '&:hover': {
-              backgroundColor: 'action.hover',
+              backgroundColor: 'rgba(255, 255, 255, 0.07)',
             },
             '& svg': {
-              fill: 'currentColor',
+              fill: `${BRAND.chromeMuted} !important`,
             },
           }}
           onClick={toggleSidebarCollapse}>

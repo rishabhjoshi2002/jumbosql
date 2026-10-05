@@ -57,7 +57,7 @@ const SqlEditor: FC = () => {
         overflow: 'hidden',
         position: 'relative',
       }}>
-      {/* JumboSQL: the editor's connections are registered against HAProxy's read-write port (see automation-cpa) */}
+      {/* JumboSQL: the editor's connections are registered against HAProxy's read-write port (see automation-ha) */}
       <Alert severity="info" sx={{ borderRadius: 0, py: 0 }}>
         {t('sqlEditorLeaderNote', { ns: 'clusters' })}
       </Alert>

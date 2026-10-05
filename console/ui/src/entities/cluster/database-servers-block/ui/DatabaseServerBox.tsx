@@ -5,7 +5,7 @@ import { Card, Checkbox, FormControlLabel, FormGroup, IconButton, Stack, TextFie
 import { useTranslation } from 'react-i18next';
 import CloseIcon from '@mui/icons-material/Close';
 import { DATABASE_SERVERS_FIELD_NAMES } from '@entities/cluster/database-servers-block/model/const.ts';
-import { CPA_ROLE_LABELS, CPA_ROLE_ORDER } from '@shared/lib/cpaInventory.ts';
+import { HA_ROLE_LABELS, HA_ROLE_ORDER } from '@shared/lib/haInventory.ts';
 
 const DatabaseServerBox: FC<DatabaseServerBlockProps> = ({ index, remove }) => {
   const { t } = useTranslation(['clusters', 'shared']);
@@ -105,10 +105,10 @@ const DatabaseServerBox: FC<DatabaseServerBlockProps> = ({ index, remove }) => {
           )}
         />
         <Typography variant="body2" fontWeight="bold" marginTop={1}>
-          {t('cpaRoles', { ns: 'clusters' })}
+          {t('haRoles', { ns: 'clusters' })}
         </Typography>
         <FormGroup>
-          {CPA_ROLE_ORDER.map((role) => (
+          {HA_ROLE_ORDER.map((role) => (
             <Controller
               key={role}
               control={control}
@@ -117,7 +117,7 @@ const DatabaseServerBox: FC<DatabaseServerBlockProps> = ({ index, remove }) => {
                 <FormControlLabel
                   sx={{ marginY: '-4px' }}
                   control={<Checkbox size="small" {...field} checked={!!field.value} />}
-                  label={<Typography variant="body2">{CPA_ROLE_LABELS[role]}</Typography>}
+                  label={<Typography variant="body2">{HA_ROLE_LABELS[role]}</Typography>}
                 />
               )}
             />

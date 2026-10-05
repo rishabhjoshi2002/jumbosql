@@ -189,7 +189,7 @@ export const LocalFormSchema = (t: TFunction) =>
               : schema.notRequired(),
         ),
     })
-    // JumboSQL: load balancers and DCS are roles in the CPA inventory step, validated there
+    // JumboSQL: load balancers and DCS are roles in the HA inventory step, validated there
     .concat(DatabaseServersBlockSchema(t));
 
 export const ClusterFormSchema = (t: TFunction) => {

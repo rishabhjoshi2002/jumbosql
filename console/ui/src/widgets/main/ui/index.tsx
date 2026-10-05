@@ -11,7 +11,7 @@ const Main: FC = () => {
   const isSqlEditor = location.pathname.startsWith('/sql-editor');
 
   return (
-    <main style={{ display: 'flex', overflow: 'auto', width: '100%', padding: '8px' }}>
+    <main style={{ display: 'flex', overflow: 'auto', width: '100%', padding: '8px', position: 'relative', zIndex: 1 }}>
       <Stack width="100%">
         <Toolbar sx={{ minHeight: `${HEADER_HEIGHT} !important`, backgroundColor: theme.palette.background.default }} />
       {!isSqlEditor && (
