@@ -1,7 +1,7 @@
 import { FC } from 'react';
 import { Divider, Tab, Tabs } from '@mui/material';
 import { Link, Outlet, useLocation } from 'react-router-dom';
-import { settingsTabsContent } from '@pages/settings/model/constants.ts';
+import { getSettingsTabs } from '@pages/settings/model/constants.ts';
 import { useTranslation } from 'react-i18next';
 import { generateAbsoluteRouterPath } from '@shared/lib/functions.ts';
 
@@ -12,7 +12,7 @@ const Settings: FC = () => {
   return (
     <>
       <Tabs value={location.pathname}>
-        {settingsTabsContent.map((tabContent) => (
+        {getSettingsTabs().map((tabContent) => (
           <Tab
             key={tabContent.path}
             label={t(tabContent.translateKey)}

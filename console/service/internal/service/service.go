@@ -1,7 +1,11 @@
 package service
 
 import (
+	"context"
+
+	"postgresql-cluster-console/internal/auth"
 	"postgresql-cluster-console/internal/configuration"
+	authctl "postgresql-cluster-console/internal/controllers/auth"
 	"postgresql-cluster-console/internal/controllers/cluster"
 	"postgresql-cluster-console/internal/controllers/dictionary"
 	"postgresql-cluster-console/internal/controllers/environment"
@@ -9,9 +13,11 @@ import (
 	"postgresql-cluster-console/internal/controllers/project"
 	"postgresql-cluster-console/internal/controllers/secret"
 	"postgresql-cluster-console/internal/controllers/setting"
+	"postgresql-cluster-console/internal/controllers/user"
 	"postgresql-cluster-console/internal/storage"
 	"postgresql-cluster-console/internal/watcher"
 	"postgresql-cluster-console/internal/xdocker"
+	localmid "postgresql-cluster-console/middleware"
 	"postgresql-cluster-console/models"
 	"postgresql-cluster-console/pkg/patroni"
 	"postgresql-cluster-console/restapi"
@@ -53,6 +59,25 @@ func NewService(
 	srv.ReadTimeout = cfg.Http.ReadTimeout
 	srv.WriteTimeout = cfg.Http.WriteTimeout
 	restapi.Token = cfg.Authorization.Token
+
+	// JumboSQL: username/password sign-in (local users today; LDAP/SSO providers can be added to the list)
+	authSvc := auth.NewService(db, cfg.Auth.SessionTTL, auth.NewLocalProvider(db))
+	adminPassword := cfg.Auth.AdminPassword
+	if adminPassword == "" {
+		adminPassword = cfg.Authorization.Token
+	}
+	if created, err := authSvc.Bootstrap(context.Background(), cfg.Auth.AdminUsername, adminPassword); err != nil {
+		log.Error().Err(err).Msg("could not create the first admin user")
+	} else if created {
+		log.Info().Str("username", cfg.Auth.AdminUsername).Msg("created the first admin user (password: PG_CONSOLE_AUTH_ADMIN_PASSWORD, or the authorization token)")
+	}
+	restapi.Sessions = func(ctx context.Context, token string) *localmid.Principal {
+		u, err := authSvc.UserForToken(ctx, token)
+		if err != nil || u == nil {
+			return nil
+		}
+		return &localmid.Principal{UserID: u.ID, Username: u.Username, Role: u.Role}
+	}
 
 	localLog := log.With().Str("module", "http_server").Logger()
 	api.Logger = func(s string, i ...interface{}) {
@@ -106,6 +131,16 @@ func NewService(
 	api.ClusterDeleteServersIDHandler = cluster.NewDeleteServerHandler(db, log.Logger)
 	api.ClusterPostClustersIDRefreshHandler = cluster.NewPostClusterRefreshHandler(db, log.Logger, clusterWatcher)
 
+	// JumboSQL: sign-in and users
+	api.AuthPostAuthLoginHandler = authctl.NewPostAuthLoginHandler(authSvc, log.Logger)
+	api.AuthPostAuthLogoutHandler = authctl.NewPostAuthLogoutHandler(authSvc)
+	api.AuthGetAuthMeHandler = authctl.NewGetAuthMeHandler(db)
+	api.AuthPostAuthPasswordHandler = authctl.NewPostAuthPasswordHandler(db)
+	api.UserGetUsersHandler = user.NewGetUsersHandler(db)
+	api.UserPostUsersHandler = user.NewPostUserHandler(db)
+	api.UserPatchUsersIDHandler = user.NewPatchUserHandler(db)
+	api.UserDeleteUsersIDHandler = user.NewDeleteUserHandler(db)
+
 	// JumboSQL: Patroni panel (switchover / restart / reinitialize)
 	patroniActions := patroni.NewActions(patroni.ActionsConfig{
 		Port:     cfg.Patroni.Port,
@@ -116,6 +151,7 @@ func NewService(
 	api.ClusterPostClustersIDSwitchoverHandler = cluster.NewPostClusterSwitchoverHandler(db, log.Logger, patroniActions, clusterWatcher)
 	api.ClusterPostServersIDRestartHandler = cluster.NewPostServerRestartHandler(db, log.Logger, patroniActions, clusterWatcher)
 	api.ClusterPostServersIDReinitializeHandler = cluster.NewPostServerReinitializeHandler(db, log.Logger, patroniActions, clusterWatcher)
+	api.ClusterPostClustersIDPatroniHandler = cluster.NewPostClusterPatroniHandler(db, log.Logger, patroniActions, clusterWatcher)
 
 	api.SystemGetVersionHandler = system.GetVersionHandlerFunc(func(params system.GetVersionParams) middleware.Responder {
 		return system.NewGetVersionOK().WithPayload(&models.ResponseVersion{

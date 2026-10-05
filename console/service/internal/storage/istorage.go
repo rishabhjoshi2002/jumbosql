@@ -6,6 +6,22 @@ import (
 )
 
 type IStorage interface {
+	// JumboSQL: users and login sessions
+	CountUsers(ctx context.Context) (int64, error)
+	CountAdmins(ctx context.Context) (int64, error)
+	GetUserByName(ctx context.Context, username, provider string) (*User, error)
+	GetUser(ctx context.Context, id int64) (*User, error)
+	GetUsers(ctx context.Context) ([]User, error)
+	CreateUser(ctx context.Context, req *CreateUserReq) (*User, error)
+	UpdateUser(ctx context.Context, req *UpdateUserReq) (*User, error)
+	DeleteUser(ctx context.Context, id int64) error
+	TouchUserLogin(ctx context.Context, id int64) error
+	CreateUserSession(ctx context.Context, tokenHash string, userID int64, expiresAt time.Time, userAgent string) error
+	GetSessionUser(ctx context.Context, tokenHash string) (*User, error)
+	DeleteUserSession(ctx context.Context, tokenHash string) error
+	DeleteUserSessions(ctx context.Context, userID int64) error
+	DeleteExpiredUserSessions(ctx context.Context) error
+
 	GetCloudProviders(ctx context.Context, limit, offset *int64) ([]CloudProvider, *MetaPagination, error)
 	GetCloudProviderInfo(ctx context.Context, providerCode string) (*CloudProviderInfo, error)
 	GetExtensions(ctx context.Context, req *GetExtensionsReq) ([]Extension, *MetaPagination, error)

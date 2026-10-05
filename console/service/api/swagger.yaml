@@ -499,6 +499,164 @@ paths:
           schema:
             $ref: "#/definitions/Response.Error"
 
+  /auth/login:
+    post:
+      summary: "JumboSQL: sign in with username and password"
+      tags:
+        - auth
+      parameters:
+        - name: body
+          in: body
+          required: true
+          schema:
+            $ref: "#/definitions/Request.Login"
+      responses:
+        '200':
+          description: OK
+          schema:
+            $ref: "#/definitions/Response.Login"
+        '401':
+          description: Invalid username or password
+          schema:
+            $ref: "#/definitions/Response.Error"
+
+  /auth/logout:
+    post:
+      summary: "JumboSQL: end the current session"
+      tags:
+        - auth
+      responses:
+        '204':
+          description: OK
+
+  /auth/me:
+    get:
+      summary: "JumboSQL: the signed-in user"
+      tags:
+        - auth
+      responses:
+        '200':
+          description: OK
+          schema:
+            $ref: "#/definitions/User"
+
+  /auth/password:
+    post:
+      summary: "JumboSQL: change your own password"
+      tags:
+        - auth
+      parameters:
+        - name: body
+          in: body
+          required: true
+          schema:
+            $ref: "#/definitions/Request.PasswordChange"
+      responses:
+        '204':
+          description: OK
+        '400':
+          description: Error
+          schema:
+            $ref: "#/definitions/Response.Error"
+
+  /users:
+    get:
+      summary: "JumboSQL: list console users (admin)"
+      tags:
+        - user
+      responses:
+        '200':
+          description: OK
+          schema:
+            type: array
+            items:
+              $ref: "#/definitions/User"
+    post:
+      summary: "JumboSQL: add a local user (admin)"
+      tags:
+        - user
+      parameters:
+        - name: body
+          in: body
+          required: true
+          schema:
+            $ref: "#/definitions/Request.UserCreate"
+      responses:
+        '200':
+          description: OK
+          schema:
+            $ref: "#/definitions/User"
+        '400':
+          description: Error
+          schema:
+            $ref: "#/definitions/Response.Error"
+
+  /users/{id}:
+    patch:
+      summary: "JumboSQL: change a user's role, display name or password (admin)"
+      tags:
+        - user
+      parameters:
+        - name: id
+          in: path
+          required: true
+          type: integer
+        - name: body
+          in: body
+          required: true
+          schema:
+            $ref: "#/definitions/Request.UserUpdate"
+      responses:
+        '200':
+          description: OK
+          schema:
+            $ref: "#/definitions/User"
+        '400':
+          description: Error
+          schema:
+            $ref: "#/definitions/Response.Error"
+    delete:
+      summary: "JumboSQL: remove a user (admin)"
+      tags:
+        - user
+      parameters:
+        - name: id
+          in: path
+          required: true
+          type: integer
+      responses:
+        '204':
+          description: OK
+        '400':
+          description: Error
+          schema:
+            $ref: "#/definitions/Response.Error"
+
+  /clusters/{id}/patroni:
+    post:
+      summary: "JumboSQL: run a patronictl-equivalent command through the Patroni REST API"
+      tags:
+        - cluster
+      parameters:
+        - name: id
+          in: path
+          required: true
+          type: integer
+        - name: body
+          in: body
+          required: true
+          schema:
+            $ref: "#/definitions/Request.PatroniCommand"
+      responses:
+        '200':
+          description: OK
+          schema:
+            $ref: "#/definitions/Response.PatroniCommand"
+        '400':
+          description: Error
+          schema:
+            $ref: "#/definitions/Response.Error"
+
   /projects:
     post:
       summary: "Create new project"
@@ -818,6 +976,110 @@ definitions:
         type: string
       message:
         type: string
+
+  Request.Login:
+    type: object
+    required: [username, password]
+    properties:
+      username:
+        type: string
+      password:
+        type: string
+
+  Response.Login:
+    type: object
+    properties:
+      token:
+        type: string
+      expires_at:
+        type: string
+        format: date-time
+      user:
+        $ref: "#/definitions/User"
+
+  User:
+    type: object
+    properties:
+      id:
+        type: integer
+      username:
+        type: string
+      display_name:
+        type: string
+      role:
+        type: string
+        enum: [admin, operator, viewer]
+      auth_provider:
+        type: string
+      created_at:
+        type: string
+        format: date-time
+      last_login_at:
+        type: string
+        format: date-time
+        x-nullable: true
+
+  Request.UserCreate:
+    type: object
+    required: [username, password, role]
+    properties:
+      username:
+        type: string
+      display_name:
+        type: string
+      password:
+        type: string
+      role:
+        type: string
+        enum: [admin, operator, viewer]
+
+  Request.UserUpdate:
+    type: object
+    properties:
+      display_name:
+        type: string
+      password:
+        type: string
+      role:
+        type: string
+        enum: [admin, operator, viewer]
+
+  Request.PasswordChange:
+    type: object
+    required: [current_password, new_password]
+    properties:
+      current_password:
+        type: string
+      new_password:
+        type: string
+
+  Request.PatroniCommand:
+    type: object
+    required: [command]
+    properties:
+      command:
+        type: string
+        enum: [list, history, show-config, edit-config, pause, resume, switchover, failover, restart, reinit, reload]
+      member:
+        type: string
+        description: Patroni member name (restart, reinit, reload; empty = all members for restart/reload)
+      candidate:
+        type: string
+        description: Member that becomes the leader (switchover optional, failover required)
+      config:
+        type: object
+        description: Partial DCS configuration to merge (edit-config)
+
+  Response.PatroniCommand:
+    type: object
+    properties:
+      command:
+        type: string
+        description: The equivalent patronictl command line
+      message:
+        type: string
+      data:
+        type: object
 
   Response.Error:
     title: Error object

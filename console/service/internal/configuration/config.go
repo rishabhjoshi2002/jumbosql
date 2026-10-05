@@ -14,7 +14,7 @@ type Config struct {
 	Http struct {
 		Host         string        `default:"0.0.0.0" desc:"Accepted host for connection. '0.0.0.0' for all hosts"`
 		Port         int           `default:"8080" desc:"Listening port"`
-		WriteTimeout time.Duration `default:"10s" desc:"Maximum duration before timing out write of the response"`
+		WriteTimeout time.Duration `default:"180s" desc:"Maximum duration before timing out write of the response (JumboSQL: long enough for Patroni restarts)"`
 		ReadTimeout  time.Duration `default:"10s" desc:"Maximum duration before timing out read of the request"`
 	}
 	Https struct {
@@ -26,7 +26,13 @@ type Config struct {
 		ServerKey  string `default:"/etc/pg_console/server-key.pem" desc:"The private key to use for secure connections"`
 	}
 	Authorization struct {
-		Token string `default:"auth_token" desc:"Authorization token for REST API"`
+		Token string `default:"auth_token" desc:"Authorization token for REST API (scripts/automation; people sign in with a username)"`
+	}
+	// JumboSQL: username/password sign-in
+	Auth struct {
+		SessionTTL    time.Duration `envconfig:"auth_session_ttl" default:"12h" desc:"How long a sign-in lasts"`
+		AdminUsername string        `envconfig:"auth_admin_username" default:"admin" desc:"First admin, created when there are no users yet"`
+		AdminPassword string        `envconfig:"auth_admin_password" default:"" desc:"First admin's password (empty = use the authorization token)"`
 	}
 	Db struct {
 		Host            string        `default:"localhost" desc:"Database host"`
@@ -40,10 +46,13 @@ type Config struct {
 		MigrationDir    string        `default:"/etc/db/migrations" desc:"Path to directory with migration scripts"`
 	}
 	EncryptionKey string `default:"super_secret" desc:"Encryption key for secret storage"`
+	// JumboSQL: the Ansible vault password for vault.yml, handed to each deployment container (never stored).
+	// Set PG_CONSOLE_VAULT_PASSWORD, or PG_CONSOLE_VAULT_PASSWORD_FILE for a Docker secret file.
+	VaultPassword string `envconfig:"vault_password" default:"" desc:"Ansible vault password for the HA automation (or use _FILE)"`
 	Docker        struct {
 		Host   string `default:"unix:///var/run/docker.sock" desc:"Docker host"`
 		LogDir string `default:"/tmp/ansible" desc:"Directory inside docker container for ansible json log"`
-		Image  string `default:"jumbosql/automation-cpa:2.2.0" desc:"Docker image for the CPA automation (built locally by build.sh)"`
+		Image  string `default:"jumbosql/automation-ha:2.2.0" desc:"Docker image for the HA automation (built locally by build.sh)"`
 	}
 	LogWatcher struct {
 		RunEvery    time.Duration `default:"1m" desc:"LogWatcher run interval"`
@@ -110,5 +119,7 @@ func (c *Config) Redacted() Config {
 	out.Db.Password = mask(out.Db.Password)
 	out.EncryptionKey = mask(out.EncryptionKey)
 	out.Patroni.Password = mask(out.Patroni.Password)
+	out.VaultPassword = mask(out.VaultPassword)
+	out.Auth.AdminPassword = mask(out.Auth.AdminPassword)
 	return out
 }

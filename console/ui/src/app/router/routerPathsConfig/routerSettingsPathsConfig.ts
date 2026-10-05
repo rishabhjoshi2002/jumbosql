@@ -16,6 +16,10 @@ const routerSettingsPathsConfig = {
     absolutePath: '/settings/environments',
     relativePath: 'environments',
   },
+  users: {
+    absolutePath: '/settings/users',
+    relativePath: 'users',
+  },
 };
 
 export default routerSettingsPathsConfig;
