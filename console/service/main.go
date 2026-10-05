@@ -70,7 +70,14 @@ func main() {
 	}
 
 	str := storage.NewDbStorage(dbPool)
-	dockerManager, err := xdocker.NewDockerManager(cfg.Docker.Host, cfg.Docker.Image)
+	// JumboSQL: the vault password goes to each deployment container as an environment variable
+	var automationEnv []string
+	if cfg.VaultPassword != "" {
+		automationEnv = append(automationEnv, "ANSIBLE_VAULT_PASSWORD="+cfg.VaultPassword)
+	} else {
+		log.Warn().Msg("PG_CONSOLE_VAULT_PASSWORD is not set: deployments can only use an unencrypted vault.yml")
+	}
+	dockerManager, err := xdocker.NewDockerManager(cfg.Docker.Host, cfg.Docker.Image, automationEnv...)
 	if err != nil {
 		log.Error().Err(err).Msg("failed to create docker manager")
 

@@ -17,12 +17,13 @@ import (
 )
 
 type dockerManager struct {
-	cli   *client.Client
-	log   zerolog.Logger
-	image string
+	cli      *client.Client
+	log      zerolog.Logger
+	image    string
+	extraEnv []string // JumboSQL: added to every deployment container (e.g. the vault password); never logged
 }
 
-func NewDockerManager(host string, image string) (IManager, error) {
+func NewDockerManager(host string, image string, extraEnv ...string) (IManager, error) {
 	var rt http.RoundTripper
 	rt, err := NewRoundTripperLog(host, log.Logger.With().Str("module", "docker_client").Logger())
 	if err != nil {
@@ -39,9 +40,10 @@ func NewDockerManager(host string, image string) (IManager, error) {
 	}
 
 	return &dockerManager{
-		cli:   cli,
-		log:   log.Logger.With().Str("module", "docker_manager").Logger(),
-		image: strings.TrimSpace(image), // trim to avoid newline / spaces
+		cli:      cli,
+		log:      log.Logger.With().Str("module", "docker_manager").Logger(),
+		image:    strings.TrimSpace(image), // trim to avoid newline / spaces
+		extraEnv: extraEnv,
 	}, nil
 }
 
@@ -56,7 +58,7 @@ func (m *dockerManager) ManageCluster(ctx context.Context, config *ManageCluster
 		&container.Config{
 			Image: m.image,
 			Tty:   true,
-			Env:   config.Envs,
+			Env:   append(append([]string{}, config.Envs...), m.extraEnv...),
 			Cmd: func() []string {
 				cmd := []string{entryPoint, playbookCreateCluster}
 
