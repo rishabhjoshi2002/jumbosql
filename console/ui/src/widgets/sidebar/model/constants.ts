@@ -45,17 +45,17 @@ export const sidebarLowData = (t: TFunction) => [
   {
     icon: GithubIcon,
     label: t('github', { ns: 'shared' }),
-    path: 'https://github.com/autobase-tech/autobase',
+    path: 'https://github.com/rishabhjoshi2002/jumbosql',
   },
   {
     icon: DocumentationIcon,
     label: t('documentation', { ns: 'shared' }),
-    path: 'https://autobase.tech/docs',
+    path: 'https://github.com/rishabhjoshi2002/jumbosql#readme',
   },
   {
     icon: SupportIcon,
     label: t('support', { ns: 'shared' }),
-    path: 'https://autobase.tech/docs/support',
+    path: 'https://github.com/rishabhjoshi2002/jumbosql/issues',
   },
 ];
 

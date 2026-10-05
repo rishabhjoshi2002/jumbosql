@@ -11,7 +11,7 @@ import { Controller, useForm } from 'react-hook-form';
 import { LoginFormValues } from '@pages/login/model/types.ts';
 import { LOGIN_FORM_FIELD_NAMES } from '@pages/login/model/constants.ts';
 import { version } from '../../../../package.json';
-import Logo from '@shared/assets/AutobaseLogo.svg?react';
+import logo from '@shared/assets/jumbosqlLogo.png';
 
 const Login: FC = () => {
   const { t } = useTranslation('shared');
@@ -48,8 +48,7 @@ const Login: FC = () => {
             width="300px"
             height="max-content"
             padding="16px">
-            <Logo style={{ width: '50px', height: '50px' }} data-logo="true" />
-            <Typography fontWeight="400" variant="h6">Autobase Community Edition</Typography>
+            <img src={logo} alt="JumboSQL" style={{ width: '200px', height: '200px' }} data-logo="true" />
             <Controller
               control={control}
               name={LOGIN_FORM_FIELD_NAMES.TOKEN}
@@ -77,11 +76,11 @@ const Login: FC = () => {
         </form>
         <Box position="absolute" bottom="24px" left="24px">
           <Typography variant="caption" size="small">
-            Built by&nbsp;
-            <Link href="https://gs-labs.ru/" underline="hover" target="_blank">
-              GS Labs
+            JumboSQL, based on&nbsp;
+            <Link href="https://github.com/autobase-tech/autobase" underline="hover" target="_blank">
+              Autobase
             </Link>
-            &nbsp;& Autobase Community
+            &nbsp;(MIT) and Crunchy Postgres for Ansible
           </Typography>
         </Box>
       </Paper>

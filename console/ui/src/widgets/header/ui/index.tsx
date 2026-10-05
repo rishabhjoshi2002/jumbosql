@@ -6,10 +6,9 @@ import Stack from '@mui/material/Stack';
 import TextField from '@mui/material/TextField';
 import Toolbar from '@mui/material/Toolbar';
 import Typography from '@mui/material/Typography';
-import Logo from '@shared/assets/AutobaseLogo.svg?react';
+import logoIcon from '@shared/assets/jumbosqlIcon.png';
 import LogoutButton from '@features/logout-button';
 import ThemeToggle from '@features/theme-toggle';
-import UpgradeToEnterprise from '@features/upgrade-to-enterprise';
 import { useGetProjectsQuery } from '@shared/api/api/projects.ts';
 import { HEADER_HEIGHT } from '@shared/model/constants.ts';
 import { OPEN_SIDEBAR_WIDTH } from '@widgets/sidebar/model/constants.ts';
@@ -52,10 +51,10 @@ const Header: FC = () => {
               width={OPEN_SIDEBAR_WIDTH}
               boxSizing="border-box"
               paddingLeft="16px">
-              <Logo style={{ width: '35px', height: '35px' }} data-logo="true" />
+              <img src={logoIcon} alt="JumboSQL" style={{ width: '38px', height: '38px' }} data-logo="true" />
               <Box sx={{ lineHeight: 1 }}>
                 <Typography fontWeight="400" sx={{ color: 'text.primary', lineHeight: 1.2 }}>
-                  autobase
+                  jumbosql
                 </Typography>
                 <Typography
                   fontSize="0.875rem"
@@ -64,7 +63,7 @@ const Header: FC = () => {
                     color: theme.palette.mode === 'light' ? 'rgba(75, 85, 99, 0.82)' : 'text.secondary',
                     lineHeight: 1.15,
                   })}>
-                  Community Edition
+                  Crunchy Postgres HA
                 </Typography>
               </Box>
             </Stack>
@@ -83,7 +82,6 @@ const Header: FC = () => {
             </TextField>
           </Stack>
           <Stack direction="row" alignItems="center" gap="8px">
-            <UpgradeToEnterprise />
             <ThemeToggle />
             <LogoutButton />
           </Stack>
