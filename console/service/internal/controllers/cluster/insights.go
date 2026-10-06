@@ -34,3 +34,24 @@ func (h *insightsHandler) Handle(param cluster.GetClustersIDInsightsParams) midd
 	}
 	return cluster.NewGetClustersIDInsightsOK().WithPayload(rep)
 }
+
+type monitoringHandler struct{ svc *insights.Service }
+
+func NewMonitoringHandler(svc *insights.Service) cluster.GetClustersIDMonitoringHandler {
+	return &monitoringHandler{svc: svc}
+}
+
+func (h *monitoringHandler) Handle(param cluster.GetClustersIDMonitoringParams) middleware.Responder {
+	minutes := 60
+	if param.Minutes != nil && *param.Minutes > 0 {
+		minutes = int(*param.Minutes)
+		if minutes > 7*24*60 {
+			minutes = 7 * 24 * 60
+		}
+	}
+	m, err := h.svc.Monitoring(param.HTTPRequest.Context(), param.ID, minutes)
+	if err != nil {
+		return cluster.NewGetClustersIDMonitoringBadRequest().WithPayload(controllers.MakeErrorPayload(err, controllers.BaseError))
+	}
+	return cluster.NewGetClustersIDMonitoringOK().WithPayload(m)
+}

@@ -28,6 +28,8 @@ interface Props {
   height?: number;
   yMax?: number;
   empty?: string;
+  /** show the legend even for a single series (e.g. which node it is) */
+  legend?: boolean;
 }
 
 const M = { top: 12, right: 16, bottom: 26, left: 56 };
@@ -38,7 +40,7 @@ const fmtDate = (t: number, spanDays: number) =>
     spanDays > 2 ? { day: 'numeric', month: 'short' } : { hour: '2-digit', minute: '2-digit' },
   );
 
-const TrendChart: FC<Props> = ({ series, format, limits = [], height = 220, yMax, empty }) => {
+const TrendChart: FC<Props> = ({ series, format, limits = [], height = 220, yMax, empty, legend }) => {
   const theme = useTheme();
   const dark = theme.palette.mode === 'dark';
   const colors = dark ? SLOTS.dark : SLOTS.light;
@@ -126,7 +128,7 @@ const TrendChart: FC<Props> = ({ series, format, limits = [], height = 220, yMax
 
   return (
     <Box ref={ref} sx={{ position: 'relative', userSelect: 'none', width: '100%', minWidth: 0, overflow: 'hidden' }}>
-      {series.length > 1 || series.some((s) => s.forecast?.length) ? (
+      {legend || series.length > 1 || series.some((s) => s.forecast?.length) ? (
         <Stack direction="row" gap={2} flexWrap="wrap" mb={0.5}>
           {series.map((s) => (
             <Stack key={s.name} direction="row" alignItems="center" gap={0.75}>

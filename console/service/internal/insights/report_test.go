@@ -132,3 +132,21 @@ func TestHostsAndRecommendations(t *testing.T) {
 		t.Fatal("no advice for non-cluster hosts")
 	}
 }
+
+func TestInventoryHostsAndServices(t *testing.T) {
+	inv := `{"all":{"children":{"etcd_cluster":{"hosts":{"etcd1":{"ansible_host":"10.0.0.21"}}},
+		"postgres_cluster":{"hosts":{"pg1":{"ansible_host":"10.0.0.24"}}},
+		"haproxy_cluster":{"hosts":{"proxy1":{"ansible_host":"10.0.0.26"}}},"pgbouncer_cluster":{"hosts":{"proxy1":{"ansible_host":"10.0.0.26"}}}}}}`
+	h := InventoryHosts([]byte(inv))
+	if h["10.0.0.21"] != [2]string{"etcd1", "etcd"} || h["10.0.0.26"][0] != "proxy1" || h["10.0.0.26"][1] != "haproxy,pgbouncer" {
+		t.Fatalf("hosts = %v", h)
+	}
+	for in, want := range map[[2]string]string{
+		{"node", "x:9100"}: "node", {"blackbox", "x:9100"}: "node", {"etcd-cluster", "x:2379"}: "etcd",
+		{"pgmonitor", "x:9187"}: "postgres", {"x", "x:8009"}: "patroni", {"haproxy", "x"}: "haproxy",
+	} {
+		if got := serviceOf(in[0], in[1]); got != want {
+			t.Errorf("serviceOf(%v) = %s, want %s", in, got, want)
+		}
+	}
+}

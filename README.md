@@ -17,7 +17,7 @@ collection (version **2.2.0**). Based on [Autobase](https://github.com/autobase-
 | **PostgreSQL logs** | Each node's server log in the browser: pick cluster, node and file, live tail, level filter (WARNING+/ERROR+), search with highlighting, download. |
 | **Create cluster** | **Inventory step**: add each VM (or **Import VM list** from the VM script), tick its roles (etcd, PostgreSQL + Patroni, HAProxy, PgBouncer, pgBackRest repo, Monitoring = Prometheus + Alertmanager + Grafana). One VM can hold one role or several. Live `inventory.yml` preview and download; the layout rules are checked as you type. |
 | **Patroni console** | On each cluster page: `list`, `history`, `show-config`, `edit-config`, `pause`/`resume`, `switchover`, `failover`, `restart`, `reload`, `reinit` and a **rolling restart**. Every result shows the equivalent `patronictl` command. |
-| **Observability** | One page with each cluster's **Grafana, Prometheus and Alertmanager**, taken from the VM with the Monitoring role; URLs can be overridden per cluster; Grafana can be shown inside the console. |
+| **Observability** | A live monitoring dashboard per cluster from its Prometheus: cluster / PostgreSQL / etcd / services health, firing alerts, last backup, and graphs for connections, TPS, replication lag, cache hit, database size, CPU, memory, disk, load, network and etcd. Links to Grafana, Prometheus and Alertmanager (URLs can be overridden per cluster). |
 | **SQL editor** | Built-in, pgAdmin-style query tool: object browser (schemas, tables with columns, views, functions, sequences), query tabs, every statement's result (also `SHOW`, `EXPLAIN`, `RETURNING`), Messages with notices and errors (SQLSTATE, detail, hint, position marked in the editor), Explain / Explain analyze, Cancel, CSV export, query history. Runs through HAProxy's read-write port, so always on the current Patroni leader. Follows the access policies: read-only / read-write / admin, only allowed databases, hidden columns and tables locked in the object browser, row and time limits. |
 | **Branding** | JumboSQL look (navy and logo blue), with a light watermark on every page: *JumboSQL, managed by Keen & Able Computers Pvt. Ltd.* |
 
@@ -244,10 +244,25 @@ A major upgrade (16 → 17) is a different procedure and is not automated yet.
 
 ## Observability
 
-**Observability** in the sidebar lists, for each cluster, Grafana (`:3000`), Prometheus (`:9090`) and
-Alertmanager (`:9093`) on the VM with the Monitoring role. Your browser must reach those VMs; if you reach the
-console through an SSH tunnel, use a SOCKS proxy (`ssh -D 1080 root@<kvm-host>`) and set it in your browser.
-**Show here** embeds Grafana; that needs `allow_embedding = true` in Grafana's configuration.
+**Observability** in the sidebar shows a live dashboard for the chosen cluster (1 hour to 7 days, refreshed every
+30 seconds). The console reads it from the cluster's Prometheus on the Monitoring VM (port `9090`), so your browser
+doesn't need to reach the VMs for it:
+
+- **Health**: cluster state, PostgreSQL instances up and replica lag, etcd members up and leader, every Prometheus
+  target (exporters of PostgreSQL, Patroni, etcd, HAProxy, PgBouncer, pgBackRest, nodes) up or down, firing alerts
+  with their summary, and the age of the last full / incremental backup.
+- **Graphs**: PostgreSQL connections (with `max_connections`), transactions per second, replication lag, cache hit
+  ratio, database size, deadlocks; per node CPU, memory, fullest disk, load, network in / out, disk busy; etcd
+  database size, WAL fsync time and leader changes; HAProxy servers up per backend and PgBouncer clients.
+
+Exporters differ between setups (postgres_exporter, pgMonitor's `ccp_*` metrics, ...): each graph tries the usual
+metric names and shows "Not collected by this Prometheus" when none exist. Nodes are named from the cluster's
+inventory.
+
+The **Grafana / Prometheus / Alertmanager** buttons open those tools (`:3000`, `:9090`, `:9093` on the Monitoring
+VM); for those your browser must reach the VMs - through an SSH tunnel, use a SOCKS proxy
+(`ssh -D 1080 root@<kvm-host>`). **Edit URLs** changes the addresses per cluster (also used by the dashboard and
+Insights).
 
 ## Repository layout
 

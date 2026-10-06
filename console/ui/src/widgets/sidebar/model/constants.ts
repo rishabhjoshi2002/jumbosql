@@ -7,9 +7,9 @@ import SqlEditorIcon from '@assets/SqlEditorIcon.svg?react';
 import GithubIcon from '@assets/githubIcon.svg?react';
 import DocumentationIcon from '@assets/docsIcon.svg?react';
 import SupportIcon from '@assets/supportIcon.svg?react';
-import ObservabilityIcon from '@mui/icons-material/InsightsOutlined';
+import ObservabilityIcon from '@mui/icons-material/MonitorHeartOutlined';
 import PostgresLogsIcon from '@mui/icons-material/ReceiptLongOutlined';
-import InsightsIcon from '@mui/icons-material/AutoGraphOutlined';
+import InsightsIcon from '@mui/icons-material/TipsAndUpdatesOutlined';
 import AuditIcon from '@mui/icons-material/FactCheckOutlined';
 import { canAny, getSessionUser, SessionUser } from '@shared/lib/session.ts';
 

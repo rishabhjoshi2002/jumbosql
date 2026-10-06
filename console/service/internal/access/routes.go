@@ -68,6 +68,8 @@ var routes = []Route{
 	{Method: "POST", Pattern: regexp.MustCompile("^" + base + `/clusters/(\d+)/sql$`), Scope: scopeCluster, Action: "sql.run",
 		Perms: []string{policy.SQLRead, policy.SQLWrite, policy.SQLAdmin}, NoAudit: true},
 	r("POST", `/clusters/(\d+)/sql/cancel`, scopeCluster, "sql.cancel", policy.SQLRead, policy.SQLWrite, policy.SQLAdmin),
+	{Method: "GET", Pattern: regexp.MustCompile("^" + base + `/clusters/(\d+)/monitoring$`), Scope: scopeCluster, Action: "monitoring.read",
+		Perms: []string{policy.ClustersView}},
 	{Method: "GET", Pattern: regexp.MustCompile("^" + base + `/clusters/(\d+)/insights$`), Scope: scopeCluster, Action: "insights.read",
 		Perms: []string{policy.InsightsView}},
 	{Method: "GET", Pattern: regexp.MustCompile("^" + base + `/clusters/(\d+)/logs(/[^/]+)?$`), Scope: scopeCluster, Action: "logs.read",

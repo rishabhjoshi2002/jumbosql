@@ -360,3 +360,56 @@ func PrometheusFromInventory(inv []byte) string {
 	}
 	return ""
 }
+
+// InventoryHosts: ip (ansible_host) -> host name and its first inventory group, for every VM of the cluster.
+func InventoryHosts(inv []byte) map[string][2]string {
+	out := map[string][2]string{}
+	if len(inv) == 0 {
+		return out
+	}
+	var raw any
+	if json.Unmarshal(inv, &raw) != nil {
+		return out
+	}
+	if str, ok := raw.(string); ok {
+		if json.Unmarshal([]byte(str), &raw) != nil {
+			return out
+		}
+	}
+	b, _ := json.Marshal(raw)
+	var parsed struct {
+		All struct {
+			Children map[string]struct {
+				Hosts map[string]struct {
+					AnsibleHost string `json:"ansible_host"`
+				} `json:"hosts"`
+			} `json:"children"`
+		} `json:"all"`
+	}
+	if json.Unmarshal(b, &parsed) != nil {
+		return out
+	}
+	groups := make([]string, 0, len(parsed.All.Children))
+	for g := range parsed.All.Children {
+		groups = append(groups, g)
+	}
+	sort.Strings(groups)
+	for _, g := range groups {
+		for name, h := range parsed.All.Children[g].Hosts {
+			role := strings.TrimSuffix(g, "_cluster")
+			for _, key := range []string{h.AnsibleHost, name} {
+				if key == "" {
+					continue
+				}
+				if cur, ok := out[key]; ok {
+					if !strings.Contains(cur[1], role) {
+						out[key] = [2]string{cur[0], cur[1] + "," + role}
+					}
+					continue
+				}
+				out[key] = [2]string{name, role}
+			}
+		}
+	}
+	return out
+}

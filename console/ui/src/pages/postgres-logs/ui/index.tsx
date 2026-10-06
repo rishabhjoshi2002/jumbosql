@@ -42,9 +42,28 @@ const LEVEL_COLORS: Record<string, { light: string; dark: string }> = {
   DEBUG: { light: '#757575', dark: '#9e9e9e' },
 };
 
+/** a readable message for any failed request (API error, proxy error page, broken response, network error) */
 const errorText = (e: unknown) => {
-  const d = (e as { data?: { title?: string; description?: string } })?.data;
-  return d?.description || d?.title || String((e as Error)?.message ?? e);
+  const x = (e ?? {}) as {
+    status?: number | string;
+    originalStatus?: number;
+    data?: unknown;
+    error?: string;
+    message?: string;
+  };
+  const d = x.data as { title?: string; description?: string } | string | undefined;
+  if (d && typeof d === 'object' && (d.description || d.title)) return String(d.description || d.title);
+  const status = x.originalStatus ?? x.status;
+  const body =
+    typeof d === 'string'
+      ? d
+          .replace(/<[^>]+>/g, ' ')
+          .replace(/\s+/g, ' ')
+          .trim()
+          .slice(0, 300)
+      : '';
+  const detail = x.error || body || x.message || '';
+  return [status !== undefined ? `HTTP ${status}` : '', detail].filter(Boolean).join(' - ') || 'request failed';
 };
 
 const highlight = (text: string, q: string): ReactNode => {

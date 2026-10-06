@@ -849,6 +849,23 @@ paths:
           schema:
             $ref: "#/definitions/Response.Error"
 
+  /clusters/{id}/monitoring:
+    get:
+      summary: "JumboSQL: live monitoring of a cluster from its Prometheus (services, alerts, graphs)"
+      tags: [cluster]
+      parameters:
+        - {name: id, in: path, required: true, type: integer}
+        - {name: minutes, in: query, type: integer, description: "time window in minutes (default 60)"}
+      responses:
+        '200':
+          description: OK
+          schema:
+            type: object
+        '400':
+          description: Error
+          schema:
+            $ref: "#/definitions/Response.Error"
+
   /clusters/{id}/insights:
     get:
       summary: "JumboSQL: trends, forecasts and recommendations for a cluster (Insights page)"

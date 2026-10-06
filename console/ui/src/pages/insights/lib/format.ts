@@ -47,7 +47,11 @@ export const niceTicks = (min: number, max: number, count = 4) => {
   const step = [1, 2, 2.5, 5, 10].map((m) => m * mag).find((s) => s >= raw) ?? raw;
   const start = Math.floor(min / step) * step;
   const out: number[] = [];
-  for (let v = start; v <= max + step * 0.5; v += step) out.push(Number(v.toPrecision(12)));
+  // until a tick reaches the maximum, so the top gridline is always above the highest value
+  for (let v = start; out.length < 50; v += step) {
+    out.push(Number(v.toPrecision(12)));
+    if (v >= max) break;
+  }
   return out;
 };
 

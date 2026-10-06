@@ -193,7 +193,9 @@ func NewService(
 
 	// JumboSQL: PostgreSQL logs viewer
 	logsList, logsRead := cluster.NewLogsHandlers(db, patroniActions, cfg.DbDesk.SSLMode)
-	api.ClusterGetClustersIDInsightsHandler = cluster.NewInsightsHandler(insights.NewService(db, log.Logger, insights.OptionsFromConfig(cfg)))
+	insightsSvc := insights.NewService(db, log.Logger, insights.OptionsFromConfig(cfg))
+	api.ClusterGetClustersIDInsightsHandler = cluster.NewInsightsHandler(insightsSvc)
+	api.ClusterGetClustersIDMonitoringHandler = cluster.NewMonitoringHandler(insightsSvc)
 	api.ClusterGetClustersIDLogsHandler = logsList
 	api.ClusterGetClustersIDLogsFileHandler = logsRead
 

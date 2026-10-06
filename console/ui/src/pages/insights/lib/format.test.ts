@@ -18,6 +18,8 @@ describe('insights formatting', () => {
   it('makes round axis ticks', () => {
     expect(niceTicks(0, 97)).toEqual([0, 25, 50, 75, 100]);
     expect(niceTicks(0, 0)[0]).toBe(0);
+    expect(niceTicks(0, 1.2)).toEqual([0, 0.5, 1, 1.5]); // the top tick is above the data
+    expect(niceTicks(0, 3.1e6).at(-1)).toBeGreaterThanOrEqual(3.1e6);
   });
   it('suggests CPUs like the server does', () => {
     expect(suggestedCores(4, 60, 70)).toBe(4);

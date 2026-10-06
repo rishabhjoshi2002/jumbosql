@@ -3,7 +3,7 @@ import { Box, Typography, useTheme } from '@mui/material';
 import logo from '@shared/assets/jumbosqlIcon.png';
 
 /**
- * JumboSQL: faint brand watermark behind every page - logo, product name and the managing company.
+ * JumboSQL: faint brand watermark on every page - logo, product name and the managing company.
  * It never takes clicks (pointer-events: none) and sits below the page content.
  *   fixed    - centred in the viewport (main layout)
  *   absolute - inside the parent (login panel); align='bottom' keeps it clear of the sign-in form
@@ -22,7 +22,9 @@ const Watermark: FC<{ variant?: 'fixed' | 'absolute'; align?: 'center' | 'bottom
       sx={{
         position: variant,
         inset: 0,
-        zIndex: 0,
+        // fixed (every page): above the page content so solid panels (tables, editors, charts) can't hide it,
+        // below the app bar, sidebar, menus and dialogs; it never takes clicks
+        zIndex: variant === 'fixed' ? 1050 : 0,
         pointerEvents: 'none',
         userSelect: 'none',
         display: 'flex',
