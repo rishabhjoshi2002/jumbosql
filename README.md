@@ -13,6 +13,7 @@ collection (version **2.2.0**). Based on [Autobase](https://github.com/autobase-
 | **Sign-in** | Username and password, users with **attributes** (group, team, region, …) managed in **Settings → Users**. Accounts are stored in the console today; LDAP and SSO plug in later on the server side. |
 | **Access policies (ABAC)** | **Settings → Access policies**: who (everyone, users, attribute conditions) may do what (permissions), where (clusters, environments, projects), with which data (databases, schemas, tables, hidden columns, row and time limits) and when (IP ranges, weekdays, hours). Deny wins, nothing is allowed by default. **Test access** shows what a user may do and which policy decides it. |
 | **Audit log** | Every change, SQL statement, log read, sign-in and refused request: who, when, from which IP, on which cluster, with what result. Filters, search, details per event. |
+| **Insights** | Trends and forecasts per cluster: database and table growth, storage needed in 30 days, transactions per second, connections vs the limit, table bloat (dead rows), unused indexes, top queries, and CPU / memory / disk per node from Prometheus with suggested vCPUs and disk size. A list of recommendations says what to fix and gives the SQL. |
 | **PostgreSQL logs** | Each node's server log in the browser: pick cluster, node and file, live tail, level filter (WARNING+/ERROR+), search with highlighting, download. |
 | **Create cluster** | **Inventory step**: add each VM (or **Import VM list** from the VM script), tick its roles (etcd, PostgreSQL + Patroni, HAProxy, PgBouncer, pgBackRest repo, Monitoring = Prometheus + Alertmanager + Grafana). One VM can hold one role or several. Live `inventory.yml` preview and download; the layout rules are checked as you type. |
 | **Patroni console** | On each cluster page: `list`, `history`, `show-config`, `edit-config`, `pause`/`resume`, `switchover`, `failover`, `restart`, `reload`, `reinit` and a **rolling restart**. Every result shows the equivalent `patronictl` command. |
@@ -133,6 +134,38 @@ allowed everything). Audit events are kept for 180 days (`PG_CONSOLE_AUDIT_RETEN
 LDAP / SSO later: the API checks credentials through a provider interface (`console/service/internal/auth`),
 so an LDAP or OIDC provider is added next to the local one; its groups become attributes.
 
+## Insights (growth, load and forecasts)
+
+**Insights** in the side menu (`insights.view`) answers "how fast is this cluster growing, how busy is it, what will
+it need next month, and what should I fix?".
+
+Where the numbers come from:
+
+| Source | What | How often |
+|---|---|---|
+| The console's own sampler | size of every database, transactions, rows read / written, connections, cache hits, temp files, deadlocks | every 5 minutes (`PG_CONSOLE_INSIGHTS_INTERVAL`) |
+| | size, live and dead rows of the 30 biggest tables per database | every hour (`PG_CONSOLE_INSIGHTS_TABLES_INTERVAL`) |
+| Live, when the page opens | dead rows and wasted space of the 100 biggest tables, unused indexes, long-running queries, transaction ID age, replica lag, settings; top statements from `pg_stat_statements` (if enabled) | on demand |
+| The cluster's Prometheus (Monitoring VM, or the URL on the Observability page) | CPU, memory and disk of each node (node_exporter); disk = the filesystem holding the data directory | on demand |
+
+Samples are kept 90 days (`PG_CONSOLE_INSIGHTS_RETENTION`, e.g. `4320h`); `PG_CONSOLE_INSIGHTS_ENABLED=false` turns
+sampling off. The sampler connects like the SQL editor does (HAProxy read-write port, the leader).
+
+Forecasts are straight-line trends (least squares) of the chosen period, projected 30 days ahead, with a confidence
+(low / medium / high) from how much history there is and how well a straight line fits. Load and CPU use the trend of
+each day's busy hour (95th percentile), not the average. The first forecasts appear after one hour of samples;
+give it about a week to see busy and quiet days. What the page works out:
+
+- **Storage**: growth per day per database and table, size in 30 days, days until each node's disk reaches 80 % and
+  100 %, and the disk size to have in 30 days (keeping 25 % free).
+- **CPU**: busy-hour CPU now and in 30 days, and the vCPUs that keep the busy hour near 65 %.
+- **Connections**: busy-hour connections against `max_connections`, and where they are heading.
+- **Recommendations** (critical / warning / info, with the reason and what to do, SQL to copy): disk filling up,
+  CPU or memory running hot, connections near the limit, bloated tables (VACUUM / pg_repack), stale statistics
+  (ANALYZE), tables read by full scans (missing index), unused indexes, low cache hit ratio, transaction ID
+  wraparound risk, long-running and idle-in-transaction sessions, replica lag, temp files, deadlocks, one statement
+  taking most of the time, and `pg_stat_statements` not enabled.
+
 ## PostgreSQL logs
 
 **PostgreSQL logs** in the side menu (`logs.view`) reads each node's log directory over SQL (`pg_ls_logdir`,
@@ -221,7 +254,7 @@ console through an SSH tunnel, use a SOCKS proxy (`ssh -D 1080 root@<kvm-host>`)
 | Path | What |
 |---|---|
 | `console/ui` | React UI. JumboSQL code: `shared/lib/haInventory.ts` (inventory model and rules), `entities/cluster/database-servers-block` (inventory step), `widgets/patroni-console`, `pages/observability`, `widgets/users-table`, `pages/login`, `shared/theme` |
-| `console/service` | Go API. JumboSQL code: `internal/auth` (sign-in, sessions, providers), `internal/controllers/auth`, `internal/controllers/user`, `pkg/patroni/actions.go`, `internal/controllers/cluster/patroni_*.go`, `middleware/authorization.go`, `internal/policy` (policy engine), `internal/access` (routes, audit), `pkg/sqlroles` (data scope roles), `pkg/pglogs` |
+| `console/service` | Go API. JumboSQL code: `internal/auth` (sign-in, sessions, providers), `internal/controllers/auth`, `internal/controllers/user`, `pkg/patroni/actions.go`, `internal/controllers/cluster/patroni_*.go`, `middleware/authorization.go`, `internal/policy` (policy engine), `internal/access` (routes, audit), `internal/insights` (sampler, forecasts, recommendations), `pkg/sqlroles` (data scope roles), `pkg/pglogs` |
 | `console/db/migrations` | console database; `20261005150000_jumbosql_users.sql` adds users and sessions |
 | `automation-ha` | the HA automation image: entrypoint, inventory check and conversion, wrapper playbook, pack script |
 | `automation` | Autobase's own automation (unused by JumboSQL, kept for upstream merges) |

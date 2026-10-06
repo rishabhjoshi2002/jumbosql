@@ -36,6 +36,7 @@ const (
 	SQLAdmin            = "sql.admin"
 	SQLStats            = "sql.stats"
 	LogsView            = "logs.view"
+	InsightsView        = "insights.view"
 	ObservabilityManage = "observability.manage"
 	SettingsManage      = "settings.manage"
 	UsersManage         = "users.manage"
@@ -60,6 +61,7 @@ var Catalog = []PermissionInfo{
 	{SQLAdmin, "SQL editor as the cluster superuser (only when no data scope restriction applies)", true},
 	{SQLStats, "See every session and statement in pg_stat_activity and friends (pg_read_all_stats)", true},
 	{LogsView, "Read PostgreSQL server logs on the cluster's nodes", true},
+	{InsightsView, "Insights: growth, load, bloat, forecasts and recommendations", true},
 	{ObservabilityManage, "Change the Grafana / Prometheus / Alertmanager links", false},
 	{SettingsManage, "Projects, environments, secrets and console settings", false},
 	{UsersManage, "Add, change and remove console users and their attributes", false},

@@ -849,6 +849,24 @@ paths:
           schema:
             $ref: "#/definitions/Response.Error"
 
+  /clusters/{id}/insights:
+    get:
+      summary: "JumboSQL: trends, forecasts and recommendations for a cluster (Insights page)"
+      tags: [cluster]
+      parameters:
+        - {name: id, in: path, required: true, type: integer}
+        - {name: days, in: query, type: integer, description: "history window in days (default 30)"}
+        - {name: database, in: query, type: string, description: "database whose tables are analysed (default: the largest)"}
+      responses:
+        '200':
+          description: OK
+          schema:
+            type: object
+        '400':
+          description: Error
+          schema:
+            $ref: "#/definitions/Response.Error"
+
   /clusters/{id}/logs:
     get:
       summary: "JumboSQL: PostgreSQL log files of a cluster node"

@@ -34,6 +34,13 @@ type Config struct {
 		AdminUsername string        `envconfig:"admin_username" default:"admin" desc:"First admin, created when there are no users yet"`
 		AdminPassword string        `envconfig:"admin_password" default:"" desc:"First admin's password (empty = use the authorization token)"`
 	}
+	// JumboSQL: Insights (trends, forecasts, recommendations)
+	Insights struct {
+		Enabled        bool          `envconfig:"enabled" default:"true" desc:"Sample clusters for the Insights page"`
+		Interval       time.Duration `envconfig:"interval" default:"5m" desc:"How often cluster-wide numbers are sampled"`
+		TablesInterval time.Duration `envconfig:"tables_interval" default:"1h" desc:"How often table sizes and dead rows are sampled"`
+		Retention      time.Duration `envconfig:"retention" default:"2160h" desc:"How long samples are kept (default 90 days)"`
+	}
 	// JumboSQL: audit log
 	Audit struct {
 		Retention time.Duration `envconfig:"retention" default:"4320h" desc:"How long audit events are kept (default 180 days)"`

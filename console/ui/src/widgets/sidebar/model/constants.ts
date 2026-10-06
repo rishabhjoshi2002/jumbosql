@@ -9,6 +9,7 @@ import DocumentationIcon from '@assets/docsIcon.svg?react';
 import SupportIcon from '@assets/supportIcon.svg?react';
 import ObservabilityIcon from '@mui/icons-material/InsightsOutlined';
 import PostgresLogsIcon from '@mui/icons-material/ReceiptLongOutlined';
+import InsightsIcon from '@mui/icons-material/AutoGraphOutlined';
 import AuditIcon from '@mui/icons-material/FactCheckOutlined';
 import { canAny, getSessionUser, SessionUser } from '@shared/lib/session.ts';
 
@@ -32,6 +33,12 @@ export const sidebarData = (t: TFunction, user: SessionUser | null = getSessionU
       label: t('observability', { ns: 'shared' }),
       path: RouterPaths.observability.absolutePath,
       perms: ['clusters.view'],
+    },
+    {
+      icon: InsightsIcon,
+      label: t('title', { ns: 'insights' }),
+      path: RouterPaths.insights.absolutePath,
+      perms: ['insights.view'],
     },
     {
       icon: PostgresLogsIcon,

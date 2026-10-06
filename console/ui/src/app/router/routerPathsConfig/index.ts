@@ -5,6 +5,7 @@ import routerSqlEditorPathsConfig from '@app/router/routerPathsConfig/routerSqlE
 import routerObservabilityPathsConfig from '@app/router/routerPathsConfig/routerObservabilityPathsConfig.ts';
 import routerAuditPathsConfig from '@app/router/routerPathsConfig/routerAuditPathsConfig.ts';
 import routerLogsPathsConfig from '@app/router/routerPathsConfig/routerLogsPathsConfig.ts';
+import routerInsightsPathsConfig from '@app/router/routerPathsConfig/routerInsightsPathsConfig.ts';
 
 /*
   Combines route paths into one config
@@ -23,6 +24,7 @@ const RouterPaths = {
   observability: routerObservabilityPathsConfig,
   audit: routerAuditPathsConfig,
   logs: routerLogsPathsConfig,
+  insights: routerInsightsPathsConfig,
 } as const;
 
 export default RouterPaths;

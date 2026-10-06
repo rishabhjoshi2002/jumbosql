@@ -23,6 +23,13 @@ type IStorage interface {
 	GetSQLRole(ctx context.Context, clusterID int64, role, key string) (*SQLRoleRow, error)
 	SaveSQLRole(ctx context.Context, r *SQLRoleRow, key string) error
 
+	// JumboSQL: Insights
+	InsightClusterIDs(ctx context.Context) ([]int64, error)
+	AddMetricSamples(ctx context.Context, clusterID int64, samples []MetricSample) error
+	GetMetricSamples(ctx context.Context, clusterID int64, metrics []string, from time.Time) ([]MetricSample, error)
+	FirstMetricSample(ctx context.Context, clusterID int64) (time.Time, int64, error)
+	PurgeMetricSamples(ctx context.Context, olderThan time.Duration) (int64, error)
+
 	// JumboSQL: users and login sessions
 	CountUsers(ctx context.Context) (int64, error)
 	CountAdmins(ctx context.Context) (int64, error)

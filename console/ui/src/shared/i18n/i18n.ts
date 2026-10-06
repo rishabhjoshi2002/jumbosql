@@ -6,6 +6,7 @@ import settings from './locales/en/settings.json';
 import clusters from './locales/en/clusters.json';
 import validation from './locales/en/validation.json';
 import toasts from './locales/en/toasts.json';
+import insights from './locales/en/insights.json';
 import { LOCALES } from '../config/constants';
 
 import LanguageDetector from 'i18next-browser-languagedetector';
@@ -18,6 +19,7 @@ const resources = {
     settings,
     validation,
     toasts,
+    insights,
   },
 };
 
@@ -26,10 +28,12 @@ i18n
   .use(initReactI18next)
   .init({
     resources,
-    ns: ['shared', 'clusters', 'operations', 'settings', 'validation', 'toasts'],
+    ns: ['shared', 'clusters', 'operations', 'settings', 'validation', 'toasts', 'insights'],
     fallbackLng: LOCALES.EN_US,
     supportedLngs: Object.values(LOCALES),
     returnNull: false,
+    // React escapes everything it renders; escaping here too shows "&#x2F;" for every "/"
+    interpolation: { escapeValue: false },
     debug: false,
   });
 

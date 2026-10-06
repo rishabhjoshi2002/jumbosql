@@ -7,6 +7,7 @@ import (
 	"os"
 	"postgresql-cluster-console/internal/configuration"
 	"postgresql-cluster-console/internal/db"
+	"postgresql-cluster-console/internal/insights"
 	"postgresql-cluster-console/internal/service"
 	"postgresql-cluster-console/internal/storage"
 	"postgresql-cluster-console/internal/watcher"
@@ -102,6 +103,11 @@ func main() {
 	clusterWatcher := watcher.NewServerWatcher(str, patroni.NewClient(log.Logger), cfg)
 	clusterWatcher.Run()
 	defer clusterWatcher.Stop()
+
+	// JumboSQL: Insights - samples every cluster for trends and forecasts
+	insightsCollector := insights.NewCollector(str, log.Logger, insights.OptionsFromConfig(cfg))
+	insightsCollector.Run()
+	defer insightsCollector.Stop()
 
 	s, err := service.NewService(cfg, Version, str, dockerManager, logAggregator, clusterWatcher)
 	if err != nil {

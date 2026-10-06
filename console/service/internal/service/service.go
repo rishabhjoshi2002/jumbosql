@@ -18,6 +18,7 @@ import (
 	"postgresql-cluster-console/internal/controllers/secret"
 	"postgresql-cluster-console/internal/controllers/setting"
 	"postgresql-cluster-console/internal/controllers/user"
+	"postgresql-cluster-console/internal/insights"
 	"postgresql-cluster-console/internal/storage"
 	"postgresql-cluster-console/internal/watcher"
 	"postgresql-cluster-console/internal/xdocker"
@@ -192,6 +193,7 @@ func NewService(
 
 	// JumboSQL: PostgreSQL logs viewer
 	logsList, logsRead := cluster.NewLogsHandlers(db, patroniActions, cfg.DbDesk.SSLMode)
+	api.ClusterGetClustersIDInsightsHandler = cluster.NewInsightsHandler(insights.NewService(db, log.Logger, insights.OptionsFromConfig(cfg)))
 	api.ClusterGetClustersIDLogsHandler = logsList
 	api.ClusterGetClustersIDLogsFileHandler = logsRead
 
