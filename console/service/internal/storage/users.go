@@ -21,6 +21,7 @@ type User struct {
 	CreatedAt    time.Time
 	UpdatedAt    *time.Time
 	LastLoginAt  *time.Time
+	Attributes   map[string]string // JumboSQL ABAC: e.g. group=operator, team=payments
 }
 
 type CreateUserReq struct {
@@ -29,6 +30,7 @@ type CreateUserReq struct {
 	PasswordHash *string
 	Role         string
 	AuthProvider string
+	Attributes   map[string]string
 }
 
 type UpdateUserReq struct {
@@ -36,9 +38,10 @@ type UpdateUserReq struct {
 	DisplayName  *string
 	PasswordHash *string
 	Role         *string
+	Attributes   map[string]string // nil = unchanged
 }
 
-const userColumns = `user_id, username, display_name, password_hash, role, auth_provider, created_at, updated_at, last_login_at`
+const userColumns = `user_id, username, display_name, password_hash, role, auth_provider, created_at, updated_at, last_login_at, attributes`
 
 func (s *dbStorage) CountUsers(ctx context.Context) (int64, error) {
 	var n int64
@@ -73,9 +76,9 @@ func (s *dbStorage) CreateUser(ctx context.Context, req *CreateUserReq) (*User, 
 		provider = "local"
 	}
 	return QueryRowToStruct[User](ctx, s.db,
-		`insert into users (username, display_name, password_hash, role, auth_provider)
-		 values ($1, $2, $3, $4, $5) returning `+userColumns,
-		req.Username, req.DisplayName, req.PasswordHash, req.Role, provider)
+		`insert into users (username, display_name, password_hash, role, auth_provider, attributes)
+		 values ($1, $2, $3, $4, $5, $6) returning `+userColumns,
+		req.Username, req.DisplayName, req.PasswordHash, req.Role, provider, nonNilAttrs(req.Attributes))
 }
 
 func (s *dbStorage) UpdateUser(ctx context.Context, req *UpdateUserReq) (*User, error) {
@@ -84,9 +87,10 @@ func (s *dbStorage) UpdateUser(ctx context.Context, req *UpdateUserReq) (*User, 
 		   display_name  = coalesce($2, display_name),
 		   password_hash = coalesce($3, password_hash),
 		   role          = coalesce($4, role),
+		   attributes    = coalesce($5, attributes),
 		   updated_at    = now()
 		 where user_id = $1 returning `+userColumns,
-		req.ID, req.DisplayName, req.PasswordHash, req.Role)
+		req.ID, req.DisplayName, req.PasswordHash, req.Role, attrsParam(req.Attributes))
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, nil
 	}
@@ -122,7 +126,7 @@ func (s *dbStorage) CreateUserSession(ctx context.Context, tokenHash string, use
 func (s *dbStorage) GetSessionUser(ctx context.Context, tokenHash string) (*User, error) {
 	u, err := QueryRowToStruct[User](ctx, s.db,
 		`select u.user_id, u.username, u.display_name, u.password_hash, u.role, u.auth_provider,
-		        u.created_at, u.updated_at, u.last_login_at
+		        u.created_at, u.updated_at, u.last_login_at, u.attributes
 		   from user_sessions s join users u using (user_id)
 		  where s.token_hash = $1 and s.expires_at > now()`, tokenHash)
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -144,4 +148,19 @@ func (s *dbStorage) DeleteUserSessions(ctx context.Context, userID int64) error 
 func (s *dbStorage) DeleteExpiredUserSessions(ctx context.Context) error {
 	_, err := s.db.Exec(ctx, "delete from user_sessions where expires_at <= now()")
 	return err
+}
+
+func nonNilAttrs(a map[string]string) map[string]string {
+	if a == nil {
+		return map[string]string{}
+	}
+	return a
+}
+
+// attrsParam: nil leaves the attributes unchanged (SQL NULL), a map replaces them
+func attrsParam(a map[string]string) any {
+	if a == nil {
+		return nil
+	}
+	return a
 }

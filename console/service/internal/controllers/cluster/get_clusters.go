@@ -2,9 +2,12 @@ package cluster
 
 import (
 	"context"
+	acc "postgresql-cluster-console/internal/access"
 	"postgresql-cluster-console/internal/controllers"
 	"postgresql-cluster-console/internal/convert"
+	"postgresql-cluster-console/internal/policy"
 	"postgresql-cluster-console/internal/storage"
+	localmid "postgresql-cluster-console/middleware"
 	"postgresql-cluster-console/models"
 	"postgresql-cluster-console/pkg/tracer"
 	"postgresql-cluster-console/restapi/operations/cluster"
@@ -15,14 +18,16 @@ import (
 )
 
 type getClustersHandler struct {
-	db  storage.IStorage
-	log zerolog.Logger
+	db     storage.IStorage
+	log    zerolog.Logger
+	access *acc.Service
 }
 
-func NewGetClustersHandler(db storage.IStorage, log zerolog.Logger) cluster.GetClustersHandler {
+func NewGetClustersHandler(db storage.IStorage, log zerolog.Logger, a *acc.Service) cluster.GetClustersHandler {
 	return &getClustersHandler{
-		db:  db,
-		log: log,
+		db:     db,
+		log:    log,
+		access: a,
 	}
 }
 
@@ -58,8 +63,19 @@ func (h *getClustersHandler) Handle(param cluster.GetClustersParams) middleware.
 		}(),
 		CreatedAtFrom: (*time.Time)(param.CreatedAtFrom),
 		CreatedAtTo:   (*time.Time)(param.CreatedAtTo),
-		Limit:         param.Limit,
-		Offset:        param.Offset,
+		OnlyIDs: func() []int64 { // JumboSQL access policies: only the clusters this user may see
+			if h.access == nil {
+				return nil
+			}
+			ids, _, all := h.access.VisibleClusters(param.HTTPRequest.Context(),
+				acc.Subject(localmid.PrincipalFrom(param.HTTPRequest.Context())), policy.ClustersView, acc.RequestContext(param.HTTPRequest))
+			if all {
+				return nil
+			}
+			return ids
+		}(),
+		Limit:  param.Limit,
+		Offset: param.Offset,
 	})
 	if err != nil {
 		return cluster.NewGetClustersBadRequest().WithPayload(controllers.MakeErrorPayload(err, controllers.BaseError))

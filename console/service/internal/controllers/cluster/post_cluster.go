@@ -3,11 +3,14 @@ package cluster
 import (
 	"encoding/json"
 	"fmt"
+	acc "postgresql-cluster-console/internal/access"
 	"postgresql-cluster-console/internal/configuration"
 	"postgresql-cluster-console/internal/controllers"
+	"postgresql-cluster-console/internal/policy"
 	"postgresql-cluster-console/internal/storage"
 	"postgresql-cluster-console/internal/watcher"
 	"postgresql-cluster-console/internal/xdocker"
+	localmid "postgresql-cluster-console/middleware"
 	"postgresql-cluster-console/models"
 	"postgresql-cluster-console/pkg/tracer"
 	"postgresql-cluster-console/restapi/operations/cluster"
@@ -26,21 +29,46 @@ type postClusterHandler struct {
 	logCollector  watcher.LogCollector
 	log           zerolog.Logger
 	cfg           *configuration.Config
+	access        *acc.Service
 }
 
-func NewPostClusterHandler(db storage.IStorage, dockerManager xdocker.IManager, logCollector watcher.LogCollector, cfg *configuration.Config, log zerolog.Logger) cluster.PostClustersHandler {
+func NewPostClusterHandler(db storage.IStorage, dockerManager xdocker.IManager, logCollector watcher.LogCollector, cfg *configuration.Config, log zerolog.Logger, a *acc.Service) cluster.PostClustersHandler {
 	return &postClusterHandler{
 		db:            db,
 		dockerManager: dockerManager,
 		logCollector:  logCollector,
 		log:           log,
 		cfg:           cfg,
+		access:        a,
 	}
+}
+
+// canCreate: clusters.manage for a cluster with this name, environment and project (JumboSQL access policies).
+func (h *postClusterHandler) canCreate(param cluster.PostClustersParams) error {
+	if h.access == nil || param.Body == nil {
+		return nil
+	}
+	ctx := param.HTTPRequest.Context()
+	ref := &policy.Cluster{Name: param.Body.Name}
+	if env, err := h.db.GetEnvironment(ctx, param.Body.EnvironmentID); err == nil && env != nil {
+		ref.Environment = env.Name
+	}
+	if pr, err := h.db.GetProject(ctx, param.Body.ProjectID); err == nil && pr != nil {
+		ref.Project = pr.Name
+	}
+	sub := acc.Subject(localmid.PrincipalFrom(ctx))
+	if d := h.access.Set(ctx).Allowed(sub, policy.ClustersManage, ref, "", acc.RequestContext(param.HTTPRequest)); !d.Allowed {
+		return fmt.Errorf("you may not create a cluster named %q in environment %q, project %q (%s)", ref.Name, ref.Environment, ref.Project, d.Reason)
+	}
+	return nil
 }
 
 func (h *postClusterHandler) Handle(param cluster.PostClustersParams) middleware.Responder {
 	cid := param.HTTPRequest.Context().Value(tracer.CtxCidKey{}).(string)
 	localLog := h.log.With().Str("cid", cid).Logger()
+	if err := h.canCreate(param); err != nil {
+		return cluster.NewPostClustersBadRequest().WithPayload(controllers.MakeErrorPayload(err, controllers.BaseError))
+	}
 	oldCluster, err := h.db.GetClusterByName(param.HTTPRequest.Context(), param.Body.Name)
 	if err != nil {
 		localLog.Warn().Err(err).Msg("can't get cluster by name")

@@ -1,9 +1,12 @@
 package operation
 
 import (
+	acc "postgresql-cluster-console/internal/access"
 	"postgresql-cluster-console/internal/controllers"
 	"postgresql-cluster-console/internal/convert"
+	"postgresql-cluster-console/internal/policy"
 	"postgresql-cluster-console/internal/storage"
+	localmid "postgresql-cluster-console/middleware"
 	"postgresql-cluster-console/models"
 	"postgresql-cluster-console/restapi/operations/operation"
 	"time"
@@ -12,12 +15,14 @@ import (
 )
 
 type getOperationsHandler struct {
-	db storage.IStorage
+	db     storage.IStorage
+	access *acc.Service
 }
 
-func NewGetOperationsHandler(db storage.IStorage) operation.GetOperationsHandler {
+func NewGetOperationsHandler(db storage.IStorage, a *acc.Service) operation.GetOperationsHandler {
 	return &getOperationsHandler{
-		db: db,
+		db:     db,
+		access: a,
 	}
 }
 
@@ -30,8 +35,19 @@ func (h *getOperationsHandler) Handle(param operation.GetOperationsParams) middl
 		Type:        param.Type,
 		Status:      param.Status,
 		SortBy:      param.SortBy,
-		Limit:       param.Limit,
-		Offset:      param.Offset,
+		OnlyClusters: func() []string { // JumboSQL access policies: only operations of clusters this user may see
+			if h.access == nil {
+				return nil
+			}
+			_, names, all := h.access.VisibleClusters(param.HTTPRequest.Context(),
+				acc.Subject(localmid.PrincipalFrom(param.HTTPRequest.Context())), policy.ClustersView, acc.RequestContext(param.HTTPRequest))
+			if all {
+				return nil
+			}
+			return names
+		}(),
+		Limit:  param.Limit,
+		Offset: param.Offset,
 	})
 	if err != nil {
 		return operation.NewGetOperationsBadRequest().WithPayload(controllers.MakeErrorPayload(err, controllers.BaseError))

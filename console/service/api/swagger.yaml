@@ -707,6 +707,185 @@ paths:
           schema:
             $ref: "#/definitions/Response.Error"
 
+  /policies:
+    get:
+      summary: "JumboSQL: list access policies"
+      tags: [access]
+      responses:
+        '200':
+          description: OK
+          schema:
+            type: array
+            items:
+              $ref: "#/definitions/Policy"
+    post:
+      summary: "JumboSQL: create an access policy"
+      tags: [access]
+      parameters:
+        - name: body
+          in: body
+          required: true
+          schema:
+            $ref: "#/definitions/Policy"
+      responses:
+        '200':
+          description: OK
+          schema:
+            $ref: "#/definitions/Policy"
+        '400':
+          description: Error
+          schema:
+            $ref: "#/definitions/Response.Error"
+
+  /policies/{id}:
+    patch:
+      summary: "JumboSQL: replace an access policy"
+      tags: [access]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          type: integer
+        - name: body
+          in: body
+          required: true
+          schema:
+            $ref: "#/definitions/Policy"
+      responses:
+        '200':
+          description: OK
+          schema:
+            $ref: "#/definitions/Policy"
+        '400':
+          description: Error
+          schema:
+            $ref: "#/definitions/Response.Error"
+    delete:
+      summary: "JumboSQL: delete an access policy"
+      tags: [access]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          type: integer
+      responses:
+        '204':
+          description: Deleted
+        '400':
+          description: Error
+          schema:
+            $ref: "#/definitions/Response.Error"
+
+  /policies/permissions:
+    get:
+      summary: "JumboSQL: the permissions policies can grant"
+      tags: [access]
+      responses:
+        '200':
+          description: OK
+          schema:
+            type: array
+            items:
+              $ref: "#/definitions/PermissionInfo"
+
+  /policies/simulate:
+    post:
+      summary: "JumboSQL: what a user may do (optionally on one cluster and database), and which policies apply"
+      tags: [access]
+      parameters:
+        - name: body
+          in: body
+          required: true
+          schema:
+            $ref: "#/definitions/Request.PolicySimulate"
+      responses:
+        '200':
+          description: OK
+          schema:
+            $ref: "#/definitions/Response.PolicySimulate"
+        '400':
+          description: Error
+          schema:
+            $ref: "#/definitions/Response.Error"
+
+  /audit:
+    get:
+      summary: "JumboSQL: audit log"
+      tags: [access]
+      parameters:
+        - {name: username, in: query, type: string}
+        - {name: action, in: query, type: string, description: "action prefix, e.g. sql. or patroni."}
+        - {name: outcome, in: query, type: string, enum: [ok, denied, error]}
+        - {name: cluster_id, in: query, type: integer}
+        - {name: from, in: query, type: string, format: date-time}
+        - {name: to, in: query, type: string, format: date-time}
+        - {name: q, in: query, type: string, description: "text search in path, action and details"}
+        - {name: limit, in: query, type: integer}
+        - {name: offset, in: query, type: integer}
+      responses:
+        '200':
+          description: OK
+          schema:
+            $ref: "#/definitions/Response.Audit"
+        '400':
+          description: Error
+          schema:
+            $ref: "#/definitions/Response.Error"
+
+  /clusters/{id}/sql/access:
+    get:
+      summary: "JumboSQL: what the signed-in user may do in the SQL editor on this cluster"
+      tags: [cluster]
+      parameters:
+        - {name: id, in: path, required: true, type: integer}
+        - {name: database, in: query, type: string}
+      responses:
+        '200':
+          description: OK
+          schema:
+            type: object
+        '400':
+          description: Error
+          schema:
+            $ref: "#/definitions/Response.Error"
+
+  /clusters/{id}/logs:
+    get:
+      summary: "JumboSQL: PostgreSQL log files of a cluster node"
+      tags: [cluster]
+      parameters:
+        - {name: id, in: path, required: true, type: integer}
+        - {name: server_id, in: query, required: true, type: integer}
+      responses:
+        '200':
+          description: OK
+          schema:
+            $ref: "#/definitions/Response.LogFiles"
+        '400':
+          description: Error
+          schema:
+            $ref: "#/definitions/Response.Error"
+
+  /clusters/{id}/logs/{file}:
+    get:
+      summary: "JumboSQL: read (the end of) a PostgreSQL log file of a cluster node"
+      tags: [cluster]
+      parameters:
+        - {name: id, in: path, required: true, type: integer}
+        - {name: file, in: path, required: true, type: string}
+        - {name: server_id, in: query, required: true, type: integer}
+        - {name: tail_kb, in: query, type: integer, description: "how much of the end of the file (default 256, max 8192)"}
+        - {name: since, in: query, type: integer, description: "read from this byte offset (live tail); overrides tail_kb"}
+      responses:
+        '200':
+          description: OK
+          schema:
+            $ref: "#/definitions/Response.LogChunk"
+        '400':
+          description: Error
+          schema:
+            $ref: "#/definitions/Response.Error"
+
   /projects:
     post:
       summary: "Create new project"
@@ -1058,7 +1237,15 @@ definitions:
         type: string
       role:
         type: string
-        enum: [admin, operator, viewer]
+        description: "Legacy: the user's group (admin, operator, viewer); same as attributes.group"
+      attributes:
+        type: object
+        description: "ABAC attributes, e.g. {\"group\": \"operator\", \"team\": \"payments\"}"
+        additionalProperties:
+          type: string
+      permissions:
+        type: object
+        description: "Only in /auth/me: {global: [permissions], clusters: {<id>: [permissions]}}"
       auth_provider:
         type: string
       created_at:
@@ -1071,7 +1258,7 @@ definitions:
 
   Request.UserCreate:
     type: object
-    required: [username, password, role]
+    required: [username, password]
     properties:
       username:
         type: string
@@ -1081,7 +1268,11 @@ definitions:
         type: string
       role:
         type: string
-        enum: [admin, operator, viewer]
+        description: "Legacy: sets the group attribute"
+      attributes:
+        type: object
+        additionalProperties:
+          type: string
 
   Request.UserUpdate:
     type: object
@@ -1092,7 +1283,12 @@ definitions:
         type: string
       role:
         type: string
-        enum: [admin, operator, viewer]
+        description: "Legacy: sets the group attribute"
+      attributes:
+        type: object
+        description: Replaces all attributes when given
+        additionalProperties:
+          type: string
 
   Request.PasswordChange:
     type: object
@@ -1241,6 +1437,92 @@ definitions:
     properties:
       cancelled:
         type: boolean
+
+  Policy:
+    type: object
+    properties:
+      id: {type: integer}
+      name: {type: string}
+      description: {type: string}
+      effect: {type: string, enum: [allow, deny]}
+      enabled: {type: boolean}
+      builtin: {type: boolean}
+      subjects: {type: object}
+      permissions:
+        type: array
+        items: {type: string}
+      resources: {type: object}
+      data: {type: object}
+      conditions: {type: object}
+      created_at: {type: string, format: date-time}
+      updated_at: {type: string, format: date-time, x-nullable: true}
+      updated_by: {type: string}
+
+  PermissionInfo:
+    type: object
+    properties:
+      name: {type: string}
+      description: {type: string}
+      cluster_scoped: {type: boolean}
+
+  Request.PolicySimulate:
+    type: object
+    required: [username]
+    properties:
+      username: {type: string}
+      cluster_id: {type: integer}
+      database: {type: string}
+      client_ip: {type: string}
+      at: {type: string, format: date-time}
+      policy:
+        $ref: "#/definitions/Policy"
+
+  Response.PolicySimulate:
+    type: object
+    properties:
+      username: {type: string}
+      attributes:
+        type: object
+        additionalProperties: {type: string}
+      permissions: {type: object}
+      decisions: {type: object}
+      sql: {type: object}
+      policies:
+        type: array
+        items: {type: object}
+
+  Response.Audit:
+    type: object
+    properties:
+      data:
+        type: array
+        items: {type: object}
+      total: {type: integer}
+
+  Response.LogFiles:
+    type: object
+    properties:
+      server: {type: string}
+      log_directory: {type: string}
+      current: {type: string}
+      files:
+        type: array
+        items:
+          type: object
+          properties:
+            name: {type: string}
+            size: {type: integer}
+            modified: {type: string, format: date-time}
+
+  Response.LogChunk:
+    type: object
+    properties:
+      file: {type: string}
+      size: {type: integer}
+      offset: {type: integer, description: "byte offset where text starts"}
+      next: {type: integer, description: "pass as since= to continue (live tail)"}
+      text: {type: string}
+      truncated: {type: boolean, description: "the start of the file was skipped"}
 
   Response.Error:
     title: Error object

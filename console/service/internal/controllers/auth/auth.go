@@ -29,8 +29,12 @@ func ToModel(u *storage.User) *models.User {
 		ID:           u.ID,
 		Username:     u.Username,
 		Role:         u.Role,
+		Attributes:   u.Attributes,
 		AuthProvider: u.AuthProvider,
 		CreatedAt:    strfmt.DateTime(u.CreatedAt),
+	}
+	if g := u.Attributes["group"]; g != "" {
+		m.Role = g
 	}
 	if u.DisplayName != nil {
 		m.DisplayName = *u.DisplayName
@@ -59,6 +63,13 @@ func NewPostAuthLoginHandler(svc *auth.Service, log zerolog.Logger) authops.Post
 	return &loginHandler{svc: svc, log: log.With().Str("module", "auth").Logger()}
 }
 
+// Hooks set by the service wiring (JumboSQL access policies): audit sign-ins, and the effective permissions
+// returned by /auth/me.
+var (
+	AuditLogin  func(r *http.Request, username string, user *storage.User, ok bool, reason string)
+	Permissions func(r *http.Request) any
+)
+
 func (h *loginHandler) Handle(param authops.PostAuthLoginParams) middleware.Responder {
 	username, password := "", ""
 	if param.Body.Username != nil {
@@ -69,6 +80,9 @@ func (h *loginHandler) Handle(param authops.PostAuthLoginParams) middleware.Resp
 	}
 	token, user, expires, err := h.svc.Login(param.HTTPRequest.Context(), username, password, param.HTTPRequest.UserAgent())
 	if err != nil {
+		if AuditLogin != nil {
+			AuditLogin(param.HTTPRequest, username, nil, false, err.Error())
+		}
 		if errors.Is(err, auth.ErrInvalidCredentials) {
 			h.log.Warn().Str("username", username).Str("remote", param.HTTPRequest.RemoteAddr).Msg("failed login")
 			return authops.NewPostAuthLoginUnauthorized().WithPayload(&models.ResponseError{
@@ -79,6 +93,9 @@ func (h *loginHandler) Handle(param authops.PostAuthLoginParams) middleware.Resp
 		return authops.NewPostAuthLoginUnauthorized().WithPayload(controllers.MakeErrorPayload(err, controllers.BaseError))
 	}
 	h.log.Info().Str("username", user.Username).Msg("signed in")
+	if AuditLogin != nil {
+		AuditLogin(param.HTTPRequest, user.Username, user, true, "")
+	}
 	return authops.NewPostAuthLoginOK().WithPayload(&models.ResponseLogin{
 		Token:     token,
 		ExpiresAt: strfmt.DateTime(expires.UTC().Truncate(time.Second)),
@@ -105,15 +122,21 @@ func NewGetAuthMeHandler(db storage.IStorage) authops.GetAuthMeHandler { return 
 
 func (h *meHandler) Handle(param authops.GetAuthMeParams) middleware.Responder {
 	p := localmid.PrincipalFrom(param.HTTPRequest.Context())
+	var perms any
+	if Permissions != nil {
+		perms = Permissions(param.HTTPRequest)
+	}
 	if p == nil || p.UserID == 0 {
 		// static API token: no user record
-		return authops.NewGetAuthMeOK().WithPayload(&models.User{Username: "api-token", Role: auth.RoleAdmin, AuthProvider: "token"})
+		return authops.NewGetAuthMeOK().WithPayload(&models.User{Username: "api-token", Role: auth.RoleAdmin, AuthProvider: "token", Permissions: perms})
 	}
 	u, err := h.db.GetUser(param.HTTPRequest.Context(), p.UserID)
 	if err != nil || u == nil {
-		return authops.NewGetAuthMeOK().WithPayload(&models.User{ID: p.UserID, Username: p.Username, Role: p.Role})
+		return authops.NewGetAuthMeOK().WithPayload(&models.User{ID: p.UserID, Username: p.Username, Role: p.Role, Permissions: perms})
 	}
-	return authops.NewGetAuthMeOK().WithPayload(ToModel(u))
+	m := ToModel(u)
+	m.Permissions = perms
+	return authops.NewGetAuthMeOK().WithPayload(m)
 }
 
 type passwordHandler struct{ db storage.IStorage }

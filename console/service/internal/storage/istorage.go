@@ -3,9 +3,26 @@ package storage
 import (
 	"context"
 	"time"
+
+	"postgresql-cluster-console/internal/policy"
 )
 
 type IStorage interface {
+	// JumboSQL: access policies, audit log, SQL editor roles
+	GetPolicies(ctx context.Context) ([]PolicyRow, error)
+	GetPolicy(ctx context.Context, id int64) (*PolicyRow, error)
+	CreatePolicy(ctx context.Context, p *policy.Policy, by string) (*PolicyRow, error)
+	UpdatePolicy(ctx context.Context, id int64, p *policy.Policy, by string) (*PolicyRow, error)
+	DeletePolicy(ctx context.Context, id int64) error
+	GetClusterRefs(ctx context.Context) ([]policy.Cluster, error)
+	ClusterIDOfServer(ctx context.Context, serverID int64) (int64, error)
+	ClusterIDOfOperation(ctx context.Context, operationID int64) (int64, error)
+	AddAuditEvent(ctx context.Context, e *AuditEvent) error
+	GetAuditEvents(ctx context.Context, f AuditFilter) ([]AuditEvent, int64, error)
+	PurgeAuditEvents(ctx context.Context, olderThan time.Duration) (int64, error)
+	GetSQLRole(ctx context.Context, clusterID int64, role, key string) (*SQLRoleRow, error)
+	SaveSQLRole(ctx context.Context, r *SQLRoleRow, key string) error
+
 	// JumboSQL: users and login sessions
 	CountUsers(ctx context.Context) (int64, error)
 	CountAdmins(ctx context.Context) (int64, error)

@@ -101,8 +101,11 @@ var Token string
 // Sessions resolves JumboSQL login sessions (set by the service at startup).
 var Sessions localmid.SessionLookup
 
+// Authz decides every signed-in request with the access policies (set by the service at startup).
+var Authz localmid.Authorizer
+
 // The middleware configuration happens before anything, this middleware also applies to serving the swagger.json document.
 // So this is a good place to plug in a panic handling middleware, logging and metrics.
 func setupGlobalMiddleware(handler http.Handler) http.Handler {
-	return localmid.SetCorrelationId(localmid.CORS(localmid.RequestZeroLog(localmid.Authorization(Token, Sessions, handler))))
+	return localmid.SetCorrelationId(localmid.CORS(localmid.RequestZeroLog(localmid.Authorization(Token, Sessions, Authz, handler))))
 }

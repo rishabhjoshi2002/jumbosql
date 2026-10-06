@@ -3,8 +3,12 @@ package service
 import (
 	"context"
 
+	"net/http"
+
+	"postgresql-cluster-console/internal/access"
 	"postgresql-cluster-console/internal/auth"
 	"postgresql-cluster-console/internal/configuration"
+	accessctl "postgresql-cluster-console/internal/controllers/access"
 	authctl "postgresql-cluster-console/internal/controllers/auth"
 	"postgresql-cluster-console/internal/controllers/cluster"
 	"postgresql-cluster-console/internal/controllers/dictionary"
@@ -20,6 +24,7 @@ import (
 	localmid "postgresql-cluster-console/middleware"
 	"postgresql-cluster-console/models"
 	"postgresql-cluster-console/pkg/patroni"
+	"postgresql-cluster-console/pkg/sqlroles"
 	"postgresql-cluster-console/restapi"
 	"postgresql-cluster-console/restapi/operations"
 	"postgresql-cluster-console/restapi/operations/system"
@@ -76,7 +81,29 @@ func NewService(
 		if err != nil || u == nil {
 			return nil
 		}
-		return &localmid.Principal{UserID: u.ID, Username: u.Username, Role: u.Role}
+		return &localmid.Principal{UserID: u.ID, Username: u.Username, Role: u.Role, Attributes: u.Attributes}
+	}
+
+	// JumboSQL: attribute-based access policies decide every request; the audit log records what happened
+	accessSvc := access.NewService(db, log.Logger, cfg.Audit.Retention)
+	restapi.Authz = accessSvc
+	authctl.Permissions = func(r *http.Request) any {
+		return accessSvc.Permissions(r.Context(), access.Subject(localmid.PrincipalFrom(r.Context())), access.RequestContext(r))
+	}
+	authctl.AuditLogin = func(r *http.Request, username string, u *storage.User, ok bool, reason string) {
+		p := &localmid.Principal{Username: username}
+		outcome, details := "ok", map[string]any{}
+		if u != nil {
+			p.UserID = u.ID
+		}
+		if !ok {
+			outcome, details["reason"] = "denied", reason
+		}
+		action := "auth.login"
+		if !ok {
+			action = "auth.login_failed"
+		}
+		accessSvc.Audit(r.Context(), access.AuditEventFor(r, p, action, outcome, 0, 0, details))
 	}
 
 	localLog := log.With().Str("module", "http_server").Logger()
@@ -121,11 +148,11 @@ func NewService(
 	api.SecretDeleteSecretsIDHandler = secret.NewDeleteSecretHandler(db)
 
 	// cluster
-	api.ClusterPostClustersHandler = cluster.NewPostClusterHandler(db, dockerManager, logCollector, cfg, log.Logger)
+	api.ClusterPostClustersHandler = cluster.NewPostClusterHandler(db, dockerManager, logCollector, cfg, log.Logger, accessSvc)
 	api.ClusterDeleteClustersIDHandler = cluster.NewDeleteClusterHandler(db)
-	api.OperationGetOperationsHandler = operation.NewGetOperationsHandler(db)
+	api.OperationGetOperationsHandler = operation.NewGetOperationsHandler(db, accessSvc)
 	api.OperationGetOperationsIDLogHandler = operation.NewGetOperationLogHandler(db)
-	api.ClusterGetClustersHandler = cluster.NewGetClustersHandler(db, log.Logger)
+	api.ClusterGetClustersHandler = cluster.NewGetClustersHandler(db, log.Logger, accessSvc)
 	api.ClusterGetClustersIDHandler = cluster.NewGetClusterHandler(db, log.Logger)
 	api.ClusterGetClustersDefaultNameHandler = cluster.NewGetClusterDefaultNameHandler(db, log.Logger)
 	api.ClusterDeleteServersIDHandler = cluster.NewDeleteServerHandler(db, log.Logger)
@@ -137,9 +164,19 @@ func NewService(
 	api.AuthGetAuthMeHandler = authctl.NewGetAuthMeHandler(db)
 	api.AuthPostAuthPasswordHandler = authctl.NewPostAuthPasswordHandler(db)
 	api.UserGetUsersHandler = user.NewGetUsersHandler(db)
-	api.UserPostUsersHandler = user.NewPostUserHandler(db)
-	api.UserPatchUsersIDHandler = user.NewPatchUserHandler(db)
-	api.UserDeleteUsersIDHandler = user.NewDeleteUserHandler(db)
+	api.UserPostUsersHandler = user.NewPostUserHandler(db, accessSvc)
+	api.UserPatchUsersIDHandler = user.NewPatchUserHandler(db, accessSvc)
+	api.UserDeleteUsersIDHandler = user.NewDeleteUserHandler(db, accessSvc)
+
+	// JumboSQL: access policies and audit log
+	accessCtl := accessctl.New(db, accessSvc)
+	api.AccessGetPoliciesHandler = accessCtl.GetPolicies()
+	api.AccessPostPoliciesHandler = accessCtl.PostPolicies()
+	api.AccessPatchPoliciesIDHandler = accessCtl.PatchPolicy()
+	api.AccessDeletePoliciesIDHandler = accessCtl.DeletePolicy()
+	api.AccessGetPoliciesPermissionsHandler = accessCtl.GetPermissions()
+	api.AccessPostPoliciesSimulateHandler = accessCtl.Simulate()
+	api.AccessGetAuditHandler = accessCtl.GetAudit()
 
 	// JumboSQL: Patroni panel (switchover / restart / reinitialize)
 	patroniActions := patroni.NewActions(patroni.ActionsConfig{
@@ -151,12 +188,20 @@ func NewService(
 	api.ClusterPostClustersIDSwitchoverHandler = cluster.NewPostClusterSwitchoverHandler(db, log.Logger, patroniActions, clusterWatcher)
 	api.ClusterPostServersIDRestartHandler = cluster.NewPostServerRestartHandler(db, log.Logger, patroniActions, clusterWatcher)
 	api.ClusterPostServersIDReinitializeHandler = cluster.NewPostServerReinitializeHandler(db, log.Logger, patroniActions, clusterWatcher)
-	api.ClusterPostClustersIDPatroniHandler = cluster.NewPostClusterPatroniHandler(db, log.Logger, patroniActions, clusterWatcher)
+	api.ClusterPostClustersIDPatroniHandler = cluster.NewPostClusterPatroniHandler(db, log.Logger, patroniActions, clusterWatcher, accessSvc)
+
+	// JumboSQL: PostgreSQL logs viewer
+	logsList, logsRead := cluster.NewLogsHandlers(db, patroniActions, cfg.DbDesk.SSLMode)
+	api.ClusterGetClustersIDLogsHandler = logsList
+	api.ClusterGetClustersIDLogsFileHandler = logsRead
 
 	// JumboSQL: SQL editor (runs scripts through HAProxy's read-write port, returns every result set)
-	sqlRun, sqlCancel := cluster.NewSQLHandlers(db, log.Logger, cfg.DbDesk.SSLMode)
+	// data scope enforced inside PostgreSQL through console-managed roles (passwords encrypted with the encryption key)
+	sqlRoles := sqlroles.NewManager(sqlRoleStore{db: db, key: cfg.EncryptionKey})
+	sqlRun, sqlCancel, sqlAccess := cluster.NewSQLHandlers(db, log.Logger, cfg.DbDesk.SSLMode, accessSvc, sqlRoles)
 	api.ClusterPostClustersIDSQLHandler = sqlRun
 	api.ClusterPostClustersIDSQLCancelHandler = sqlCancel
+	api.ClusterGetClustersIDSQLAccessHandler = sqlAccess
 
 	api.SystemGetVersionHandler = system.GetVersionHandlerFunc(func(params system.GetVersionParams) middleware.Responder {
 		return system.NewGetVersionOK().WithPayload(&models.ResponseVersion{

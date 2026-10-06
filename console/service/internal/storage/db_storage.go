@@ -573,6 +573,11 @@ func (s *dbStorage) GetClusters(ctx context.Context, req *GetClustersReq) ([]Clu
 			extraArgs = append(extraArgs, req.EnvironmentID)
 			extraArgsCurPosition++
 		}
+		if req.OnlyIDs != nil {
+			extraWhere += " and cluster_id = any($" + strconv.Itoa(extraArgsCurPosition) + ")"
+			extraArgs = append(extraArgs, req.OnlyIDs)
+			extraArgsCurPosition++
+		}
 		if req.ServerCount != nil {
 			extraWhere += " and server_count = $" + strconv.Itoa(extraArgsCurPosition)
 			extraArgs = append(extraArgs, req.ServerCount)
@@ -724,6 +729,11 @@ func (s *dbStorage) GetOperations(ctx context.Context, req *GetOperationsReq) ([
 			extraWhere += " and environment = $" + strconv.Itoa(extraArgsCurPosition)
 			extraArgsCurPosition++
 			extraArgs = append(extraArgs, req.Environment)
+		}
+		if req.OnlyClusters != nil {
+			extraWhere += " and cluster = any($" + strconv.Itoa(extraArgsCurPosition) + ")"
+			extraArgsCurPosition++
+			extraArgs = append(extraArgs, req.OnlyClusters)
 		}
 	}
 

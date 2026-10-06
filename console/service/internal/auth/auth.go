@@ -210,6 +210,7 @@ func (s *Service) Bootstrap(ctx context.Context, username, password string) (boo
 	display := "Administrator"
 	_, err = s.db.CreateUser(ctx, &storage.CreateUserReq{
 		Username: username, DisplayName: &display, PasswordHash: &hash, Role: RoleAdmin, AuthProvider: ProviderLocal,
+		Attributes: map[string]string{"group": RoleAdmin}, // matches the built-in Administrators policy
 	})
 	return err == nil, err
 }

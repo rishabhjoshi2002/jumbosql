@@ -196,6 +196,7 @@ type GetClustersReq struct {
 	EnvironmentID   *int64
 	CreatedAtFrom   *time.Time
 	CreatedAtTo     *time.Time
+	OnlyIDs         []int64 // JumboSQL access policies: nil = all clusters, else only these
 
 	Limit  *int64
 	Offset *int64
@@ -262,14 +263,15 @@ type UpdateOperationReq struct {
 }
 
 type GetOperationsReq struct {
-	ProjectID   int64
-	StartedFrom time.Time
-	EndedTill   time.Time
-	ClusterName *string
-	Type        *string
-	Status      *string
-	Environment *string
-	SortBy      *string
+	ProjectID    int64
+	StartedFrom  time.Time
+	EndedTill    time.Time
+	ClusterName  *string
+	Type         *string
+	Status       *string
+	Environment  *string
+	SortBy       *string
+	OnlyClusters []string // JumboSQL access policies: nil = all clusters, else only operations of these clusters
 
 	Limit  *int64
 	Offset *int64

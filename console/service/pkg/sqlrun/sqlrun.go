@@ -131,6 +131,11 @@ func escape(s string) string {
 	return string(out)
 }
 
+// Connect opens a connection to the target (used for console-side work such as managing SQL roles).
+func Connect(ctx context.Context, t Target) (*pgconn.PgConn, error) {
+	return pgconn.Connect(ctx, connString(t))
+}
+
 // Run executes the script and returns what happened. The returned error is only for problems that are not
 // SQL errors (bad input); SQL and connection errors are in Result.Error.
 func (r *Runner) Run(ctx context.Context, t Target, req Request) (*Result, error) {

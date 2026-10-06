@@ -21,10 +21,11 @@ import (
 	"net/http"
 	"strings"
 
+	acc "postgresql-cluster-console/internal/access"
 	"postgresql-cluster-console/internal/controllers"
+	"postgresql-cluster-console/internal/policy"
 	"postgresql-cluster-console/internal/storage"
 	"postgresql-cluster-console/internal/watcher"
-	localmid "postgresql-cluster-console/middleware"
 	"postgresql-cluster-console/models"
 	"postgresql-cluster-console/pkg/patroni"
 	"postgresql-cluster-console/restapi/operations/cluster"
@@ -33,10 +34,14 @@ import (
 	"github.com/rs/zerolog"
 )
 
-type patroniCommandHandler struct{ *patroniHandlers }
+type patroniCommandHandler struct {
+	*patroniHandlers
+	access *acc.Service
+}
 
-func NewPostClusterPatroniHandler(db storage.IStorage, log zerolog.Logger, actions patroni.IActions, cw watcher.ClusterWatcher) cluster.PostClustersIDPatroniHandler {
-	return &patroniCommandHandler{newPatroniHandlers(db, log, actions, cw)}
+// The route needs patroni.read; commands that change something also need patroni.manage on the cluster.
+func NewPostClusterPatroniHandler(db storage.IStorage, log zerolog.Logger, actions patroni.IActions, cw watcher.ClusterWatcher, a *acc.Service) cluster.PostClustersIDPatroniHandler {
+	return &patroniCommandHandler{newPatroniHandlers(db, log, actions, cw), a}
 }
 
 // mutating commands refresh the console's view of the cluster afterwards
@@ -52,9 +57,11 @@ func (h *patroniCommandHandler) Handle(param cluster.PostClustersIDPatroniParams
 	if param.Body != nil && param.Body.Command != nil {
 		command = *param.Body.Command
 	}
-	// viewers may only read (list, history, show-config)
-	if p := localmid.PrincipalFrom(ctx); p != nil && p.Role == "viewer" && mutatingCommands[command] {
-		return h.fail(param, command, errors.New("your role (viewer) can only run list, history and show-config"))
+	// list, history and show-config need patroni.read (checked for the route); the rest need patroni.manage
+	if mutatingCommands[command] && h.access != nil {
+		if d := h.access.Allows(param.HTTPRequest, policy.PatroniManage, param.ID); !d.Allowed {
+			return h.fail(param, command, errors.New("you need patroni.manage on this cluster for "+command+" ("+d.Reason+")"))
+		}
 	}
 
 	cl, err := h.db.GetCluster(ctx, param.ID)

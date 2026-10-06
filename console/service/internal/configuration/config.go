@@ -30,9 +30,13 @@ type Config struct {
 	}
 	// JumboSQL: username/password sign-in
 	Auth struct {
-		SessionTTL    time.Duration `envconfig:"auth_session_ttl" default:"12h" desc:"How long a sign-in lasts"`
-		AdminUsername string        `envconfig:"auth_admin_username" default:"admin" desc:"First admin, created when there are no users yet"`
-		AdminPassword string        `envconfig:"auth_admin_password" default:"" desc:"First admin's password (empty = use the authorization token)"`
+		SessionTTL    time.Duration `envconfig:"session_ttl" default:"12h" desc:"How long a sign-in lasts"`
+		AdminUsername string        `envconfig:"admin_username" default:"admin" desc:"First admin, created when there are no users yet"`
+		AdminPassword string        `envconfig:"admin_password" default:"" desc:"First admin's password (empty = use the authorization token)"`
+	}
+	// JumboSQL: audit log
+	Audit struct {
+		Retention time.Duration `envconfig:"retention" default:"4320h" desc:"How long audit events are kept (default 180 days)"`
 	}
 	Db struct {
 		Host            string        `default:"localhost" desc:"Database host"`
@@ -70,10 +74,10 @@ type Config struct {
 	}
 	// JumboSQL: Patroni REST API access for switchover / restart / reinitialize from the console.
 	Patroni struct {
-		Port     int           `envconfig:"patroni_port" default:"8009" desc:"Patroni REST API port on the database nodes (the HA automation listens on 8009)"`
-		Username string        `envconfig:"patroni_username" default:"" desc:"Patroni REST API basic-auth user (restapi.authentication), if set"`
-		Password string        `envconfig:"patroni_password" default:"" desc:"Patroni REST API basic-auth password"`
-		Timeout  time.Duration `envconfig:"patroni_timeout" default:"30s" desc:"Timeout for Patroni actions (switchover, restart, reinitialize)"`
+		Port     int           `envconfig:"port" default:"8009" desc:"Patroni REST API port on the database nodes (the HA automation listens on 8009)"`
+		Username string        `envconfig:"username" default:"" desc:"Patroni REST API basic-auth user (restapi.authentication), if set"`
+		Password string        `envconfig:"password" default:"" desc:"Patroni REST API basic-auth password"`
+		Timeout  time.Duration `envconfig:"timeout" default:"30s" desc:"Timeout for Patroni actions (switchover, restart, reinitialize)"`
 	}
 }
 

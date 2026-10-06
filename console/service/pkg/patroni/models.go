@@ -12,6 +12,7 @@ type ClusterInfo struct {
 		Role           string      `json:"role"`
 		State          string      `json:"state"`
 		Host           string      `json:"host"`
+		Port           int         `json:"port"` // PostgreSQL port of the member
 		Timeline       int64       `json:"timeline"`
 		Lag            interface{} `json:"lag"` // Replication lag in bytes, or "unknown".
 		Tags           interface{} `json:"tags"`
