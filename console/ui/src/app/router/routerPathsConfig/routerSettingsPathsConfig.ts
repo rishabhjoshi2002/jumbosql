@@ -20,6 +20,10 @@ const routerSettingsPathsConfig = {
     absolutePath: '/settings/users',
     relativePath: 'users',
   },
+  policies: {
+    absolutePath: '/settings/policies',
+    relativePath: 'policies',
+  },
 };
 
 export default routerSettingsPathsConfig;

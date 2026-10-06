@@ -13,6 +13,7 @@ import OperationsRoutes from '@app/router/routerConfig/OperationsRoutes.tsx';
 import SettingsRoutes from '@app/router/routerConfig/SettingsRoutes.tsx';
 import SqlEditorRoutes from '@app/router/routerConfig/SqlEditorRoutes.tsx';
 import ObservabilityRoutes from '@app/router/routerConfig/ObservabilityRoutes.tsx';
+import AccessRoutes from '@app/router/routerConfig/AccessRoutes.tsx';
 import RouterPaths from '@app/router/routerPathsConfig';
 import PrivateRouteWrapper from '@app/router/PrivateRouterWrapper.tsx';
 import Spinner from '@shared/ui/spinner';
@@ -38,6 +39,7 @@ const Router: FC = () => {
           {SettingsRoutes()}
           {SqlEditorRoutes()}
           {ObservabilityRoutes()}
+          {AccessRoutes()}
         </Route>
       </Route>
       <Route path="*" element={<Navigate to={`/${RouterPaths.notFound.absolutePath}`} replace />} />

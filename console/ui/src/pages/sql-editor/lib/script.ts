@@ -129,27 +129,32 @@ export const sqlSchemas = (system: boolean) =>
   } order by nspname`;
 
 /** One query for a schema's objects: kind, name (functions with their argument list). */
-export const sqlSchemaObjects = (schema: string) => `select kind, name from (
+export const sqlSchemaObjects = (schema: string) => `select kind, name, readable from (
   select case c.relkind when 'r' then 'table' when 'p' then 'table' when 'f' then 'table' when 'v' then 'view'
-              when 'm' then 'matview' when 'S' then 'sequence' end as kind, c.relname::text as name
+              when 'm' then 'matview' when 'S' then 'sequence' end as kind, c.relname::text as name,
+         case when c.relkind = 'S' then has_sequence_privilege(c.oid, 'SELECT')
+              else has_table_privilege(c.oid, 'SELECT') or has_any_column_privilege(c.oid, 'SELECT') end as readable
     from pg_class c join pg_namespace n on n.oid = c.relnamespace
    where n.nspname = ${quoteLiteral(schema)} and c.relkind in ('r', 'p', 'f', 'v', 'm', 'S') and not c.relispartition
   union all
   select case p.prokind when 'p' then 'procedure' else 'function' end,
-         p.proname || '(' || pg_get_function_identity_arguments(p.oid) || ')'
+         p.proname || '(' || pg_get_function_identity_arguments(p.oid) || ')',
+         has_function_privilege(p.oid, 'EXECUTE')
     from pg_proc p join pg_namespace n on n.oid = p.pronamespace
    where n.nspname = ${quoteLiteral(schema)} and p.prokind in ('f', 'p')
 ) o order by kind, name`;
 
 export const sqlColumns = (schema: string, table: string) =>
   `select a.attname as name, format_type(a.atttypid, a.atttypmod) as type, a.attnotnull as not_null,
-          coalesce((select true from pg_index i where i.indrelid = a.attrelid and i.indisprimary and a.attnum = any(i.indkey)), false) as pk
+          coalesce((select true from pg_index i where i.indrelid = a.attrelid and i.indisprimary and a.attnum = any(i.indkey)), false) as pk,
+          has_column_privilege(a.attrelid, a.attnum, 'SELECT') as readable
      from pg_attribute a
     where a.attrelid = ${quoteLiteral(`${quoteIdent(schema)}.${quoteIdent(table)}`)}::regclass and a.attnum > 0 and not a.attisdropped
     order by a.attnum`;
 
-export const sqlSelectRows = (schema: string, table: string, limit = 100) =>
-  `SELECT * FROM ${quoteIdent(schema)}.${quoteIdent(table)} LIMIT ${limit};`;
+/** columns: only these (when some columns are hidden from the user, "*" would be refused) */
+export const sqlSelectRows = (schema: string, table: string, limit = 100, columns?: string[]) =>
+  `SELECT ${columns?.length ? columns.map(quoteIdent).join(', ') : '*'} FROM ${quoteIdent(schema)}.${quoteIdent(table)} LIMIT ${limit};`;
 
 export const sqlCountRows = (schema: string, table: string) =>
   `SELECT count(*) FROM ${quoteIdent(schema)}.${quoteIdent(table)};`;

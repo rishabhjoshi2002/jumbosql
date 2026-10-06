@@ -24,7 +24,8 @@ import { useTranslation } from 'react-i18next';
 import { toast } from 'react-toastify';
 import RouterPaths from '@app/router/routerPathsConfig';
 import { generateAbsoluteRouterPath, handleRequestErrorCatch } from '@shared/lib/functions.ts';
-import { clearSession, getSessionUser, isAdmin } from '@shared/lib/session.ts';
+import { can, clearSession, userGroup } from '@shared/lib/session.ts';
+import { useSessionUser } from '@shared/lib/useSession.ts';
 import { usePostAuthLogoutMutation, usePostAuthPasswordMutation } from '@shared/api/api/auth.ts';
 import { BRAND } from '@shared/theme/theme.ts';
 
@@ -40,7 +41,7 @@ const initials = (name: string) =>
 const UserMenu: FC = () => {
   const { t } = useTranslation('shared');
   const navigate = useNavigate();
-  const user = getSessionUser();
+  const user = useSessionUser();
   const [anchor, setAnchor] = useState<HTMLElement | null>(null);
   const [pwOpen, setPwOpen] = useState(false);
   const [current, setCurrent] = useState('');
@@ -89,7 +90,7 @@ const UserMenu: FC = () => {
         <Box textAlign="left" sx={{ lineHeight: 1.1, display: { xs: 'none', md: 'block' } }}>
           <Typography sx={{ fontSize: '0.86rem', fontWeight: 700, color: BRAND.chromeText }}>{name}</Typography>
           <Typography sx={{ fontSize: '0.72rem', color: BRAND.chromeMuted, textTransform: 'capitalize' }}>
-            {user?.role ?? 'admin'}
+            {userGroup(user) || user?.username}
           </Typography>
         </Box>
       </Button>
@@ -100,7 +101,9 @@ const UserMenu: FC = () => {
             <Typography variant="caption" color="text.secondary">
               {user?.username}
             </Typography>
-            <Chip size="small" label={user?.role ?? 'admin'} sx={{ height: 20, textTransform: 'capitalize' }} />
+            {userGroup(user) ? (
+              <Chip size="small" label={userGroup(user)} sx={{ height: 20, textTransform: 'capitalize' }} />
+            ) : null}
           </Stack>
         </Box>
         <Divider />
@@ -118,7 +121,7 @@ const UserMenu: FC = () => {
             {t('changePassword')}
           </MenuItem>
         ) : null}
-        {isAdmin(user) ? (
+        {can('users.manage', undefined, user) ? (
           <MenuItem
             onClick={() => {
               setAnchor(null);

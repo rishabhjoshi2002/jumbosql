@@ -278,7 +278,11 @@ export const createAppTheme = (mode: PaletteMode) => {
         },
         MuiChip: {
           styleOverrides: {
-            root: { backgroundColor: t.subtle, color: t.text, fontWeight: 600 },
+            // neutral chips get the brand surface; coloured ones (success / warning / error …) keep their colour
+            root: ({ ownerState }: { ownerState: { color?: string } }) =>
+              !ownerState.color || ownerState.color === 'default'
+                ? { backgroundColor: t.subtle, color: t.text, fontWeight: 600 }
+                : { fontWeight: 600 },
           },
         },
         MuiTooltip: {

@@ -15,7 +15,8 @@ import {
 import TerminalOutlined from '@mui/icons-material/TerminalOutlined';
 import { useTranslation } from 'react-i18next';
 import { PatroniCommandArg, PatroniMember, usePostClustersByIdPatroniMutation } from '@shared/api/api/patroni.ts';
-import { canManage, getSessionUser } from '@shared/lib/session.ts';
+import { can } from '@shared/lib/session.ts';
+import { useSessionUser } from '@shared/lib/useSession.ts';
 import { BRAND } from '@shared/theme/theme.ts';
 import { isLeader, memberIsBack, planRollingRestart } from '@widgets/patroni-console/lib/rolling.ts';
 
@@ -54,7 +55,8 @@ const Group: FC<{ title: string; children: ReactNode }> = ({ title, children }) 
  */
 const PatroniConsole: FC<{ clusterId: number; onChanged?: () => void }> = ({ clusterId, onChanged }) => {
   const { t } = useTranslation('clusters');
-  const writable = canManage(getSessionUser());
+  const user = useSessionUser();
+  const writable = can('patroni.manage', clusterId, user); // access policies: Patroni actions on this cluster
   const [run, { isLoading }] = usePostClustersByIdPatroniMutation();
 
   const [members, setMembers] = useState<PatroniMember[]>([]);

@@ -24,13 +24,16 @@ import FunctionsIcon from '@mui/icons-material/Functions';
 import NumbersIcon from '@mui/icons-material/Numbers';
 import KeyIcon from '@mui/icons-material/VpnKeyOutlined';
 import ViewColumnOutlinedIcon from '@mui/icons-material/ViewColumnOutlined';
+import LockOutlinedIcon from '@mui/icons-material/LockOutlined';
 import { useTranslation } from 'react-i18next';
 import { SqlRunResponse } from '@shared/api/api/sql.ts';
 import { quoteIdent, sqlColumns, sqlCountRows, sqlSchemaObjects, sqlSchemas, sqlSelectRows } from '../lib/script.ts';
 
 type Run = (sql: string) => Promise<SqlRunResponse | undefined>;
-type Obj = { kind: string; name: string };
-type Col = { name: string; type: string; notNull: boolean; pk: boolean };
+type Obj = { kind: string; name: string; readable: boolean };
+type Col = { name: string; type: string; notNull: boolean; pk: boolean; readable: boolean };
+
+const lockIcon = <LockOutlinedIcon sx={{ fontSize: 14, color: 'text.disabled' }} />;
 
 const KIND_ORDER = ['table', 'view', 'matview', 'function', 'procedure', 'sequence'];
 const KIND_ICON: Record<string, ReactNode> = {
@@ -144,30 +147,46 @@ const ObjectBrowser: FC<Props> = ({ run, database, reloadKey, onOpen, onInsert, 
     if (willOpen && !objects[schema]) {
       setLoading((l) => ({ ...l, [k]: true }));
       const res = await run(sqlSchemaObjects(schema));
-      const objs = rowsOf(res).map((r) => ({ kind: r[0] ?? '', name: r[1] ?? '' }));
+      const objs = rowsOf(res).map((r) => ({ kind: r[0] ?? '', name: r[1] ?? '', readable: r[2] !== 'f' }));
       setObjects((o) => ({ ...o, [schema]: objs }));
       onNames(objs.filter((o) => !['function', 'procedure'].includes(o.kind)).map((o) => o.name));
       setLoading((l) => ({ ...l, [k]: false }));
     }
   };
 
+  const loadColumns = async (schema: string, table: string) => {
+    const k = `t:${schema}.${table}`;
+    if (columns[k]) return columns[k];
+    setLoading((l) => ({ ...l, [k]: true }));
+    const res = await run(sqlColumns(schema, table));
+    const cols = rowsOf(res).map((r) => ({
+      name: r[0] ?? '',
+      type: r[1] ?? '',
+      notNull: r[2] === 't',
+      pk: r[3] === 't',
+      readable: r[4] !== 'f',
+    }));
+    setColumns((c) => ({ ...c, [k]: cols }));
+    onNames(cols.filter((c) => c.readable).map((c) => c.name));
+    setLoading((l) => ({ ...l, [k]: false }));
+    return cols;
+  };
+
   const toggleTable = async (schema: string, table: string) => {
     const k = `t:${schema}.${table}`;
     const willOpen = !open[k];
     setOpen((o) => ({ ...o, [k]: willOpen }));
-    if (willOpen && !columns[k]) {
-      setLoading((l) => ({ ...l, [k]: true }));
-      const res = await run(sqlColumns(schema, table));
-      const cols = rowsOf(res).map((r) => ({
-        name: r[0] ?? '',
-        type: r[1] ?? '',
-        notNull: r[2] === 't',
-        pk: r[3] === 't',
-      }));
-      setColumns((c) => ({ ...c, [k]: cols }));
-      onNames(cols.map((c) => c.name));
-      setLoading((l) => ({ ...l, [k]: false }));
-    }
+    if (willOpen) await loadColumns(schema, table);
+  };
+
+  /** SELECT * - or, when some columns are hidden by an access policy, the columns the user may read */
+  const viewRows = async (schema: string, table: string) => {
+    const cols = await loadColumns(schema, table);
+    const hidden = cols.some((c) => !c.readable);
+    onOpen(
+      sqlSelectRows(schema, table, 100, hidden ? cols.filter((c) => c.readable).map((c) => c.name) : undefined),
+      true,
+    );
   };
 
   const f = filter.trim().toLowerCase();
@@ -258,9 +277,17 @@ const ObjectBrowser: FC<Props> = ({ run, database, reloadKey, onOpen, onInsert, 
                                 expandable={isRel}
                                 open={open[tk]}
                                 loading={loading[tk]}
-                                icon={KIND_ICON[o.kind]}
-                                label={o.name}
-                                title={t('sqlObjectHelp')}
+                                icon={o.readable ? KIND_ICON[o.kind] : lockIcon}
+                                label={
+                                  o.readable ? (
+                                    o.name
+                                  ) : (
+                                    <Box component="span" sx={{ color: 'text.disabled' }}>
+                                      {o.name}
+                                    </Box>
+                                  )
+                                }
+                                title={o.readable ? t('sqlObjectHelp') : t('sqlObjectLocked')}
                                 onToggle={() => isRel && void toggleTable(schema, o.name)}
                                 onClick={isRel ? (e) => setMenu({ el: e.currentTarget, schema, obj: o }) : undefined}
                                 onDoubleClick={() =>
@@ -276,8 +303,11 @@ const ObjectBrowser: FC<Props> = ({ run, database, reloadKey, onOpen, onInsert, 
                                   <Node
                                     key={c.name}
                                     depth={3}
+                                    title={c.readable ? undefined : t('sqlColumnHidden')}
                                     icon={
-                                      c.pk ? (
+                                      !c.readable ? (
+                                        lockIcon
+                                      ) : c.pk ? (
                                         <KeyIcon sx={{ fontSize: 14, color: 'warning.main' }} />
                                       ) : (
                                         <ViewColumnOutlinedIcon sx={{ fontSize: 14 }} />
@@ -286,7 +316,15 @@ const ObjectBrowser: FC<Props> = ({ run, database, reloadKey, onOpen, onInsert, 
                                     onDoubleClick={() => onInsert(quoteIdent(c.name))}
                                     label={
                                       <>
-                                        {c.name}{' '}
+                                        <Box
+                                          component="span"
+                                          sx={
+                                            c.readable
+                                              ? undefined
+                                              : { color: 'text.disabled', textDecoration: 'line-through' }
+                                          }>
+                                          {c.name}
+                                        </Box>{' '}
                                         <Typography
                                           component="span"
                                           sx={{ fontSize: '0.72rem', color: 'text.secondary' }}>
@@ -314,7 +352,7 @@ const ObjectBrowser: FC<Props> = ({ run, database, reloadKey, onOpen, onInsert, 
                 key="rows"
                 dense
                 onClick={() => {
-                  onOpen(sqlSelectRows(menu.schema, menu.obj.name), true);
+                  void viewRows(menu.schema, menu.obj.name);
                   setMenu(null);
                 }}>
                 {t('sqlViewRows')}

@@ -2,10 +2,19 @@ import { Navigate, Outlet, useLocation } from 'react-router-dom';
 import RouterPaths from '@app/router/routerPathsConfig';
 import { FC, useEffect } from 'react';
 import { setDbdeskAuthCookie } from '@shared/lib/dbdeskAuthCookie.ts';
+import { useGetAuthMeQuery } from '@shared/api/api/auth.ts';
+import { getSessionUser, updateSessionUser } from '@shared/lib/session.ts';
 
 const PrivateRouteWrapper: FC = () => {
   const location = useLocation();
   const token = localStorage.getItem('token');
+
+  // JumboSQL: effective permissions come from the access policies; refresh them on load and every minute so
+  // policy changes show up without signing in again
+  const me = useGetAuthMeQuery(undefined, { skip: !token, pollingInterval: 60_000, refetchOnFocus: true });
+  useEffect(() => {
+    if (me.data) updateSessionUser({ ...(getSessionUser() ?? {}), ...me.data });
+  }, [me.data]);
 
   useEffect(() => {
     // Keep the SQL editor auth cookie in sync for validated sessions restored

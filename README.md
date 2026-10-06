@@ -10,11 +10,14 @@ collection (version **2.2.0**). Based on [Autobase](https://github.com/autobase-
 
 | Area | What you get |
 |---|---|
-| **Sign-in** | Username and password, roles **admin / operator / viewer**, users managed in **Settings → Users**. Accounts are stored in the console today; LDAP and SSO plug in later on the server side. |
+| **Sign-in** | Username and password, users with **attributes** (group, team, region, …) managed in **Settings → Users**. Accounts are stored in the console today; LDAP and SSO plug in later on the server side. |
+| **Access policies (ABAC)** | **Settings → Access policies**: who (everyone, users, attribute conditions) may do what (permissions), where (clusters, environments, projects), with which data (databases, schemas, tables, hidden columns, row and time limits) and when (IP ranges, weekdays, hours). Deny wins, nothing is allowed by default. **Test access** shows what a user may do and which policy decides it. |
+| **Audit log** | Every change, SQL statement, log read, sign-in and refused request: who, when, from which IP, on which cluster, with what result. Filters, search, details per event. |
+| **PostgreSQL logs** | Each node's server log in the browser: pick cluster, node and file, live tail, level filter (WARNING+/ERROR+), search with highlighting, download. |
 | **Create cluster** | **Inventory step**: add each VM (or **Import VM list** from the VM script), tick its roles (etcd, PostgreSQL + Patroni, HAProxy, PgBouncer, pgBackRest repo, Monitoring = Prometheus + Alertmanager + Grafana). One VM can hold one role or several. Live `inventory.yml` preview and download; the layout rules are checked as you type. |
 | **Patroni console** | On each cluster page: `list`, `history`, `show-config`, `edit-config`, `pause`/`resume`, `switchover`, `failover`, `restart`, `reload`, `reinit` and a **rolling restart**. Every result shows the equivalent `patronictl` command. |
 | **Observability** | One page with each cluster's **Grafana, Prometheus and Alertmanager**, taken from the VM with the Monitoring role; URLs can be overridden per cluster; Grafana can be shown inside the console. |
-| **SQL editor** | Built-in, pgAdmin-style query tool: object browser (schemas, tables with columns, views, functions, sequences), query tabs, every statement's result (also `SHOW`, `EXPLAIN`, `RETURNING`), Messages with notices and errors (SQLSTATE, detail, hint, position marked in the editor), Explain / Explain analyze, Cancel, CSV export, query history. Runs through HAProxy's read-write port, so always on the current Patroni leader. Admin and operator only. |
+| **SQL editor** | Built-in, pgAdmin-style query tool: object browser (schemas, tables with columns, views, functions, sequences), query tabs, every statement's result (also `SHOW`, `EXPLAIN`, `RETURNING`), Messages with notices and errors (SQLSTATE, detail, hint, position marked in the editor), Explain / Explain analyze, Cancel, CSV export, query history. Runs through HAProxy's read-write port, so always on the current Patroni leader. Follows the access policies: read-only / read-write / admin, only allowed databases, hidden columns and tables locked in the object browser, row and time limits. |
 | **Branding** | JumboSQL look (navy and logo blue), with a light watermark on every page: *JumboSQL, managed by Keen & Able Computers Pvt. Ltd.* |
 
 ## How it fits together
@@ -81,20 +84,60 @@ restarts its networks.
 **4. Sign in** as `admin`. On the very first start the password is your token (`JUMBOSQL_TOKEN`), or
 `JUMBOSQL_ADMIN_PASSWORD` if you set it. Change it from the user menu, then add people in **Settings → Users**.
 
-## Users and roles
+## Users, attributes and access policies
 
-| Role | Can |
+Each user has **attributes**, simple `key = value` pairs set in **Settings → Users**. The `group` attribute
+(admin / operator / viewer) has its own selector; add any others you need (`team = analytics`, `region = eu`,
+`clearance = pii`, …).
+
+What a user may do comes only from **access policies** (**Settings → Access policies**). A policy says:
+
+| Part | Example |
 |---|---|
-| **admin** | everything, including users |
-| **operator** | create and manage clusters, run Patroni commands, change monitoring URLs |
-| **viewer** | read-only (cluster pages, `list`, `history`, `show-config`, observability) |
+| **Who** | everyone, users by name, or attribute conditions (`team = analytics or bi` AND `region = eu`) |
+| **What** | permissions: `clusters.view/manage`, `patroni.read/manage`, `sql.read/write/admin`, `sql.stats`, `logs.view`, `observability.manage`, `settings.manage`, `users.manage`, `policies.manage`, `audit.view` |
+| **Where** | cluster name patterns (`prod-*`), environments, projects; empty = all clusters |
+| **Data** (SQL) | databases, schemas, tables (`sales.*`), hidden columns (`*.*.email`, `public.customers.card_no`), max rows, statement time limit |
+| **When** | client IP ranges (CIDR), weekdays, hours, time zone |
+
+Rules: a permission is granted when an enabled **allow** policy matches and no **deny** policy does; everything
+else is refused. For SQL the strongest level wins (admin > write > read), data scopes of matching allow policies
+are combined, hidden columns of all matching policies add up, and the largest limits apply.
+
+Three built-in policies match the `group` attribute:
+
+| Group | Can |
+|---|---|
+| **admin** | everything, including users, policies and the audit log |
+| **operator** | create and manage clusters, Patroni commands, SQL read/write (not as superuser), statistics, logs, monitoring URLs |
+| **viewer** | read-only: cluster pages, `list`, `history`, `show-config`, observability, SQL editor read-only |
+
+You can change or disable them (not delete them), and add your own. The console refuses a change that would
+leave no user able to manage policies.
+
+**How the data scope is enforced.** Only an unrestricted `sql.admin` runs as the cluster's superuser. Everyone else
+runs as a database role JumboSQL creates per scope (`jsql_<hash>`), with `SELECT` (and for write access
+`INSERT/UPDATE/DELETE`) granted only on the allowed tables, and only on the visible columns when columns are hidden.
+Views that read a hidden column are not granted, read-only profiles have `default_transaction_read_only`, and
+server statistics (`pg_stat_activity` of other users, …) need `sql.stats`. So the rules hold for any SQL - `*`,
+aliases, `row_to_json`, views, functions - because PostgreSQL itself refuses it. The roles are created and
+kept in sync automatically (passwords encrypted in the console database). The cluster's `pg_hba.conf` must accept
+password logins for these roles from the HAProxy node; the HA automation's usual rule for all users on the
+cluster network covers it, and the SQL editor tells you if a login is refused.
 
 Passwords are stored as PBKDF2-SHA256 hashes; sessions last 12 hours (`PG_CONSOLE_AUTH_SESSION_TTL`) and only
-a hash of each session token is stored. A password or role change signs that user out everywhere.
-The token in `JUMBOSQL_TOKEN` stays valid as an **API token** for scripts.
+a hash of each session token is stored. A password change signs that user out everywhere; attribute and policy
+changes apply within seconds. The token in `JUMBOSQL_TOKEN` stays valid as an **API token** for scripts (it is
+allowed everything). Audit events are kept for 180 days (`PG_CONSOLE_AUDIT_RETENTION`, e.g. `2160h`).
 
 LDAP / SSO later: the API checks credentials through a provider interface (`console/service/internal/auth`),
-so an LDAP or OIDC provider is added next to the local one without touching the UI or the role rules.
+so an LDAP or OIDC provider is added next to the local one; its groups become attributes.
+
+## PostgreSQL logs
+
+**PostgreSQL logs** in the side menu (`logs.view`) reads each node's log directory over SQL (`pg_ls_logdir`,
+`pg_read_binary_file`), straight to the node, not through HAProxy. Choose the node and file, load the last 64 KB
+to 8 MB, follow it live, filter by level, search and download. Every read is in the audit log.
 
 ## Create the VMs (KVM host)
 
@@ -178,7 +221,7 @@ console through an SSH tunnel, use a SOCKS proxy (`ssh -D 1080 root@<kvm-host>`)
 | Path | What |
 |---|---|
 | `console/ui` | React UI. JumboSQL code: `shared/lib/haInventory.ts` (inventory model and rules), `entities/cluster/database-servers-block` (inventory step), `widgets/patroni-console`, `pages/observability`, `widgets/users-table`, `pages/login`, `shared/theme` |
-| `console/service` | Go API. JumboSQL code: `internal/auth` (sign-in, sessions, providers), `internal/controllers/auth`, `internal/controllers/user`, `pkg/patroni/actions.go`, `internal/controllers/cluster/patroni_*.go`, `middleware/authorization.go` (roles) |
+| `console/service` | Go API. JumboSQL code: `internal/auth` (sign-in, sessions, providers), `internal/controllers/auth`, `internal/controllers/user`, `pkg/patroni/actions.go`, `internal/controllers/cluster/patroni_*.go`, `middleware/authorization.go`, `internal/policy` (policy engine), `internal/access` (routes, audit), `pkg/sqlroles` (data scope roles), `pkg/pglogs` |
 | `console/db/migrations` | console database; `20261005150000_jumbosql_users.sql` adds users and sessions |
 | `automation-ha` | the HA automation image: entrypoint, inventory check and conversion, wrapper playbook, pack script |
 | `automation` | Autobase's own automation (unused by JumboSQL, kept for upstream merges) |

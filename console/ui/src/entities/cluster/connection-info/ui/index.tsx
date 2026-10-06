@@ -8,7 +8,7 @@ import { ConnectionInfoProps } from '@entities/cluster/connection-info/model/typ
 import PowerOutlinedIcon from '@mui/icons-material/PowerOutlined';
 import { useGetConnectionInfoConfig } from '@entities/cluster/connection-info/lib/hooks.tsx';
 import InfoCardBody from '@shared/ui/info-card-body';
-import { canManage, getSessionUser } from '@shared/lib/session.ts';
+import { canAny } from '@shared/lib/session.ts';
 import RouterPaths from '@app/router/routerPathsConfig';
 
 const ConnectionInfo: FC<ConnectionInfoProps> = ({ connectionInfo }) => {
@@ -26,7 +26,7 @@ const ConnectionInfo: FC<ConnectionInfoProps> = ({ connectionInfo }) => {
       </AccordionSummary>
       <AccordionDetails>
         <InfoCardBody config={config} />
-        {connectionInfo?.address && canManage(getSessionUser()) && (
+        {connectionInfo?.address && canAny(['sql.read', 'sql.write', 'sql.admin'], clusterId) && (
           <Button
             variant="outlined"
             size="small"

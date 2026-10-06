@@ -8,43 +8,59 @@ import GithubIcon from '@assets/githubIcon.svg?react';
 import DocumentationIcon from '@assets/docsIcon.svg?react';
 import SupportIcon from '@assets/supportIcon.svg?react';
 import ObservabilityIcon from '@mui/icons-material/InsightsOutlined';
+import PostgresLogsIcon from '@mui/icons-material/ReceiptLongOutlined';
+import AuditIcon from '@mui/icons-material/FactCheckOutlined';
+import { canAny, getSessionUser, SessionUser } from '@shared/lib/session.ts';
 
-export const sidebarData = (t: TFunction) => {
-  const items = [
+// JumboSQL: menu items follow the user's access policies (perms: any one of them)
+export const sidebarData = (t: TFunction, user: SessionUser | null = getSessionUser()) => {
+  const all = [
     {
       icon: ClustersIcon,
       label: t('clusters', { ns: 'clusters' }),
       path: RouterPaths.clusters.absolutePath,
+      perms: ['clusters.view'],
+    },
+    {
+      icon: SqlEditorIcon,
+      label: t('sqlEditor', { ns: 'shared' }),
+      path: RouterPaths.sqlEditor.absolutePath,
+      perms: ['sql.read', 'sql.write', 'sql.admin'],
+    },
+    {
+      icon: ObservabilityIcon,
+      label: t('observability', { ns: 'shared' }),
+      path: RouterPaths.observability.absolutePath,
+      perms: ['clusters.view'],
+    },
+    {
+      icon: PostgresLogsIcon,
+      label: t('postgresLogs', { ns: 'shared' }),
+      path: RouterPaths.logs.absolutePath,
+      perms: ['logs.view'],
+    },
+    {
+      icon: OperationsIcon,
+      label: t('operations', { ns: 'operations' }),
+      path: RouterPaths.operations.absolutePath,
+      perms: ['clusters.view'],
+    },
+    {
+      icon: AuditIcon,
+      label: t('auditLog', { ns: 'shared' }),
+      path: RouterPaths.audit.absolutePath,
+      perms: ['audit.view'],
+    },
+    {
+      icon: SettingsIcon,
+      label: t('settings', { ns: 'settings' }),
+      path: RouterPaths.settings.absolutePath,
+      perms: ['settings.manage', 'clusters.manage', 'users.manage', 'policies.manage'],
     },
   ];
-
-  // JumboSQL: built-in SQL editor (pgAdmin-style query tool, runs through the console API)
-  items.push({
-    icon: SqlEditorIcon,
-    label: t('sqlEditor', { ns: 'shared' }),
-    path: RouterPaths.sqlEditor.absolutePath,
-  });
-
-  // JumboSQL: Grafana / Prometheus / Alertmanager per cluster
-  items.push({
-    icon: ObservabilityIcon,
-    label: t('observability', { ns: 'shared' }),
-    path: RouterPaths.observability.absolutePath,
-  });
-
-  items.push({
-    icon: OperationsIcon,
-    label: t('operations', { ns: 'operations' }),
-    path: RouterPaths.operations.absolutePath,
-  });
-
-  items.push({
-    icon: SettingsIcon,
-    label: t('settings', { ns: 'settings' }),
-    path: RouterPaths.settings.absolutePath,
-  });
-
-  return items;
+  return all
+    .filter((item) => canAny(item.perms, undefined, user))
+    .map((item) => ({ icon: item.icon, label: item.label, path: item.path }));
 };
 
 export const sidebarLowData = (t: TFunction) => [

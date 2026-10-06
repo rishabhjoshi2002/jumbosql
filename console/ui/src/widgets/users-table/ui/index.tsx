@@ -23,6 +23,9 @@ import {
 } from '@mui/material';
 import PersonAddAlt1Outlined from '@mui/icons-material/PersonAddAlt1Outlined';
 import KeyOutlined from '@mui/icons-material/KeyOutlined';
+import LabelOutlined from '@mui/icons-material/LabelOutlined';
+import AddIcon from '@mui/icons-material/Add';
+import CloseIcon from '@mui/icons-material/Close';
 import DeleteOutline from '@mui/icons-material/DeleteOutline';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'react-toastify';
@@ -34,9 +37,63 @@ import {
   usePostUsersMutation,
 } from '@shared/api/api/auth.ts';
 import { handleRequestErrorCatch } from '@shared/lib/functions.ts';
-import { getSessionUser } from '@shared/lib/session.ts';
+import { useSessionUser } from '@shared/lib/useSession.ts';
+import { userGroup } from '@shared/lib/session.ts';
 
 const ROLES = ['admin', 'operator', 'viewer'] as const;
+
+type AttrRow = { key: string; value: string };
+const toRows = (a?: Record<string, string>): AttrRow[] =>
+  Object.entries(a ?? {})
+    .filter(([k]) => k !== 'group')
+    .map(([key, value]) => ({ key, value }));
+const fromRows = (group: string, rows: AttrRow[]) => {
+  const out: Record<string, string> = {};
+  rows.forEach((r) => {
+    const k = r.key.trim().toLowerCase();
+    if (k && k !== 'group' && r.value.trim()) out[k] = r.value.trim();
+  });
+  if (group) out.group = group;
+  return out;
+};
+
+/** key = value rows (team = analytics, region = eu, ...); the "group" attribute has its own selector */
+const AttributeRows: FC<{
+  rows: AttrRow[];
+  onChange: (r: AttrRow[]) => void;
+  addLabel: string;
+  keyLabel: string;
+  valueLabel: string;
+}> = ({ rows, onChange, addLabel, keyLabel, valueLabel }) => (
+  <Stack gap={1}>
+    {rows.map((r, i) => (
+      <Stack key={i} direction="row" gap={1} alignItems="center">
+        <TextField
+          size="small"
+          label={keyLabel}
+          value={r.key}
+          onChange={(e) => onChange(rows.map((x, j) => (j === i ? { ...x, key: e.target.value } : x)))}
+          sx={{ flex: 1 }}
+        />
+        <TextField
+          size="small"
+          label={valueLabel}
+          value={r.value}
+          onChange={(e) => onChange(rows.map((x, j) => (j === i ? { ...x, value: e.target.value } : x)))}
+          sx={{ flex: 1 }}
+        />
+        <IconButton size="small" onClick={() => onChange(rows.filter((_, j) => j !== i))}>
+          <CloseIcon fontSize="small" />
+        </IconButton>
+      </Stack>
+    ))}
+    <Box>
+      <Button size="small" startIcon={<AddIcon />} onClick={() => onChange([...rows, { key: '', value: '' }])}>
+        {addLabel}
+      </Button>
+    </Box>
+  </Stack>
+);
 
 const formatDate = (v?: string | null) => (v ? new Date(v).toLocaleString() : 'â€”');
 
@@ -46,7 +103,7 @@ const formatDate = (v?: string | null) => (v ? new Date(v).toLocaleString() : 'â
  */
 const UsersTable: FC = () => {
   const { t } = useTranslation(['settings', 'shared']);
-  const me = getSessionUser();
+  const me = useSessionUser();
   const users = useGetUsersQuery();
   const [addUser, addState] = usePostUsersMutation();
   const [patchUser] = usePatchUsersByIdMutation();
@@ -54,12 +111,20 @@ const UsersTable: FC = () => {
 
   const [addOpen, setAddOpen] = useState(false);
   const [form, setForm] = useState({ username: '', display_name: '', password: '', role: 'operator' });
+  const [formAttrs, setFormAttrs] = useState<AttrRow[]>([]);
+  const [attrUser, setAttrUser] = useState<ApiUser | null>(null);
+  const [attrRows, setAttrRows] = useState<AttrRow[]>([]);
   const [pwUser, setPwUser] = useState<ApiUser | null>(null);
   const [newPw, setNewPw] = useState('');
 
   const submitAdd = async () => {
     try {
-      await addUser(form).unwrap();
+      await addUser({
+        username: form.username,
+        display_name: form.display_name,
+        password: form.password,
+        attributes: fromRows(form.role, formAttrs),
+      }).unwrap();
       toast.success(t('userAdded', { username: form.username }));
       setAddOpen(false);
     } catch (e) {
@@ -69,8 +134,19 @@ const UsersTable: FC = () => {
 
   const changeRole = async (u: ApiUser, role: string) => {
     try {
-      await patchUser({ id: u.id, role }).unwrap();
+      await patchUser({ id: u.id, attributes: { ...(u.attributes ?? {}), group: role } }).unwrap();
       toast.success(t('roleChanged', { username: u.username, role }));
+    } catch (e) {
+      handleRequestErrorCatch(e);
+    }
+  };
+
+  const submitAttributes = async () => {
+    if (!attrUser) return;
+    try {
+      await patchUser({ id: attrUser.id, attributes: fromRows(userGroup(attrUser), attrRows) }).unwrap();
+      toast.success(t('attributesSaved', { username: attrUser.username }));
+      setAttrUser(null);
     } catch (e) {
       handleRequestErrorCatch(e);
     }
@@ -111,6 +187,7 @@ const UsersTable: FC = () => {
           startIcon={<PersonAddAlt1Outlined />}
           onClick={() => {
             setForm({ username: '', display_name: '', password: '', role: 'operator' });
+            setFormAttrs([]);
             setAddOpen(true);
           }}>
           {t('addUser')}
@@ -123,7 +200,8 @@ const UsersTable: FC = () => {
             <TableRow>
               <TableCell>{t('username', { ns: 'shared' })}</TableCell>
               <TableCell>{t('displayName')}</TableCell>
-              <TableCell>{t('role')}</TableCell>
+              <TableCell>{t('group')}</TableCell>
+              <TableCell>{t('attributes')}</TableCell>
               <TableCell>{t('signInWith')}</TableCell>
               <TableCell>{t('lastSignIn')}</TableCell>
               <TableCell align="right" />
@@ -142,16 +220,37 @@ const UsersTable: FC = () => {
                     <TextField
                       select
                       size="small"
-                      value={u.role}
+                      value={userGroup(u)}
                       disabled={isMe}
                       onChange={(e) => changeRole(u, e.target.value)}
+                      slotProps={{ select: { displayEmpty: true } }}
                       sx={{ minWidth: 130 }}>
+                      <MenuItem value="">
+                        <em>{t('noGroup')}</em>
+                      </MenuItem>
                       {ROLES.map((r) => (
                         <MenuItem key={r} value={r} sx={{ textTransform: 'capitalize' }}>
                           {t(`role_${r}`)}
                         </MenuItem>
                       ))}
                     </TextField>
+                  </TableCell>
+                  <TableCell>
+                    <Stack direction="row" gap={0.5} flexWrap="wrap" alignItems="center">
+                      {toRows(u.attributes).map((r) => (
+                        <Chip key={r.key} size="small" variant="outlined" label={`${r.key} = ${r.value}`} />
+                      ))}
+                      <Tooltip title={t('editAttributes')}>
+                        <IconButton
+                          size="small"
+                          onClick={() => {
+                            setAttrRows(toRows(u.attributes));
+                            setAttrUser(u);
+                          }}>
+                          <LabelOutlined fontSize="small" />
+                        </IconButton>
+                      </Tooltip>
+                    </Stack>
                   </TableCell>
                   <TableCell>
                     <Chip size="small" label={u.auth_provider === 'local' ? t('localPassword') : u.auth_provider} />
@@ -215,15 +314,29 @@ const UsersTable: FC = () => {
             />
             <TextField
               select
-              label={t('role')}
+              label={t('group')}
               value={form.role}
+              slotProps={{ select: { displayEmpty: true }, inputLabel: { shrink: true } }}
               onChange={(e) => setForm({ ...form, role: e.target.value })}>
+              <MenuItem value="">
+                <em>{t('noGroup')}</em>
+              </MenuItem>
               {ROLES.map((r) => (
                 <MenuItem key={r} value={r}>
                   {t(`role_${r}`)}
                 </MenuItem>
               ))}
             </TextField>
+            <Typography variant="caption" color="text.secondary">
+              {t('attributesHelp')}
+            </Typography>
+            <AttributeRows
+              rows={formAttrs}
+              onChange={setFormAttrs}
+              addLabel={t('addAttribute')}
+              keyLabel={t('attribute')}
+              valueLabel={t('value')}
+            />
           </Stack>
         </DialogContent>
         <DialogActions sx={{ px: '24px', pb: '16px' }}>
@@ -233,6 +346,28 @@ const UsersTable: FC = () => {
             disabled={!form.username || form.password.length < 8 || addState.isLoading}
             onClick={submitAdd}>
             {t('addUser')}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog open={!!attrUser} onClose={() => setAttrUser(null)} maxWidth="sm" fullWidth>
+        <DialogTitle>{t('attributesFor', { username: attrUser?.username })}</DialogTitle>
+        <DialogContent>
+          <Typography variant="body2" color="text.secondary" mb={2}>
+            {t('attributesHelp')}
+          </Typography>
+          <AttributeRows
+            rows={attrRows}
+            onChange={setAttrRows}
+            addLabel={t('addAttribute')}
+            keyLabel={t('attribute')}
+            valueLabel={t('value')}
+          />
+        </DialogContent>
+        <DialogActions sx={{ px: '24px', pb: '16px' }}>
+          <Button onClick={() => setAttrUser(null)}>{t('cancel', { ns: 'shared' })}</Button>
+          <Button variant="contained" onClick={submitAttributes}>
+            {t('save', { ns: 'shared' })}
           </Button>
         </DialogActions>
       </Dialog>

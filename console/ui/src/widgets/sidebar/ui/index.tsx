@@ -8,8 +8,10 @@ import CollapseIcon from '@shared/assets/collapseIcon.svg?react';
 import RouterPaths from '@app/router/routerPathsConfig';
 import { HEADER_HEIGHT } from '@shared/model/constants.ts';
 import { BRAND } from '@shared/theme/theme.ts';
+import { useSessionUser } from '@shared/lib/useSession.ts';
 
 const Sidebar = () => {
+  const user = useSessionUser(); // menu follows the access policies
   const { t } = useTranslation('shared');
   const location = useLocation();
 
@@ -83,7 +85,7 @@ const Sidebar = () => {
       <Toolbar sx={{ minHeight: `${HEADER_HEIGHT} !important` }} />
       <Stack direction="column" height="100%" width="100%" alignItems="flex-start" justifyContent="center">
         <List sx={{ width: '100%', pt: '12px' }}>
-          {sidebarData(t).map((item) => (
+          {sidebarData(t, user).map((item) => (
             <SidebarItem
               key={item.label + item.path}
               {...item}

@@ -29,6 +29,8 @@ interface Props {
   history: HistoryEntry[];
   onLoadHistory: (e: HistoryEntry) => void;
   onClearHistory: () => void;
+  /** max rows the access policies allow (0 = no limit) */
+  rowCap?: number;
 }
 
 const fmtMs = (ms?: number) =>
@@ -43,7 +45,7 @@ const download = (name: string, text: string) => {
   URL.revokeObjectURL(url);
 };
 
-const ResultsPanel: FC<Props> = ({ response, running, history, onLoadHistory, onClearHistory }) => {
+const ResultsPanel: FC<Props> = ({ response, running, history, onLoadHistory, onClearHistory, rowCap = 0 }) => {
   const { t } = useTranslation('shared');
   const [tab, setTab] = useState<'data' | 'messages' | 'history'>('data');
   const sets = useMemo(() => (response?.results ?? []).filter((r) => (r.columns?.length ?? 0) > 0), [response]);
@@ -139,7 +141,9 @@ const ResultsPanel: FC<Props> = ({ response, running, history, onLoadHistory, on
                 </Typography>
                 {current.truncated ? (
                   <Typography variant="caption" color="warning.main">
-                    {t('sqlTruncated', { shown: current.rows?.length ?? 0 })}
+                    {t(rowCap && (current.rows?.length ?? 0) >= rowCap ? 'sqlTruncatedByPolicy' : 'sqlTruncated', {
+                      shown: current.rows?.length ?? 0,
+                    })}
                   </Typography>
                 ) : null}
                 <Box flex={1} />
@@ -192,7 +196,9 @@ const ResultsPanel: FC<Props> = ({ response, running, history, onLoadHistory, on
                     rows: t('sqlRows', { count: r.row_count ?? 0 }),
                     time: fmtMs(r.duration_ms ?? 0),
                   })}
-                  {r.truncated ? `  (${t('sqlTruncated', { shown: r.rows?.length ?? 0 })})` : ''}
+                  {r.truncated
+                    ? `  (${t(rowCap && (r.rows?.length ?? 0) >= rowCap ? 'sqlTruncatedByPolicy' : 'sqlTruncated', { shown: r.rows?.length ?? 0 })})`
+                    : ''}
                 </Box>
               ))}
               {(response.notices ?? []).map((n, i) => (

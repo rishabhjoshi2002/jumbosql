@@ -32,7 +32,7 @@ import {
 import { useAppSelector } from '@app/redux/store/hooks.ts';
 import { selectCurrentProject } from '@app/redux/slices/projectSlice/projectSelectors.ts';
 import { handleRequestErrorCatch } from '@shared/lib/functions.ts';
-import { canManage, getSessionUser } from '@shared/lib/session.ts';
+import { can } from '@shared/lib/session.ts';
 import Spinner from '@shared/ui/spinner';
 import {
   isSafeHttpUrl,
@@ -65,7 +65,7 @@ const Observability: FC = () => {
   const setting = useGetSettingsQuery({ name: OBSERVABILITY_SETTING });
   const [createSetting] = usePostSettingsMutation();
   const [patchSetting] = usePatchSettingsByNameMutation();
-  const writable = canManage(getSessionUser());
+  const writable = can('observability.manage');
 
   const saved = setting.data?.data?.find((s) => s.name === OBSERVABILITY_SETTING);
   const overrides = useMemo(() => (saved?.value ?? {}) as Overrides, [saved?.value]);

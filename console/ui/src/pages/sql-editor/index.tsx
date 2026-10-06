@@ -34,10 +34,14 @@ import {
   usePostClustersByIdSqlCancelMutation,
   usePostClustersByIdSqlMutation,
 } from '@shared/api/api/sql.ts';
-import { canManage, getSessionUser } from '@shared/lib/session.ts';
+import { can, canAny } from '@shared/lib/session.ts';
+import { useSessionUser } from '@shared/lib/useSession.ts';
+import { SQLProfile, useGetSqlAccessQuery } from '@shared/api/api/access.ts';
+import LockPersonOutlinedIcon from '@mui/icons-material/LockPersonOutlined';
 import ObjectBrowser from './ui/ObjectBrowser.tsx';
 import ResultsPanel from './ui/ResultsPanel.tsx';
 import { explainSql, offsetToLineCol, SQL_DATABASES, SQL_SERVER_INFO, statementAt } from './lib/script.ts';
+import AccessBadge from './ui/AccessBadge.tsx';
 import {
   addHistory,
   clearHistory,
@@ -54,6 +58,7 @@ import {
 } from './lib/storage.ts';
 
 const MAX_ROWS = [100, 1000, 10000, 100000];
+const SQL_PERMS = ['sql.read', 'sql.write', 'sql.admin'];
 const SQL_KEYWORDS = (
   'select from where and or not in is null like ilike between exists case when then else end as join left right full ' +
   'inner outer cross on using group by order having limit offset distinct union all intersect except insert into values ' +
@@ -85,16 +90,19 @@ const SqlEditor: FC = () => {
   const theme = useAppSelector(selectActualTheme);
   const projectId = useAppSelector(selectCurrentProject);
   const [params, setParams] = useSearchParams();
-  const user = getSessionUser();
-  const allowed = canManage(user);
+  const user = useSessionUser();
+  const allowed = canAny(SQL_PERMS, undefined, user);
 
   const clusters = useGetClustersQuery(
     { projectId: Number(projectId), offset: 0, limit: 999_999_999 },
     { skip: !projectId },
   );
   const ready = useMemo(
-    () => (clusters.data?.data ?? []).filter((c) => c.connection_info && Object.keys(c.connection_info).length),
-    [clusters.data],
+    () =>
+      (clusters.data?.data ?? []).filter(
+        (c) => c.connection_info && Object.keys(c.connection_info).length && SQL_PERMS.some((p) => can(p, c.id, user)),
+      ),
+    [clusters.data, user],
   );
 
   const saved = useMemo(loadSelection, []);
@@ -109,6 +117,11 @@ const SqlEditor: FC = () => {
     standby?: boolean;
   }>();
   const cluster = ready.find((c) => c.id === clusterId);
+
+  // what the access policies allow here: level, databases, data scope, limits (the API enforces the same)
+  const clusterAccess = useGetSqlAccessQuery({ id: clusterId ?? 0 }, { skip: !cluster });
+  const dbAccess = useGetSqlAccessQuery({ id: clusterId ?? 0, database }, { skip: !cluster || !database });
+  const profile: SQLProfile | undefined = dbAccess.data ?? clusterAccess.data;
 
   useEffect(() => {
     if (!ready.length) return;
@@ -142,17 +155,24 @@ const SqlEditor: FC = () => {
 
   // databases of the cluster, and server info for the chosen database
   useEffect(() => {
-    if (!clusterId || !allowed) return;
-    void catalog(SQL_DATABASES, 'postgres').then((res) => {
-      const list = (res?.results?.[0]?.rows ?? []).map((r) => r[0] ?? '').filter(Boolean);
+    if (!clusterId || !allowed || !clusterAccess.data) return;
+    const apply = (list: string[]) => {
       setDatabases(list);
       if (list.length && !list.includes(database)) setDatabase(list.includes('postgres') ? 'postgres' : list[0]);
-    });
+    };
+    const available = clusterAccess.data.available_databases;
+    if (available?.length || !clusterAccess.data.databases_error) {
+      apply(available ?? []);
+      return;
+    }
+    void catalog(SQL_DATABASES, database).then((res) =>
+      apply((res?.results?.[0]?.rows ?? []).map((r) => r[0] ?? '').filter(Boolean)),
+    );
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [clusterId, allowed]);
+  }, [clusterId, allowed, clusterAccess.data]);
 
   useEffect(() => {
-    if (!clusterId || !allowed) return;
+    if (!clusterId || !allowed || !databases.includes(database)) return;
     void catalog(SQL_SERVER_INFO).then((res) => {
       const r = res?.results?.[0]?.rows?.[0];
       setServer(
@@ -161,7 +181,7 @@ const SqlEditor: FC = () => {
           : undefined,
       );
     });
-  }, [clusterId, database, allowed, catalog]);
+  }, [clusterId, database, allowed, catalog, databases]);
 
   /* ---------------- tabs ---------------- */
   const [tabs, setTabs] = useState<QueryTab[]>(loadTabs);
@@ -248,6 +268,9 @@ const SqlEditor: FC = () => {
 
   /* ---------------- running ---------------- */
   const [maxRows, setMaxRows] = useState(1000);
+  const rowCap = profile?.max_rows || 0;
+  const rowChoices = rowCap ? [...MAX_ROWS.filter((n) => n < rowCap), rowCap] : MAX_ROWS;
+  const effectiveMaxRows = rowCap && maxRows > rowCap ? rowCap : maxRows;
   const [response, setResponse] = useState<SqlRunResponse>();
   const [running, setRunning] = useState(false);
   const runIdRef = useRef('');
@@ -268,7 +291,7 @@ const SqlEditor: FC = () => {
     setResponse(undefined);
     let res: SqlRunResponse;
     try {
-      res = await runSql({ id: clusterId, sql, database, max_rows: maxRows, run_id: runId }).unwrap();
+      res = await runSql({ id: clusterId, sql, database, max_rows: effectiveMaxRows, run_id: runId }).unwrap();
     } catch (e) {
       res = { error: { message: errorMessage(e) }, results: [] };
     }
@@ -374,8 +397,8 @@ const SqlEditor: FC = () => {
     return (
       <Box sx={{ p: 3 }}>
         <Typography variant="h6">{t('sqlEditor')}</Typography>
-        <Alert severity="info" sx={{ mt: 2, maxWidth: 720 }}>
-          {t('sqlViewerNotAllowed')}
+        <Alert severity="info" icon={<LockPersonOutlinedIcon />} sx={{ mt: 2, maxWidth: 720 }}>
+          {t('sqlNoAccess')}
         </Alert>
       </Box>
     );
@@ -428,6 +451,11 @@ const SqlEditor: FC = () => {
               {d}
             </MenuItem>
           ))}
+          {!databases.length ? (
+            <MenuItem disabled value="">
+              {t('sqlNoDatabases')}
+            </MenuItem>
+          ) : null}
         </TextField>
         {server ? (
           <Stack direction="row" gap="6px" alignItems="center" sx={{ flexWrap: 'wrap' }}>
@@ -446,6 +474,7 @@ const SqlEditor: FC = () => {
           </Stack>
         ) : null}
         <Box flex={1} />
+        {profile ? <AccessBadge profile={profile} database={database} /> : null}
         <Tooltip title={<Box sx={{ whiteSpace: 'pre-line' }}>{t('sqlHelp')}</Box>}>
           <HelpOutlineIcon fontSize="small" sx={{ color: 'text.secondary' }} />
         </Tooltip>
@@ -454,7 +483,7 @@ const SqlEditor: FC = () => {
       <Stack direction="row" sx={{ flex: 1, minHeight: 0 }}>
         {/* object browser */}
         <Box sx={{ width: 290, flexShrink: 0, borderRight: 1, borderColor: 'divider', minHeight: 0 }}>
-          {clusterId ? (
+          {clusterId && databases.includes(database) ? (
             <ObjectBrowser
               key={`${clusterId}`}
               run={(sql) => catalog(sql)}
@@ -553,10 +582,10 @@ const SqlEditor: FC = () => {
               select
               size="small"
               label={t('sqlMaxRows')}
-              value={maxRows}
+              value={effectiveMaxRows}
               onChange={(e) => setMaxRows(Number(e.target.value))}
               sx={{ width: 120 }}>
-              {MAX_ROWS.map((n) => (
+              {rowChoices.map((n) => (
                 <MenuItem key={n} value={n}>
                   {n.toLocaleString()}
                 </MenuItem>
@@ -598,6 +627,7 @@ const SqlEditor: FC = () => {
             <ResultsPanel
               response={response}
               running={running}
+              rowCap={rowCap}
               history={history}
               onLoadHistory={(h) => {
                 if (h.clusterId && ready.some((c) => c.id === h.clusterId)) setClusterId(h.clusterId);

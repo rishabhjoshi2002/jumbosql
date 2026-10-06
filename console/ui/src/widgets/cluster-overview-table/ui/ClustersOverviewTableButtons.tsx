@@ -8,7 +8,7 @@ import { usePostClustersByIdSwitchoverMutation } from '@shared/api/api/patroni.t
 import { handleRequestErrorCatch } from '@shared/lib/functions.ts';
 import { useParams } from 'react-router-dom';
 import RefreshGroup from '@features/refresh-group';
-import { canManage, getSessionUser } from '@shared/lib/session.ts';
+import { can } from '@shared/lib/session.ts';
 
 const ClustersOverviewTableButtons: FC = () => {
   const { t } = useTranslation('clusters');
@@ -35,7 +35,7 @@ const ClustersOverviewTableButtons: FC = () => {
 
   return (
     <Stack direction="row" justifyContent="flex-end" alignItems="center" gap="8px">
-      {canManage(getSessionUser()) ? (
+      {can('patroni.manage', clusterId) ? (
         <Button
           variant="outlined"
           size="small"

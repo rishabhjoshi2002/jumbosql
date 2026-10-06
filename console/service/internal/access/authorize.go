@@ -60,6 +60,11 @@ func (s *Service) Authorize(r *http.Request, p *localmid.Principal) (bool, int, 
 	if rt.NoAudit || (r.Method == http.MethodGet && !rt.Audit) {
 		return true, 0, "", nil
 	}
+	// a live log tail asks every few seconds for what was written since the last read: the first read of the
+	// file is in the audit log, the follow-up polls are not (they would bury everything else)
+	if rt.Action == "logs.read" && r.URL.Query().Has("since") {
+		return true, 0, "", nil
+	}
 	return true, 0, "", func(status int) {
 		outcome := "ok"
 		if status >= 400 {

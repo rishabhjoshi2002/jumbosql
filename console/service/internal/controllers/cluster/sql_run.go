@@ -13,6 +13,7 @@ package cluster
 // hidden columns and tables outside the scope are refused by PostgreSQL itself.
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -92,7 +93,62 @@ func (h *sqlAccessHandler) Handle(param cluster.GetClustersIDSQLAccessParams) mi
 		// level and database patterns over all databases; scope details need a database
 		prof.Schemas, prof.Tables = nil, nil
 	}
-	return cluster.NewGetClustersIDSQLAccessOK().WithPayload(prof)
+	out := sqlAccessResponse{SQLProfile: prof, AvailableDatabases: []string{}}
+	if prof.Level != policy.LevelNone {
+		// the databases this user may open, so the editor never offers one that would be refused
+		names, err := h.listDatabases(r.Context(), param.ID)
+		if err != nil {
+			out.DatabasesError = err.Error()
+		}
+		for _, n := range names {
+			if DatabaseAllowed(prof, n) {
+				out.AvailableDatabases = append(out.AvailableDatabases, n)
+			}
+		}
+	}
+	return cluster.NewGetClustersIDSQLAccessOK().WithPayload(out)
+}
+
+type sqlAccessResponse struct {
+	policy.SQLProfile
+	AvailableDatabases []string `json:"available_databases"`
+	DatabasesError     string   `json:"databases_error,omitempty"`
+}
+
+// listDatabases: the cluster's connectable databases, read with the console's own connection.
+func (h *sqlAccessHandler) listDatabases(ctx context.Context, clusterID int64) ([]string, error) {
+	cl, err := h.db.GetCluster(ctx, clusterID)
+	if err != nil {
+		return nil, err
+	}
+	host, port, dbUser, password, err := watcher.ConnectionTarget(cl.ConnectionInfo)
+	if err != nil {
+		return nil, fmt.Errorf("the cluster has no usable connection info yet: %v", err)
+	}
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	conn, err := sqlrun.Connect(ctx, sqlrun.Target{Host: host, Port: port, User: dbUser, Password: password, Database: "postgres",
+		SSLMode: h.sslMode, AppName: "JumboSQL console"})
+	if err != nil {
+		return nil, err
+	}
+	defer conn.Close(context.Background())
+	rows, err := conn.Exec(ctx, "select datname from pg_database where datallowconn and not datistemplate order by datname").ReadAll()
+	if err != nil {
+		return nil, err
+	}
+	var out []string
+	for _, r := range rows {
+		for _, row := range r.Rows {
+			if len(row) > 0 {
+				out = append(out, string(row[0]))
+			}
+		}
+		if r.Err != nil {
+			return nil, r.Err
+		}
+	}
+	return out, nil
 }
 
 func (h *sqlRunHandler) Handle(param cluster.PostClustersIDSQLParams) middleware.Responder {
@@ -181,6 +237,17 @@ func (h *sqlRunHandler) Handle(param cluster.PostClustersIDSQLParams) middleware
 	if res.Error != nil && res.Error.SQLState == "28P01" || res.Error != nil && res.Error.SQLState == "28000" {
 		res.Error.Hint = strings.TrimSpace(res.Error.Hint + " The cluster's pg_hba.conf must allow role " + role +
 			" (password authentication) from the HAProxy node; it is the database role JumboSQL created for your access policy.")
+	}
+
+	if res.Error != nil && res.Error.SQLState == "42501" && prof.Restricted() {
+		hint := "Your access policies limit what this SQL can read"
+		if len(prof.HiddenColumns) > 0 {
+			hint += "; hidden columns: " + strings.Join(prof.HiddenColumns, ", ") + ". Name the columns you need instead of *"
+		}
+		if len(prof.Schemas) > 0 || len(prof.Tables) > 0 {
+			hint += "; allowed schemas and tables: " + strings.Join(append(append([]string{}, prof.Schemas...), prof.Tables...), ", ")
+		}
+		res.Error.Hint = strings.TrimSpace(res.Error.Hint + " " + hint + ".")
 	}
 
 	outcome, details := "ok", map[string]any{"role": role, "level": prof.Level, "result_sets": len(res.Results)}
