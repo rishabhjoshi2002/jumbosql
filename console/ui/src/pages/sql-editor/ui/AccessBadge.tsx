@@ -44,10 +44,9 @@ const AccessBadge: FC<{ profile: SQLProfile; database: string }> = ({ profile, d
           <Row label={t('sqlAccessDatabases')} value={profile.databases?.length ? profile.databases.join(', ') : all} />
           <Row label={t('sqlAccessSchemas')} value={profile.schemas?.length ? profile.schemas.join(', ') : all} />
           <Row label={t('sqlAccessTables')} value={profile.tables?.length ? profile.tables.join(', ') : all} />
-          <Row
-            label={t('sqlAccessHidden')}
-            value={profile.hidden_columns?.length ? profile.hidden_columns.join(', ') : '—'}
-          />
+          {profile.hidden_columns?.length ? (
+            <Row label={t('sqlAccessHidden')} value={profile.hidden_columns.join(', ')} />
+          ) : null}
           <Row
             label={t('sqlAccessLimits')}
             value={

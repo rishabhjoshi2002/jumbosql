@@ -93,6 +93,12 @@ func (h *sqlAccessHandler) Handle(param cluster.GetClustersIDSQLAccessParams) mi
 		// level and database patterns over all databases; scope details need a database
 		prof.Schemas, prof.Tables = nil, nil
 	}
+	// a restricted user is not told which columns are hidden from them (nor by which policies);
+	// people who manage policies see the full profile (and Test access shows it for anyone)
+	if !h.access.Allows(r, policy.PoliciesManage, 0).Allowed {
+		prof.HiddenColumns = []string{}
+		prof.Policies = nil
+	}
 	out := sqlAccessResponse{SQLProfile: prof, AvailableDatabases: []string{}}
 	if prof.Level != policy.LevelNone {
 		// the databases this user may open, so the editor never offers one that would be refused
@@ -240,14 +246,9 @@ func (h *sqlRunHandler) Handle(param cluster.PostClustersIDSQLParams) middleware
 	}
 
 	if res.Error != nil && res.Error.SQLState == "42501" && prof.Restricted() {
-		hint := "Your access policies limit what this SQL can read"
-		if len(prof.HiddenColumns) > 0 {
-			hint += "; hidden columns: " + strings.Join(prof.HiddenColumns, ", ") + ". Name the columns you need instead of *"
-		}
-		if len(prof.Schemas) > 0 || len(prof.Tables) > 0 {
-			hint += "; allowed schemas and tables: " + strings.Join(append(append([]string{}, prof.Schemas...), prof.Tables...), ", ")
-		}
-		res.Error.Hint = strings.TrimSpace(res.Error.Hint + " " + hint + ".")
+		// no names of hidden columns here: the user should not learn what is kept from them
+		res.Error.Hint = strings.TrimSpace(res.Error.Hint + " Your access policies limit what you can read here. " +
+			"Select the columns you need by name (the object browser lists the ones you can use) instead of *.")
 	}
 
 	outcome, details := "ok", map[string]any{"role": role, "level": prof.Level, "result_sets": len(res.Results)}

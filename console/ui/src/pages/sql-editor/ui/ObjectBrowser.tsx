@@ -149,7 +149,7 @@ const ObjectBrowser: FC<Props> = ({ run, database, reloadKey, onOpen, onInsert, 
       const res = await run(sqlSchemaObjects(schema));
       const objs = rowsOf(res).map((r) => ({ kind: r[0] ?? '', name: r[1] ?? '', readable: r[2] !== 'f' }));
       setObjects((o) => ({ ...o, [schema]: objs }));
-      onNames(objs.filter((o) => !['function', 'procedure'].includes(o.kind)).map((o) => o.name));
+      onNames(objs.filter((o) => o.readable && !['function', 'procedure'].includes(o.kind)).map((o) => o.name));
       setLoading((l) => ({ ...l, [k]: false }));
     }
   };
@@ -232,7 +232,8 @@ const ObjectBrowser: FC<Props> = ({ run, database, reloadKey, onOpen, onInsert, 
         {schemas === null ? <CircularProgress size={18} sx={{ m: 2 }} /> : null}
         {(schemas ?? []).map((schema) => {
           const sk = `s:${schema}`;
-          const objs = objects[schema] ?? [];
+          // objects the user can't use at all are left out (access policies): no hint of what is kept from them
+          const objs = (objects[schema] ?? []).filter((o) => o.readable);
           const matching = objs.filter((o) => visible(o.name));
           if (f && objects[schema] && !matching.length && !visible(schema)) return null;
           return (
@@ -299,42 +300,44 @@ const ObjectBrowser: FC<Props> = ({ run, database, reloadKey, onOpen, onInsert, 
                                 }
                               />
                               {open[tk] &&
-                                (columns[tk] ?? []).map((c) => (
-                                  <Node
-                                    key={c.name}
-                                    depth={3}
-                                    title={c.readable ? undefined : t('sqlColumnHidden')}
-                                    icon={
-                                      !c.readable ? (
-                                        lockIcon
-                                      ) : c.pk ? (
-                                        <KeyIcon sx={{ fontSize: 14, color: 'warning.main' }} />
-                                      ) : (
-                                        <ViewColumnOutlinedIcon sx={{ fontSize: 14 }} />
-                                      )
-                                    }
-                                    onDoubleClick={() => onInsert(quoteIdent(c.name))}
-                                    label={
-                                      <>
-                                        <Box
-                                          component="span"
-                                          sx={
-                                            c.readable
-                                              ? undefined
-                                              : { color: 'text.disabled', textDecoration: 'line-through' }
-                                          }>
-                                          {c.name}
-                                        </Box>{' '}
-                                        <Typography
-                                          component="span"
-                                          sx={{ fontSize: '0.72rem', color: 'text.secondary' }}>
-                                          {c.type}
-                                          {c.notNull ? ' not null' : ''}
-                                        </Typography>
-                                      </>
-                                    }
-                                  />
-                                ))}
+                                (columns[tk] ?? [])
+                                  .filter((c) => c.readable)
+                                  .map((c) => (
+                                    <Node
+                                      key={c.name}
+                                      depth={3}
+                                      title={c.readable ? undefined : t('sqlColumnHidden')}
+                                      icon={
+                                        !c.readable ? (
+                                          lockIcon
+                                        ) : c.pk ? (
+                                          <KeyIcon sx={{ fontSize: 14, color: 'warning.main' }} />
+                                        ) : (
+                                          <ViewColumnOutlinedIcon sx={{ fontSize: 14 }} />
+                                        )
+                                      }
+                                      onDoubleClick={() => onInsert(quoteIdent(c.name))}
+                                      label={
+                                        <>
+                                          <Box
+                                            component="span"
+                                            sx={
+                                              c.readable
+                                                ? undefined
+                                                : { color: 'text.disabled', textDecoration: 'line-through' }
+                                            }>
+                                            {c.name}
+                                          </Box>{' '}
+                                          <Typography
+                                            component="span"
+                                            sx={{ fontSize: '0.72rem', color: 'text.secondary' }}>
+                                            {c.type}
+                                            {c.notNull ? ' not null' : ''}
+                                          </Typography>
+                                        </>
+                                      }
+                                    />
+                                  ))}
                             </Box>
                           );
                         })}
