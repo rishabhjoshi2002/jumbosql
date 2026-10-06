@@ -9,6 +9,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net"
 	"net/http"
 	"net/url"
 	"sort"
@@ -84,6 +85,55 @@ type Target struct {
 	Up       bool   `json:"up"`
 }
 
+// VM is one VM with everything Prometheus scrapes on it (several jobs can scrape the same service).
+type VM struct {
+	Address  string        `json:"host"` // IP / host name
+	Name     string        `json:"name"`
+	Roles    string        `json:"roles,omitempty"` // inventory groups, e.g. "haproxy,pgbouncer"
+	Kind     string        `json:"kind"`            // database | etcd | proxy | backup | monitoring | other
+	DBRole   string        `json:"db_role,omitempty"`
+	Up       bool          `json:"up"`
+	Services []HostService `json:"services"`
+}
+
+// HostService: one service on a host; up only when every job scraping it answers.
+type HostService struct {
+	Service string   `json:"service"`
+	Up      bool     `json:"up"`
+	Jobs    []string `json:"jobs"`
+}
+
+func hostKind(roles string, services []HostService) string {
+	kinds := []struct {
+		kind  string
+		names []string
+	}{
+		{"database", []string{"postgres", "patroni", "master", "replica"}},
+		{"etcd", []string{"etcd"}},
+		{"proxy", []string{"haproxy", "pgbouncer", "balancers"}},
+		{"backup", []string{"pgbackrest", "backrest"}},
+		{"monitoring", []string{"prometheus", "grafana", "alertmanager"}},
+	}
+	// what Prometheus actually scrapes on the VM decides; the inventory roles only when it sees nothing but node
+	for _, k := range kinds {
+		for _, n := range k.names {
+			for _, s := range services {
+				if s.Service == n {
+					return k.kind
+				}
+			}
+		}
+	}
+	for _, k := range kinds {
+		for _, n := range k.names {
+			if strings.Contains(roles, n) {
+				return k.kind
+			}
+		}
+	}
+	return "other"
+}
+
 // Alert is a firing (or pending) Prometheus alert.
 type Alert struct {
 	Name     string    `json:"name"`
@@ -106,6 +156,7 @@ type Monitoring struct {
 	Error       string             `json:"error,omitempty"`
 	Minutes     int                `json:"minutes"`
 	Targets     []Target           `json:"targets"`
+	Hosts       []VM               `json:"hosts"` // one entry per VM, services de-duplicated
 	Alerts      []Alert            `json:"alerts"`
 	Panels      map[string]*Panel  `json:"panels"`
 	Stats       map[string]float64 `json:"stats"` // single numbers (latest values)
@@ -242,7 +293,7 @@ func (s *Service) Monitoring(ctx context.Context, clusterID int64, minutes int) 
 		return nil, err
 	}
 	now := time.Now()
-	m := &Monitoring{Minutes: minutes, Panels: map[string]*Panel{}, Stats: map[string]float64{}, Targets: []Target{}, Alerts: []Alert{},
+	m := &Monitoring{Minutes: minutes, Panels: map[string]*Panel{}, Stats: map[string]float64{}, Targets: []Target{}, Hosts: []VM{}, Alerts: []Alert{},
 		GeneratedAt: now}
 	m.Prometheus = s.prometheusURL(ctx, cl)
 	if m.Prometheus == "" {
@@ -286,6 +337,7 @@ func (s *Service) Monitoring(ctx context.Context, clusterID int64, minutes int) 
 		}
 		m.Targets = append(m.Targets, t)
 	}
+	m.Hosts = groupHosts(m.Targets, servers)
 	sort.Slice(m.Targets, func(i, j int) bool {
 		if m.Targets[i].Service != m.Targets[j].Service {
 			return m.Targets[i].Service < m.Targets[j].Service
@@ -314,8 +366,17 @@ func (s *Service) Monitoring(ctx context.Context, clusterID int64, minutes int) 
 					continue
 				}
 				panel.Query = q
+				byName := map[string][]Point{}
+				var names []string
 				for _, r := range res {
-					panel.Series = append(panel.Series, Series{Name: nameOf(r.Labels), Points: r.Points})
+					n := nameOf(r.Labels)
+					if _, ok := byName[n]; !ok {
+						names = append(names, n)
+					}
+					byName[n] = mergeMax(byName[n], r.Points)
+				}
+				for _, n := range names {
+					panel.Series = append(panel.Series, Series{Name: n, Points: byName[n]})
 				}
 				sort.Slice(panel.Series, func(i, j int) bool { return panel.Series[i].Name < panel.Series[j].Name })
 				break
@@ -385,4 +446,94 @@ func (s *Service) Monitoring(ctx context.Context, clusterID int64, minutes int) 
 	}()
 	wg.Wait()
 	return m, nil
+}
+
+// mergeMax combines two series of the same entity (e.g. scraped by two jobs): the larger value per timestamp.
+func mergeMax(a, b []Point) []Point {
+	if len(a) == 0 {
+		return b
+	}
+	at := map[int64]int{}
+	for i, p := range a {
+		at[p.T.Unix()] = i
+	}
+	for _, p := range b {
+		if i, ok := at[p.T.Unix()]; ok {
+			if p.V > a[i].V {
+				a[i].V = p.V
+			}
+		} else {
+			a = append(a, p)
+		}
+	}
+	sort.Slice(a, func(i, j int) bool { return a[i].T.Before(a[j].T) })
+	return a
+}
+
+// groupHosts: one entry per VM, its services de-duplicated over the jobs that scrape them.
+func groupHosts(targets []Target, inv map[string][2]string) []VM {
+	type acc struct {
+		h    VM
+		svcs map[string]*HostService
+	}
+	byHost := map[string]*acc{}
+	var order []string
+	for _, t := range targets {
+		host := instanceHost(t.Instance)
+		if host == "localhost" || host == "127.0.0.1" {
+			// Prometheus scraping itself: it runs on the monitoring VM
+			for k, v := range inv {
+				if strings.Contains(v[1], "prometheus") && net.ParseIP(k) != nil {
+					host = k
+					break
+				}
+			}
+		}
+		a := byHost[host]
+		if a == nil {
+			a = &acc{h: VM{Address: host, Name: host}, svcs: map[string]*HostService{}}
+			if v, ok := inv[host]; ok {
+				a.h.Name, a.h.Roles = v[0], v[1]
+			}
+			byHost[host] = a
+			order = append(order, host)
+		}
+		switch t.Role { // Patroni roles (the inventory gives group names instead)
+		case "leader", "master", "primary", "replica", "standby_leader", "sync_standby":
+			a.h.Name, a.h.DBRole = t.Node, t.Role
+		}
+		sv := a.svcs[t.Service]
+		if sv == nil {
+			sv = &HostService{Service: t.Service, Up: true}
+			a.svcs[t.Service] = sv
+		}
+		sv.Up = sv.Up && t.Up
+		sv.Jobs = append(sv.Jobs, t.Job)
+	}
+	rank := map[string]int{"postgres": 0, "patroni": 1, "etcd": 2, "haproxy": 3, "pgbouncer": 4, "pgbackrest": 5,
+		"prometheus": 6, "alertmanager": 7, "grafana": 8, "node": 9}
+	out := make([]VM, 0, len(order))
+	for _, k := range order {
+		a := byHost[k]
+		a.h.Up = true
+		for _, sv := range a.svcs {
+			a.h.Services = append(a.h.Services, *sv)
+			a.h.Up = a.h.Up && sv.Up
+		}
+		sort.Slice(a.h.Services, func(i, j int) bool {
+			ri, ok := rank[a.h.Services[i].Service]
+			if !ok {
+				ri = 99
+			}
+			rj, ok := rank[a.h.Services[j].Service]
+			if !ok {
+				rj = 99
+			}
+			return ri < rj
+		})
+		a.h.Kind = hostKind(a.h.Roles, a.h.Services)
+		out = append(out, a.h)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
+	return out
 }

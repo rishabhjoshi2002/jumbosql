@@ -248,12 +248,15 @@ A major upgrade (16 → 17) is a different procedure and is not automated yet.
 30 seconds). The console reads it from the cluster's Prometheus on the Monitoring VM (port `9090`), so your browser
 doesn't need to reach the VMs for it:
 
-- **Health**: cluster state, PostgreSQL instances up and replica lag, etcd members up and leader, every Prometheus
-  target (exporters of PostgreSQL, Patroni, etcd, HAProxy, PgBouncer, pgBackRest, nodes) up or down, firing alerts
-  with their summary, and the age of the last full / incremental backup.
-- **Graphs**: PostgreSQL connections (with `max_connections`), transactions per second, replication lag, cache hit
-  ratio, database size, deadlocks; per node CPU, memory, fullest disk, load, network in / out, disk busy; etcd
-  database size, WAL fsync time and leader changes; HAProxy servers up per backend and PgBouncer clients.
+- **Health** (top): cluster state, PostgreSQL instances up and replica lag, etcd members up and leader, machines up,
+  firing alerts with their summary, and the age of the last full / incremental backup.
+- **Cluster** tab: the machines by role - Database, etcd, Proxy (HAProxy + PgBouncer), Backup (pgBackRest),
+  Monitoring (Prometheus, Grafana, Alertmanager) - one entry per VM with each service up or down (when several
+  Prometheus jobs scrape the same service on a VM they count once); graphs per node (CPU, memory, fullest disk, load,
+  network in / out, disk busy), etcd (database size, WAL fsync, leader changes), HAProxy servers up per backend and
+  PgBouncer clients.
+- **PostgreSQL** tab: each instance with its Patroni role and services, and graphs for connections (with
+  `max_connections`), transactions per second, replication lag, cache hit ratio, database size and deadlocks.
 
 Exporters differ between setups (postgres_exporter, pgMonitor's `ccp_*` metrics, ...): each graph tries the usual
 metric names and shows "Not collected by this Prometheus" when none exist. Nodes are named from the cluster's

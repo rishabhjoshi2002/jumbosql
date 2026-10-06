@@ -150,3 +150,50 @@ func TestInventoryHostsAndServices(t *testing.T) {
 		}
 	}
 }
+
+func TestGroupHostsDeduplicatesJobs(t *testing.T) {
+	inv := InventoryHosts([]byte(`{"all":{"children":{
+		"etcd_cluster":{"hosts":{"10.0.0.66":{"etcd_name":"ip66_etcd1"}}},
+		"patroni_cluster":{"hosts":{"10.0.0.69":{"patroni_name":"ip69_pg1"}}},
+		"haproxy_cluster":{"hosts":{"10.0.0.72":{}}},"pgbouncer_cluster":{"hosts":{"10.0.0.72":{}}},
+		"prometheus_cluster":{"hosts":{"10.0.0.74":{}}},"grafana_cluster":{"hosts":{"10.0.0.74":{}}}}}}`))
+	if inv["10.0.0.66"][0] != "ip66_etcd1" || inv["10.0.0.69"][0] != "ip69_pg1" {
+		t.Fatalf("names from vars: %v", inv)
+	}
+	targets := []Target{
+		{Service: "postgres", Job: "pg_a", Instance: "10.0.0.69:9187", Up: true, Node: "ip69_pg1", Role: "leader"},
+		{Service: "postgres", Job: "pg_b", Instance: "10.0.0.69:9188", Up: true},
+		{Service: "patroni", Job: "patroni", Instance: "10.0.0.69:8009", Up: true},
+		{Service: "etcd", Job: "etcd_a", Instance: "10.0.0.66:2379", Up: true},
+		{Service: "etcd", Job: "etcd_b", Instance: "10.0.0.66:2381", Up: false},
+		{Service: "haproxy", Job: "haproxy", Instance: "10.0.0.72:8404", Up: true},
+		{Service: "pgbouncer", Job: "pgbouncer", Instance: "10.0.0.72:9127", Up: true},
+		{Service: "prometheus", Job: "prometheus", Instance: "localhost:9090", Up: true},
+		{Service: "grafana", Job: "grafana", Instance: "10.0.0.74:3000", Up: true},
+	}
+	hosts := groupHosts(targets, inv)
+	if len(hosts) != 4 {
+		t.Fatalf("want 4 VMs, got %+v", hosts)
+	}
+	kinds := map[string]VM{}
+	for _, h := range hosts {
+		kinds[h.Kind] = h
+	}
+	db := kinds["database"]
+	if db.Name != "ip69_pg1" || db.DBRole != "leader" || len(db.Services) != 2 || !db.Up || len(db.Services[0].Jobs) != 2 {
+		t.Fatalf("database host = %+v", db)
+	}
+	if e := kinds["etcd"]; e.Up || e.Services[0].Up || e.Name != "ip66_etcd1" {
+		t.Fatalf("etcd host: one of its jobs is down -> down: %+v", e)
+	}
+	if p := kinds["proxy"]; len(p.Services) != 2 {
+		t.Fatalf("proxy host = %+v", p)
+	}
+	if mon := kinds["monitoring"]; len(mon.Services) != 2 || mon.Address != "10.0.0.74" {
+		t.Fatalf("prometheus (localhost) belongs to the monitoring VM: %+v", mon)
+	}
+	merged := mergeMax([]Point{{t0, 1}, {t0.Add(time.Minute), 5}}, []Point{{t0, 3}, {t0.Add(2 * time.Minute), 2}})
+	if len(merged) != 3 || merged[0].V != 3 || merged[1].V != 5 {
+		t.Fatalf("merged = %+v", merged)
+	}
+}

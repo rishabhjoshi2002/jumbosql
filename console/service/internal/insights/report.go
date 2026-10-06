@@ -380,14 +380,26 @@ func InventoryHosts(inv []byte) map[string][2]string {
 	var parsed struct {
 		All struct {
 			Children map[string]struct {
-				Hosts map[string]struct {
-					AnsibleHost string `json:"ansible_host"`
-				} `json:"hosts"`
+				Hosts map[string]map[string]any `json:"hosts"`
 			} `json:"children"`
 		} `json:"all"`
 	}
 	if json.Unmarshal(b, &parsed) != nil {
 		return out
+	}
+	// the name the VM is known by (ip66_etcd1, ip69_pg1, ip73_util, ...); the host key is usually the IP
+	display := map[string]string{}
+	for _, g := range parsed.All.Children {
+		for key, vars := range g.Hosts {
+			for _, v := range []string{"patroni_name", "etcd_name", "node_jobname", "jumbo_hostname"} {
+				if n, ok := vars[v].(string); ok && n != "" {
+					if _, done := display[key]; !done || v == "patroni_name" {
+						display[key] = n
+					}
+					break
+				}
+			}
+		}
 	}
 	groups := make([]string, 0, len(parsed.All.Children))
 	for g := range parsed.All.Children {
@@ -395,9 +407,17 @@ func InventoryHosts(inv []byte) map[string][2]string {
 	}
 	sort.Strings(groups)
 	for _, g := range groups {
-		for name, h := range parsed.All.Children[g].Hosts {
+		if g == "pgmonitor_cluster" {
+			continue
+		}
+		for name, vars := range parsed.All.Children[g].Hosts {
 			role := strings.TrimSuffix(g, "_cluster")
-			for _, key := range []string{h.AnsibleHost, name} {
+			label := name
+			if d := display[name]; d != "" {
+				label = d
+			}
+			ah, _ := vars["ansible_host"].(string)
+			for _, key := range []string{ah, name} {
 				if key == "" {
 					continue
 				}
@@ -407,7 +427,7 @@ func InventoryHosts(inv []byte) map[string][2]string {
 					}
 					continue
 				}
-				out[key] = [2]string{name, role}
+				out[key] = [2]string{label, role}
 			}
 		}
 	}

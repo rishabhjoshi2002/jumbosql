@@ -3,6 +3,15 @@ import { baseApi as api } from '../baseApi.ts';
 import { TPoint } from './insights.ts';
 
 export type MonTarget = { service: string; job: string; instance: string; node?: string; role?: string; up: boolean };
+export type MonVM = {
+  host: string;
+  name: string;
+  roles?: string;
+  kind: 'database' | 'etcd' | 'proxy' | 'backup' | 'monitoring' | 'other';
+  db_role?: string;
+  up: boolean;
+  services: { service: string; up: boolean; jobs: string[] }[];
+};
 export type MonAlert = {
   name: string;
   state: string;
@@ -17,6 +26,7 @@ export type Monitoring = {
   error?: string;
   minutes: number;
   targets: MonTarget[];
+  hosts: MonVM[] | null;
   alerts: MonAlert[];
   panels: Record<string, MonPanel>;
   stats: Record<string, number>;
