@@ -53,7 +53,8 @@ psql_on() {
 }
 q() { printf "%s" "${1//\'/\'\'}"; }   # quote for a SQL string literal
 
-gen_pw() { tr -dc 'A-Za-z0-9' </dev/urandom | head -c 20; }
+# no pipe: with pipefail, "tr </dev/urandom | head" fails when head closes the pipe
+gen_pw() { local p; p=$(LC_ALL=C tr -dc 'A-Za-z0-9' < <(head -c 600 /dev/urandom)); printf '%s' "${p:0:20}"; }
 
 # ---------------------------------------------------------------------------------------------------------
 main() {
