@@ -14,7 +14,7 @@ type Config struct {
 	Http struct {
 		Host         string        `default:"0.0.0.0" desc:"Accepted host for connection. '0.0.0.0' for all hosts"`
 		Port         int           `default:"8080" desc:"Listening port"`
-		WriteTimeout time.Duration `default:"180s" desc:"Maximum duration before timing out write of the response (JumboSQL: long enough for Patroni restarts)"`
+		WriteTimeout time.Duration `default:"180s" desc:"Maximum duration before timing out write of the response (pg_genin: long enough for Patroni restarts)"`
 		ReadTimeout  time.Duration `default:"10s" desc:"Maximum duration before timing out read of the request"`
 	}
 	Https struct {
@@ -28,20 +28,20 @@ type Config struct {
 	Authorization struct {
 		Token string `default:"auth_token" desc:"Authorization token for REST API (scripts/automation; people sign in with a username)"`
 	}
-	// JumboSQL: username/password sign-in
+	// pg_genin: username/password sign-in
 	Auth struct {
 		SessionTTL    time.Duration `envconfig:"session_ttl" default:"12h" desc:"How long a sign-in lasts"`
 		AdminUsername string        `envconfig:"admin_username" default:"admin" desc:"First admin, created when there are no users yet"`
 		AdminPassword string        `envconfig:"admin_password" default:"" desc:"First admin's password (empty = use the authorization token)"`
 	}
-	// JumboSQL: Insights (trends, forecasts, recommendations)
+	// pg_genin: Insights (trends, forecasts, recommendations)
 	Insights struct {
 		Enabled        bool          `envconfig:"enabled" default:"true" desc:"Sample clusters for the Insights page"`
 		Interval       time.Duration `envconfig:"interval" default:"5m" desc:"How often cluster-wide numbers are sampled"`
 		TablesInterval time.Duration `envconfig:"tables_interval" default:"1h" desc:"How often table sizes and dead rows are sampled"`
 		Retention      time.Duration `envconfig:"retention" default:"2160h" desc:"How long samples are kept (default 90 days)"`
 	}
-	// JumboSQL: audit log
+	// pg_genin: audit log
 	Audit struct {
 		Retention time.Duration `envconfig:"retention" default:"4320h" desc:"How long audit events are kept (default 180 days)"`
 	}
@@ -57,7 +57,7 @@ type Config struct {
 		MigrationDir    string        `default:"/etc/db/migrations" desc:"Path to directory with migration scripts"`
 	}
 	EncryptionKey string `default:"super_secret" desc:"Encryption key for secret storage"`
-	// JumboSQL: the Ansible vault password for vault.yml, handed to each deployment container (never stored).
+	// pg_genin: the Ansible vault password for vault.yml, handed to each deployment container (never stored).
 	// Set PG_CONSOLE_VAULT_PASSWORD, or PG_CONSOLE_VAULT_PASSWORD_FILE for a Docker secret file.
 	VaultPassword string `envconfig:"vault_password" default:"" desc:"Ansible vault password for the HA automation (or use _FILE)"`
 	Docker        struct {
@@ -79,7 +79,7 @@ type Config struct {
 		SSLMode string        `envconfig:"dbdesk_studio_sslmode" default:"prefer" desc:"SSL mode for dbdesk-studio postgres connection profiles"`
 		Timeout time.Duration `envconfig:"dbdesk_studio_timeout" default:"5s" desc:"HTTP timeout for dbdesk-studio health and registration requests"`
 	}
-	// JumboSQL: Patroni REST API access for switchover / restart / reinitialize from the console.
+	// pg_genin: Patroni REST API access for switchover / restart / reinitialize from the console.
 	Patroni struct {
 		Port     int           `envconfig:"port" default:"8009" desc:"Patroni REST API port on the database nodes (the HA automation listens on 8009)"`
 		Username string        `envconfig:"username" default:"" desc:"Patroni REST API basic-auth user (restapi.authentication), if set"`

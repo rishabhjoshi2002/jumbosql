@@ -1,4 +1,4 @@
-// Package auth - JumboSQL console login.
+// Package auth - pg_genin console login.
 //
 // Users sign in with a username and password. The check is done by a Provider; today the only provider is
 // "local" (users stored in the console database), and LDAP or SSO (OIDC/SAML) providers can be added later

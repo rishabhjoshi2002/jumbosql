@@ -5,12 +5,12 @@
 # group_vars/ and files/, so every relative path resolves exactly as on the Ansible VM.
 # `roles: []` on our own plays: the HA collection also reads each play's roles.
 #
-# The two debug tasks are read by the JumboSQL console from the JSON log, by task name:
+# The two debug tasks are read by the pg_genin console from the JSON log, by task name:
 #   "System info"                                       -> the database servers shown on the cluster page
 #   "vitabaks.autobase.deploy_finish : Connection info" -> connection details + SQL editor registration
 # Keep those names exactly as written.
 
-- name: JumboSQL - register database servers in the console
+- name: pg_genin - register database servers in the console
   hosts: patroni_cluster
   gather_facts: false
   roles: []
@@ -26,7 +26,7 @@
 
 # The SQL editor is registered against HAProxy's read-write port, which always routes to the current
 # Patroni leader - so the editor keeps working after a switchover or failover.
-- name: JumboSQL - connection info for the console and the SQL editor
+- name: pg_genin - connection info for the console and the SQL editor
   hosts: haproxy_cluster
   gather_facts: false
   roles: []

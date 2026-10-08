@@ -169,7 +169,7 @@ const useGetLocalMachineConfig = () => {
   const { t } = useTranslation(['clusters', 'shared']);
   const theme = useTheme();
 
-  // JumboSQL: HA and load balancing come from the HA roles of the VMs
+  // pg_genin: HA and load balancing come from the HA roles of the VMs
   const servers = (data: LocalClustersSummary) =>
     formServersToHaServers(data[DATABASE_SERVERS_FIELD_NAMES.DATABASE_SERVERS] ?? []).filter((s) => s.ip);
   const roleCount = (data: LocalClustersSummary, role: HaRole) => servers(data).filter((s) => s.roles?.[role]).length;

@@ -1,5 +1,5 @@
 /**
- * JumboSQL: where each cluster's monitoring lives. The monitoring VM comes from the cluster's inventory
+ * pg_genin: where each cluster's monitoring lives. The monitoring VM comes from the cluster's inventory
  * (the VMs with the Prometheus, Grafana and Alertmanager roles -> their inventory groups); the ports are the pgMonitor
  * defaults. Any URL can be overridden per cluster, e.g. when Grafana sits behind a proxy or a DNS name.
  */

@@ -1,6 +1,6 @@
 -- +goose Up
 
--- JumboSQL: Insights. The console samples every cluster every few minutes (database sizes, table sizes and dead
+-- pg_genin: Insights. The console samples every cluster every few minutes (database sizes, table sizes and dead
 -- rows, transaction / row counters, connections, cache hits) and keeps the samples here; the Insights page turns
 -- them into trends and forecasts. metric = what was measured, key = which database / table ('' = the cluster).
 create table if not exists public.metric_samples (

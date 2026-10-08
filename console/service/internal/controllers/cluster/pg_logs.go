@@ -1,6 +1,6 @@
 package cluster
 
-// JumboSQL: PostgreSQL logs viewer.
+// pg_genin: PostgreSQL logs viewer.
 //
 //   GET /clusters/{id}/logs?server_id=N               log files of the node (newest first) and the current one
 //   GET /clusters/{id}/logs/{file}?server_id=N&tail_kb=&since=   end of a file, or new text since a byte offset
@@ -75,7 +75,7 @@ func (h *logsHandlers) node(ctx context.Context, clusterID, serverID int64) (sql
 		}
 	}
 	return sqlrun.Target{Host: ip, Port: port, User: user, Password: password, Database: "postgres", SSLMode: h.sslMode,
-		AppName: "JumboSQL logs viewer"}, srv.Name, nil
+		AppName: "pg_genin logs viewer"}, srv.Name, nil
 }
 
 func (h *logsListHandler) Handle(param cluster.GetClustersIDLogsParams) middleware.Responder {

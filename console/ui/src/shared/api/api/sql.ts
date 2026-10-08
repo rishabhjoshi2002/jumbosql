@@ -1,4 +1,4 @@
-// JumboSQL: SQL editor endpoints (see console/service/api/swagger.yaml: /clusters/{id}/sql).
+// pg_genin: SQL editor endpoints (see console/service/api/swagger.yaml: /clusters/{id}/sql).
 import { baseApi as api } from '../baseApi.ts';
 
 const injectedRtkApi = api.injectEndpoints({

@@ -100,7 +100,7 @@ const DetailRow: FC<{ e: AuditEvent; cluster?: string }> = ({ e, cluster }) => {
   );
 };
 
-/** JumboSQL: who did what, when, from where - every change, every SQL statement, every refusal. */
+/** pg_genin: who did what, when, from where - every change, every SQL statement, every refusal. */
 const AuditLog: FC = () => {
   const { t } = useTranslation(['shared', 'settings']);
   const projectId = useAppSelector(selectCurrentProject);

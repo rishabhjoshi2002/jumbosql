@@ -289,7 +289,7 @@ func resolveURL(baseURL, path string) (string, error) {
 	return base.ResolveReference(relativePath).String(), nil
 }
 
-// ConnectionTarget returns host, port, superuser and password from a cluster's connection_info (JumboSQL: used by
+// ConnectionTarget returns host, port, superuser and password from a cluster's connection_info (pg_genin: used by
 // the SQL editor; host/port are HAProxy's read-write address, so queries always reach the Patroni leader).
 func ConnectionTarget(rawConnectionInfo interface{}) (host string, port int, user, password string, err error) {
 	req, err := buildDbDeskConnectionRequest("", rawConnectionInfo, "")

@@ -37,7 +37,7 @@ const initials = (name: string) =>
     .map((p) => p[0]?.toUpperCase())
     .join('') || '?';
 
-/** JumboSQL: signed-in user, change password, user management (admins) and sign out. */
+/** pg_genin: signed-in user, change password, user management (admins) and sign out. */
 const UserMenu: FC = () => {
   const { t } = useTranslation('shared');
   const navigate = useNavigate();

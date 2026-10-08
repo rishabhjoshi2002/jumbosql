@@ -1,4 +1,4 @@
-# JumboSQL Keen PostgreSQL HA automation image - the image the console runs for each deployment.
+# pg_genin Keen PostgreSQL HA automation image - the image the console runs for each deployment.
 # Build it ON THE CONSOLE VM and keep it local: it contains your licensed HA Ansible collection and your
 # (encrypted) vault.yml. The vault password is NOT in the image; the console passes it to each run.
 #     ./build.sh automation        (from the repo root; see README)

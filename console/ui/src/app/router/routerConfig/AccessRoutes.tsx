@@ -7,7 +7,7 @@ const AuditLog = lazy(() => import('@pages/audit'));
 const PostgresLogs = lazy(() => import('@pages/postgres-logs'));
 const Insights = lazy(() => import('@pages/insights'));
 
-// JumboSQL: audit log (audit.view) and PostgreSQL server logs (logs.view)
+// pg_genin: audit log (audit.view) and PostgreSQL server logs (logs.view)
 const AccessRoutes = () => [
   <Route
     key="audit"

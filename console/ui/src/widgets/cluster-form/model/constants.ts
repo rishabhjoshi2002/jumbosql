@@ -127,7 +127,7 @@ export const getClusterFormDefaultValues = () => ({
       [DATABASE_SERVERS_FIELD_NAMES.DATABASE_IP_ADDRESS]: '',
       [DATABASE_SERVERS_FIELD_NAMES.DATABASE_SSH_PORT]: '',
       [DATABASE_SERVERS_FIELD_NAMES.DATABASE_LOCATION]: '',
-      [DATABASE_SERVERS_FIELD_NAMES.ROLES]: defaultHaRoles(index), // JumboSQL: 1st VM = util node, others = DB nodes
+      [DATABASE_SERVERS_FIELD_NAMES.ROLES]: defaultHaRoles(index), // pg_genin: 1st VM = util node, others = DB nodes
     })),
   ...(IS_EXPERT_MODE
     ? {

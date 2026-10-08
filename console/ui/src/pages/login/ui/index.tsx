@@ -29,7 +29,7 @@ import Watermark from '@shared/ui/watermark';
 const highlights = ['loginHighlightInventory', 'loginHighlightPatroni', 'loginHighlightObservability'];
 
 /**
- * JumboSQL sign-in: username and password, checked by the API (local users today; LDAP / SSO providers
+ * pg_genin sign-in: username and password, checked by the API (local users today; LDAP / SSO providers
  * plug in on the server side without changing this page).
  */
 const Login: FC = () => {
@@ -88,7 +88,7 @@ const Login: FC = () => {
               }}>
               <img src={logoIcon} alt="" style={{ width: 36, height: 36 }} data-logo="true" />
             </Box>
-            <Typography sx={{ fontWeight: 800, fontSize: '1.25rem', letterSpacing: '-0.01em' }}>JumboSQL</Typography>
+            <Typography sx={{ fontWeight: 800, fontSize: '1.25rem', letterSpacing: '-0.01em' }}>pg_genin</Typography>
           </Stack>
           <Box>
             <Typography sx={{ color: BRAND.sky, fontWeight: 700, letterSpacing: '0.14em', fontSize: '0.78rem', mb: 2 }}>
@@ -129,7 +129,7 @@ const Login: FC = () => {
           sx={{ width: '100%', maxWidth: '380px', position: 'relative', zIndex: 1 }}>
           <Stack gap="20px">
             <Box textAlign="center">
-              <img src={logo} alt="JumboSQL" style={{ width: 168, height: 168 }} data-logo="true" />
+              <img src={logo} alt="pg_genin" style={{ width: 168, height: 168 }} data-logo="true" />
             </Box>
             <Box>
               <Typography variant="h5">{t('signIn')}</Typography>
@@ -178,7 +178,7 @@ const Login: FC = () => {
               {isLoading ? t('signingIn') : t('signIn')}
             </Button>
             <Typography variant="caption" color="text.secondary" textAlign="center">
-              JumboSQL v{version} · {t('productLine')}
+              pg_genin v{version} · {t('productLine')}
             </Typography>
           </Stack>
         </Box>

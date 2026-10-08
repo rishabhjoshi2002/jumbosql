@@ -35,7 +35,7 @@ export const DatabaseServersBlockSchema = (t: TFunction) =>
                 [DATABASE_SERVERS_FIELD_NAMES.DATABASE_LOCATION]: yup.string(),
               }),
             )
-              // JumboSQL: the roles must add up to a valid HA layout (odd etcd, 2+ Patroni, one pgBackRest repo, ...)
+              // pg_genin: the roles must add up to a valid HA layout (odd etcd, 2+ Patroni, one pgBackRest repo, ...)
               .test('valid HA layout', (value, ctx) => {
                 const problems = validateHaLayout(formServersToHaServers(value ?? []));
                 return problems.length ? ctx.createError({ message: problems.join('; ') }) : true;

@@ -6,7 +6,7 @@ import { canAny } from '@shared/lib/session.ts';
 import { useSessionUser } from '@shared/lib/useSession.ts';
 
 /**
- * JumboSQL: shows the page only when the signed-in user holds one of the permissions (anywhere).
+ * pg_genin: shows the page only when the signed-in user holds one of the permissions (anywhere).
  * The API refuses the requests anyway; this replaces a page full of errors with one clear message.
  */
 const RequirePermission: FC<{ perms: string[]; children: ReactNode }> = ({ perms, children }) => {

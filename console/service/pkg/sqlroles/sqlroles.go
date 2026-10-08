@@ -389,7 +389,7 @@ func Sync(ctx context.Context, admin sqlrun.Target, role, password string, prof 
 		ro = "on"
 	}
 	pre = append(pre, "ALTER ROLE "+r+" SET default_transaction_read_only = "+ro,
-		"COMMENT ON ROLE "+r+" IS "+quoteLiteral("JumboSQL SQL editor role ("+prof.Level+"), managed by the console - do not edit"))
+		"COMMENT ON ROLE "+r+" IS "+quoteLiteral("pg_genin SQL editor role ("+prof.Level+"), managed by the console - do not edit"))
 	if prof.Stats {
 		pre = append(pre, "GRANT pg_read_all_stats TO "+r)
 	} else {

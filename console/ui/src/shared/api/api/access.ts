@@ -1,4 +1,4 @@
-// JumboSQL: access policies, audit log, PostgreSQL logs and SQL access (see console/service/api/swagger.yaml).
+// pg_genin: access policies, audit log, PostgreSQL logs and SQL access (see console/service/api/swagger.yaml).
 import { baseApi as api } from '../baseApi.ts';
 
 export type PolicySubjects = { everyone?: boolean; users?: string[]; attributes?: Record<string, string[]> };

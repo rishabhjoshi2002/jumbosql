@@ -55,11 +55,11 @@ const Header: FC = () => {
                   placeItems: 'center',
                   flexShrink: 0,
                 }}>
-                <img src={logoIcon} alt="JumboSQL" style={{ width: '32px', height: '32px' }} data-logo="true" />
+                <img src={logoIcon} alt="pg_genin" style={{ width: '32px', height: '32px' }} data-logo="true" />
               </Box>
               <Box sx={{ lineHeight: 1 }}>
                 <Typography sx={{ color: BRAND.chromeText, fontWeight: 800, fontSize: '1.05rem', lineHeight: 1.15 }}>
-                  JumboSQL
+                  pg_genin
                 </Typography>
                 <Typography sx={{ color: BRAND.sky, fontSize: '0.74rem', fontWeight: 600, lineHeight: 1.2 }}>
                   {t('productLine')}

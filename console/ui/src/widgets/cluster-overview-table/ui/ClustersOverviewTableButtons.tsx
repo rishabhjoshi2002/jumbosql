@@ -21,7 +21,7 @@ const ClustersOverviewTableButtons: FC = () => {
     void refreshClusterTrigger({ id: Number(clusterId) });
   };
 
-  // JumboSQL: cluster-level switchover; Patroni picks the healthiest replica as the new leader
+  // pg_genin: cluster-level switchover; Patroni picks the healthiest replica as the new leader
   const handleSwitchover = async () => {
     if (!window.confirm(t('patroniConfirmAutoSwitchover'))) return;
     try {

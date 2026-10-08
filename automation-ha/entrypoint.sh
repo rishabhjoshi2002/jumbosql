@@ -1,5 +1,5 @@
 #!/bin/bash
-# entrypoint.sh - JumboSQL Keen PostgreSQL HA automation: runs inside the container the console starts.
+# entrypoint.sh - pg_genin Keen PostgreSQL HA automation: runs inside the container the console starts.
 #
 # The console always starts the container with:
 #     ansible-playbook deploy_pgcluster.yml --extra-vars '<json>'

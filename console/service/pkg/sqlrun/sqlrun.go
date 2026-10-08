@@ -1,5 +1,5 @@
 // Package sqlrun runs a SQL script against a PostgreSQL server and returns every result set, the way psql
-// or pgAdmin's query tool do (JumboSQL SQL editor).
+// or pgAdmin's query tool do (pg_genin SQL editor).
 //
 // The script is sent with the simple query protocol, so it may hold several statements; each statement that
 // returns rows (SELECT, SHOW, EXPLAIN, VALUES, TABLE, ... RETURNING, FETCH) gets its own result set with
@@ -27,7 +27,7 @@ const (
 	maxNotices     = 1000
 )
 
-// Target is where to connect (for JumboSQL: HAProxy's read-write port, so always the Patroni leader).
+// Target is where to connect (for pg_genin: HAProxy's read-write port, so always the Patroni leader).
 type Target struct {
 	Host     string
 	Port     int
@@ -110,7 +110,7 @@ func connString(t Target) string {
 	}
 	app := t.AppName
 	if app == "" {
-		app = "JumboSQL SQL editor"
+		app = "pg_genin SQL editor"
 	}
 	db := t.Database
 	if db == "" {

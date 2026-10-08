@@ -12,7 +12,7 @@ declare module '@mui/material/styles' {
 }
 
 /**
- * JumboSQL design tokens. Colours come from the logo: navy outline (chrome), elephant blue (primary),
+ * pg_genin design tokens. Colours come from the logo: navy outline (chrome), elephant blue (primary),
  * sky highlight (accent). The header and sidebar are always dark ("chrome"); the content area follows
  * the light/dark mode.
  */

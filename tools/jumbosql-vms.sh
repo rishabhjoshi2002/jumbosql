@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
-# jumbosql-vms.sh - create RHEL 9 VMs for a JumboSQL cluster on a KVM host. Nothing else: no Ansible,
-#                   no PostgreSQL. JumboSQL deploys the cluster onto these VMs from its web console.
+# jumbosql-vms.sh - create RHEL 9 VMs for a pg_genin cluster on a KVM host. Nothing else: no Ansible,
+#                   no PostgreSQL. pg_genin deploys the cluster onto these VMs from its web console.
 #
 # Layouts:
 #   combined (default)  --count N VMs (default 3): VM 1 = util (etcd, HAProxy, PgBouncer, pgBackRest,
@@ -13,7 +13,7 @@
 # Each VM gets:
 #   - a free static IP on the libvirt network (picked automatically, or --ips), reserved in libvirt DHCP
 #   - hostname <set>-<role> (e.g. js1-etcd1, js1-pg2, js1-proxy, js1-monitor), root password (prompted), root SSH login
-#   - an SSH key made for this set (/root/.ssh/jumbosql-<set>) - paste the private key into JumboSQL
+#   - an SSH key made for this set (/root/.ssh/jumbosql-<set>) - paste the private key into pg_genin
 #   - Red Hat registration (prompted), glibc-langpack-en, chrony, python3
 #
 # Usage (as root on the KVM host):
@@ -28,7 +28,7 @@
 # Sizes (env): combined: RAM_MB=4096 DISK=40G for every VM.  split: PostgreSQL VMs RAM_DB=4096 DISK_DB=40G,
 # monitor RAM_MON=4096 DISK_MON=40G, pgBackRest RAM_SMALL + DISK_REPO=60G, etcd and proxy RAM_SMALL=2048
 # DISK_SMALL=20G.  VCPUS=2 for all.
-# The VM list for JumboSQL's "Import VM list" is written to /root/jumbosql-<set>-vms.txt.
+# The VM list for pg_genin's "Import VM list" is written to /root/jumbosql-<set>-vms.txt.
 # On failure everything this run created is undone in reverse order (Red Hat registrations, VMs, disks,
 # DHCP reservations, the SSH key and the state file).
 
@@ -172,7 +172,7 @@ check_network() {   # output captured first: no locale or pipefail/SIGPIPE surpr
 
 add_vm() { L_SUFFIX+=("$1"); L_ROLES+=("$2"); L_RAM+=("$3"); L_DISK+=("$4"); }
 
-build_layout() {   # role names are the ones JumboSQL's inventory step uses
+build_layout() {   # role names are the ones pg_genin's inventory step uses
   local i etcd_n
   if [[ $LAYOUT == split ]]; then
     for i in 1 2 3; do add_vm "etcd$i" etcd "$RAM_SMALL" "$DISK_SMALL"; done
@@ -294,7 +294,7 @@ show_plan() {
     printf '    %-26s %-16s %-7s %-6s %-5s %s\n' "${V_NAME[i]}" "${V_IP[i]}" "${L_RAM[i]}" "$VCPUS" "${L_DISK[i]}" "${L_ROLES[i]}"
   done
   echo "    RHEL 9, registered with Red Hat, glibc-langpack-en + chrony; no PostgreSQL, no Ansible."
-  echo "    SSH key for JumboSQL: /root/.ssh/jumbosql-$SET_NAME"
+  echo "    SSH key for pg_genin: /root/.ssh/jumbosql-$SET_NAME"
   confirm "Create these VMs?"
 }
 
@@ -493,12 +493,12 @@ summary() {
   step "Done: set $SET_NAME"
   local i list=/root/jumbosql-$SET_NAME-vms.txt
   if (( ! DRY_RUN )); then
-    { echo "# JumboSQL VM list, set $SET_NAME ($LAYOUT layout): hostname ip roles"
+    { echo "# pg_genin VM list, set $SET_NAME ($LAYOUT layout): hostname ip roles"
       for i in "${!V_NAME[@]}"; do printf '%-26s %-16s %s\n' "${V_NAME[i]}" "${V_IP[i]}" "${L_ROLES[i]}"; done
     } >"$list"
   fi
   echo
-  echo "    JumboSQL: Clusters -> Create cluster -> Inventory -> Import VM list, paste this ($list):"
+  echo "    pg_genin: Clusters -> Create cluster -> Inventory -> Import VM list, paste this ($list):"
   echo
   for i in "${!V_NAME[@]}"; do printf '      %-26s %-16s %s\n' "${V_NAME[i]}" "${V_IP[i]}" "${L_ROLES[i]}"; done
   cat <<EOF

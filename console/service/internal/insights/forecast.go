@@ -1,5 +1,5 @@
 // Package insights samples clusters, fits trends and turns them into forecasts and recommendations
-// (JumboSQL Insights page).
+// (pg_genin Insights page).
 package insights
 
 import (

@@ -98,7 +98,7 @@ func setupMiddlewares(handler http.Handler) http.Handler {
 
 var Token string
 
-// Sessions resolves JumboSQL login sessions (set by the service at startup).
+// Sessions resolves pg_genin login sessions (set by the service at startup).
 var Sessions localmid.SessionLookup
 
 // Authz decides every signed-in request with the access policies (set by the service at startup).

@@ -56,7 +56,7 @@ const TOOL_META: Record<ObservabilityTool, { icon: typeof DashboardOutlined; lab
 const RANGES = [60, 360, 1440, 10080]; // minutes
 
 /**
- * JumboSQL: Observability - a live monitoring dashboard per cluster (services, alerts, PostgreSQL / etcd / node graphs
+ * pg_genin: Observability - a live monitoring dashboard per cluster (services, alerts, PostgreSQL / etcd / node graphs
  * from the cluster's Prometheus) plus links to its Grafana, Prometheus and Alertmanager. URLs come from the cluster's
  * Monitoring VM and can be overridden per cluster (saved in console settings).
  */

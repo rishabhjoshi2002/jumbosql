@@ -1,4 +1,4 @@
-// JumboSQL: sign-in and user management endpoints (see console/service/api/swagger.yaml).
+// pg_genin: sign-in and user management endpoints (see console/service/api/swagger.yaml).
 import { baseApi as api } from '../baseApi.ts';
 
 export type ApiUser = {
@@ -13,11 +13,11 @@ export type ApiUser = {
   auth_provider?: string;
   created_at?: string;
   last_login_at?: string | null;
-  /** only from /auth/me: the user's own choices (home page cards, start page, notes) */
+  /** from /auth/me and /users: home page (cards, start page; set by an admin) and the user's notes */
   preferences?: UserPreferences;
 };
 
-/** JumboSQL: personal home page settings, saved per user on the server */
+/** pg_genin: personal home page settings, saved per user on the server */
 export type UserPreferences = {
   home?: { cards?: string[]; start_page?: string };
   notes?: string;
@@ -57,7 +57,14 @@ const injectedRtkApi = api.enhanceEndpoints({ addTagTypes: ['Users'] }).injectEn
     }),
     patchUsersById: build.mutation<
       ApiUser,
-      { id: number; attributes?: Record<string, string>; password?: string; display_name?: string }
+      {
+        id: number;
+        attributes?: Record<string, string>;
+        password?: string;
+        display_name?: string;
+        /** pg_genin: the user's home page, set by an admin */
+        home?: { cards: string[]; start_page: string };
+      }
     >({
       query: ({ id, ...body }) => ({ url: `/users/${id}`, method: 'PATCH', body }),
       invalidatesTags: ['Users'],

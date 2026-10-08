@@ -43,7 +43,7 @@ func NewPostClusterHandler(db storage.IStorage, dockerManager xdocker.IManager, 
 	}
 }
 
-// canCreate: clusters.manage for a cluster with this name, environment and project (JumboSQL access policies).
+// canCreate: clusters.manage for a cluster with this name, environment and project (pg_genin access policies).
 func (h *postClusterHandler) canCreate(param cluster.PostClustersParams) error {
 	if h.access == nil || param.Body == nil {
 		return nil

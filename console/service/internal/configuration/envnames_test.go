@@ -8,7 +8,7 @@ import (
 	"github.com/kelseyhightower/envconfig"
 )
 
-// The JumboSQL settings must have the names the docs and build.sh use (nested sections must not repeat the
+// The pg_genin settings must have the names the docs and build.sh use (nested sections must not repeat the
 // section name: PG_CONSOLE_PATRONI_PORT, not PG_CONSOLE_PATRONI_PATRONI_PORT).
 func TestEnvNames(t *testing.T) {
 	var cfg Config

@@ -1,6 +1,6 @@
 -- +goose Up
 
--- JumboSQL: the bundled HA automation (2.2.0) installs PostgreSQL 12 to 17; offering 18 made the playbook crash in
+-- pg_genin: the bundled HA automation (2.2.0) installs PostgreSQL 12 to 17; offering 18 made the playbook crash in
 -- preflight ('NoneType' object has no attribute 'split'). The automation image also refuses versions that are not
 -- in its package list (automation-ha/inventory_to_ha.py), so a newer automation only needs this row added back.
 delete from public.postgres_versions

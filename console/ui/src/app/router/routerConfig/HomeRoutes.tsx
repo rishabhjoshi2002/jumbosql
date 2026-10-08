@@ -14,7 +14,7 @@ const StartPage: FC = () => {
   return <Navigate to={safeStartPage(me.data?.preferences?.home?.start_page)} replace />;
 };
 
-// JumboSQL: everyone's own home page
+// pg_genin: everyone's own home page
 const HomeRoutes = () => [
   <Route key="start" path="" element={<StartPage />} />,
   <Route

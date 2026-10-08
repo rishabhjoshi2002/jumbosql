@@ -1,6 +1,6 @@
 package cluster
 
-// JumboSQL: GET /clusters/{id}/insights - trends, forecasts, capacity plan and recommendations (internal/insights);
+// pg_genin: GET /clusters/{id}/insights - trends, forecasts, capacity plan and recommendations (internal/insights);
 // GET /insights/summary - the same, summarised for every cluster of a project the user may see;
 // GET /clusters/{id}/monitoring - live monitoring from the cluster's Prometheus.
 

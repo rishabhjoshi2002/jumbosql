@@ -1,6 +1,6 @@
 -- +goose Up
 
--- JumboSQL: attribute-based access control (policies only), audit log and SQL editor database roles.
+-- pg_genin: attribute-based access control (policies only), audit log and SQL editor database roles.
 --
 -- A policy grants (effect 'allow') or takes away (effect 'deny') permissions to the users it matches
 -- (by name or by user attributes), on the clusters it matches (by name, environment or project), under

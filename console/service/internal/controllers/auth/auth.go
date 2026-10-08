@@ -1,6 +1,6 @@
 package auth
 
-// JumboSQL: /auth/login, /auth/logout, /auth/me, /auth/password
+// pg_genin: /auth/login, /auth/logout, /auth/me, /auth/password
 
 import (
 	"encoding/json"
@@ -64,7 +64,7 @@ func NewPostAuthLoginHandler(svc *auth.Service, log zerolog.Logger) authops.Post
 	return &loginHandler{svc: svc, log: log.With().Str("module", "auth").Logger()}
 }
 
-// Hooks set by the service wiring (JumboSQL access policies): audit sign-ins, and the effective permissions
+// Hooks set by the service wiring (pg_genin access policies): audit sign-ins, and the effective permissions
 // returned by /auth/me.
 var (
 	AuditLogin  func(r *http.Request, username string, user *storage.User, ok bool, reason string)
@@ -146,7 +146,7 @@ func (h *meHandler) Handle(param authops.GetAuthMeParams) middleware.Responder {
 	return authops.NewGetAuthMeOK().WithPayload(m)
 }
 
-// JumboSQL: PUT /auth/me/preferences - the user's own home page choices (cards, their order, start page).
+// pg_genin: PUT /auth/me/preferences - the user's own home page choices (cards, their order, start page).
 type preferencesHandler struct{ db storage.IStorage }
 
 func NewPutAuthMePreferencesHandler(db storage.IStorage) authops.PutAuthMePreferencesHandler {
@@ -163,20 +163,32 @@ func (h *preferencesHandler) Handle(param authops.PutAuthMePreferencesParams) mi
 	if p == nil || p.UserID == 0 {
 		return bad("preferences belong to a user; the API token has none")
 	}
-	b, err := json.Marshal(param.Body)
-	if err != nil {
+	in, ok := param.Body.(map[string]any)
+	if !ok {
 		return bad("preferences must be a JSON object")
 	}
-	if _, ok := param.Body.(map[string]any); !ok {
+	// pg_genin: the home page (cards, start page) is set by an admin in Settings -> Users; a user keeps the
+	// rest (e.g. notes) but cannot change "home"
+	ctx := param.HTTPRequest.Context()
+	cur := map[string]any{}
+	if old, err := h.db.GetUserPreferences(ctx, p.UserID); err == nil && len(old) > 0 {
+		_ = json.Unmarshal(old, &cur)
+	}
+	delete(in, "home")
+	if home, ok := cur["home"]; ok {
+		in["home"] = home
+	}
+	b, err := json.Marshal(in)
+	if err != nil {
 		return bad("preferences must be a JSON object")
 	}
 	if len(b) > maxPreferencesBytes {
 		return bad("preferences are too large")
 	}
-	if err := h.db.SaveUserPreferences(param.HTTPRequest.Context(), p.UserID, b); err != nil {
+	if err := h.db.SaveUserPreferences(ctx, p.UserID, b); err != nil {
 		return authops.NewPutAuthMePreferencesBadRequest().WithPayload(controllers.MakeErrorPayload(err, controllers.BaseError))
 	}
-	return authops.NewPutAuthMePreferencesOK().WithPayload(param.Body)
+	return authops.NewPutAuthMePreferencesOK().WithPayload(in)
 }
 
 type passwordHandler struct{ db storage.IStorage }

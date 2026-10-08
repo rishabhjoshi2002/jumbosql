@@ -14,7 +14,7 @@ import AuditIcon from '@mui/icons-material/FactCheckOutlined';
 import HomeIcon from '@mui/icons-material/HomeOutlined';
 import { canAny, getSessionUser, SessionUser } from '@shared/lib/session.ts';
 
-// JumboSQL: menu items follow the user's access policies (perms: any one of them)
+// pg_genin: menu items follow the user's access policies (perms: any one of them)
 export const sidebarData = (t: TFunction, user: SessionUser | null = getSessionUser()) => {
   const all = [
     {

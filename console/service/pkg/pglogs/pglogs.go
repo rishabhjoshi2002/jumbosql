@@ -1,4 +1,4 @@
-// Package pglogs reads PostgreSQL server logs over SQL (JumboSQL PostgreSQL logs viewer).
+// Package pglogs reads PostgreSQL server logs over SQL (pg_genin PostgreSQL logs viewer).
 //
 // It connects as the superuser to one node and uses pg_ls_logdir() to list the files of log_directory and
 // pg_read_binary_file() to read them. Only names that pg_ls_logdir() returns can be read, so no other file on the

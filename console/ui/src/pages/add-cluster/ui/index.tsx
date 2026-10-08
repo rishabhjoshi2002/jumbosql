@@ -49,7 +49,7 @@ const AddCluster: FC = () => {
       environments.data?.data &&
       clusterName.data
     ) {
-      // JumboSQL: the HA automation deploys onto existing VMs only, so cloud providers are not offered and
+      // pg_genin: the HA automation deploys onto existing VMs only, so cloud providers are not offered and
       // "Your Own Machines" is the default destination.
       const providers = deployments.data.data.filter((provider) => provider?.code === PROVIDERS.LOCAL);
       const { regionCode, datacenter } = getDefaultCloudRegionSelection(providers[0]);
@@ -87,7 +87,7 @@ const AddCluster: FC = () => {
     <Stack direction="row">
       <Box width="100%" maxWidth="1000px">
         <ClusterForm
-          deploymentsData={[] /* JumboSQL: own machines only */}
+          deploymentsData={[] /* pg_genin: own machines only */}
           environmentsData={environments.data?.data ?? []}
           postgresVersionsData={postgresVersions.data?.data ?? []}
         />

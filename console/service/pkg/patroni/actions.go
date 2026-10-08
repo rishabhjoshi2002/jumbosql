@@ -1,6 +1,6 @@
 package patroni
 
-// JumboSQL: write operations against the Patroni REST API (switchover, restart, reinitialize).
+// pg_genin: write operations against the Patroni REST API (switchover, restart, reinitialize).
 // The read-only client in client.go is used by the cluster watcher; this one is used by the API handlers
 // behind the console's Patroni panel.
 

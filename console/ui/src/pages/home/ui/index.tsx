@@ -1,24 +1,5 @@
 import { FC, ReactNode, useEffect, useMemo, useState } from 'react';
-import {
-  Alert,
-  Box,
-  Button,
-  Chip,
-  Dialog,
-  DialogActions,
-  DialogContent,
-  DialogTitle,
-  IconButton,
-  MenuItem,
-  Stack,
-  Switch,
-  TextField,
-  Typography,
-} from '@mui/material';
-import ArrowUpwardIcon from '@mui/icons-material/ArrowUpward';
-import ArrowDownwardIcon from '@mui/icons-material/ArrowDownward';
-import TuneIcon from '@mui/icons-material/Tune';
-import OpenInNewIcon from '@mui/icons-material/OpenInNew';
+import { Alert, Box, Button, Chip, Stack, TextField, Typography } from '@mui/material';
 import { useTranslation } from 'react-i18next';
 import { Link as RouterLink, useNavigate } from 'react-router-dom';
 import { toast } from 'react-toastify';
@@ -33,7 +14,7 @@ import { can } from '@shared/lib/session.ts';
 import { sidebarData } from '@widgets/sidebar/model/constants.ts';
 import { loadHistory } from '@pages/sql-editor/lib/storage.ts';
 import { FleetGrowth, FleetRisks, FleetTable, FleetTiles, useFleet } from '@pages/insights/ui/Fleet.tsx';
-import { availableCards, chosenCards, defaultCards, HomeCardId, isWide, safeStartPage } from '../model/cards.ts';
+import { chosenCards, isWide } from '../model/cards.ts';
 
 const Panel: FC<{ title: string; action?: ReactNode; children: ReactNode; wide?: boolean }> = ({
   title,
@@ -285,126 +266,16 @@ const NotesCard: FC<{ prefs: UserPreferences; save: (p: UserPreferences) => Prom
   );
 };
 
-/* ------------------------------------------------------------ customize ------------------------------------------------------------ */
-
-const Customize: FC<{
-  open: boolean;
-  onClose: () => void;
-  prefs: UserPreferences;
-  cards: HomeCardId[];
-  save: (p: UserPreferences) => Promise<void>;
-}> = ({ open, onClose, prefs, cards, save }) => {
-  const { t } = useTranslation(['shared', 'clusters', 'operations', 'settings', 'insights']);
-  const user = useSessionUser();
-  const avail = availableCards(user);
-  const [list, setList] = useState<{ id: HomeCardId; on: boolean }[]>([]);
-  const [start, setStart] = useState('/home');
-  useEffect(() => {
-    if (!open) return;
-    setList([
-      ...cards.map((id) => ({ id, on: true })),
-      ...avail.filter((id) => !cards.includes(id)).map((id) => ({ id, on: false })),
-    ]);
-    setStart(safeStartPage(prefs.home?.start_page));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open]);
-  const move = (i: number, d: number) =>
-    setList((l) => {
-      const n = [...l];
-      const j = i + d;
-      if (j < 0 || j >= n.length) return l;
-      [n[i], n[j]] = [n[j], n[i]];
-      return n;
-    });
-  const pages = sidebarData(t, user);
-  return (
-    <Dialog open={open} onClose={onClose} fullWidth maxWidth="sm">
-      <DialogTitle>{t('homeCustomize')}</DialogTitle>
-      <DialogContent>
-        <Typography variant="body2" color="text.secondary" mb={1.5}>
-          {t('homeCustomizeHelp')}
-        </Typography>
-        <Stack divider={<Box sx={{ borderTop: 1, borderColor: 'divider' }} />}>
-          {list.map((c, i) => (
-            <Stack key={c.id} direction="row" alignItems="center" gap={1} py={0.25}>
-              <Switch
-                checked={c.on}
-                onChange={(e) => setList((l) => l.map((x) => (x.id === c.id ? { ...x, on: e.target.checked } : x)))}
-              />
-              <Box flex={1}>
-                <Typography variant="body2" fontWeight={600}>
-                  {t(`home_${c.id}`)}
-                </Typography>
-                <Typography variant="caption" color="text.secondary">
-                  {t(`home_${c.id}_help`)}
-                </Typography>
-              </Box>
-              <IconButton size="small" onClick={() => move(i, -1)} disabled={i === 0}>
-                <ArrowUpwardIcon fontSize="small" />
-              </IconButton>
-              <IconButton size="small" onClick={() => move(i, 1)} disabled={i === list.length - 1}>
-                <ArrowDownwardIcon fontSize="small" />
-              </IconButton>
-            </Stack>
-          ))}
-        </Stack>
-        <TextField
-          select
-          fullWidth
-          size="small"
-          label={t('homeStartPage')}
-          helperText={t('homeStartPageHelp')}
-          value={pages.some((p) => p.path === start) ? start : '/home'}
-          onChange={(e) => setStart(e.target.value)}
-          sx={{ mt: 2.5 }}>
-          {pages.map((p) => (
-            <MenuItem key={p.path} value={p.path}>
-              {p.label}
-            </MenuItem>
-          ))}
-        </TextField>
-      </DialogContent>
-      <DialogActions>
-        <Button
-          onClick={() => {
-            setList([
-              ...defaultCards(user).map((id) => ({ id, on: true })),
-              ...avail.filter((id) => !defaultCards(user).includes(id)).map((id) => ({ id, on: false })),
-            ]);
-            setStart('/home');
-          }}>
-          {t('homeReset')}
-        </Button>
-        <Box flex={1} />
-        <Button onClick={onClose}>{t('cancel')}</Button>
-        <Button
-          variant="contained"
-          onClick={async () => {
-            await save({
-              ...prefs,
-              home: { cards: list.filter((c) => c.on).map((c) => c.id), start_page: start },
-            });
-            onClose();
-          }}>
-          {t('save')}
-        </Button>
-      </DialogActions>
-    </Dialog>
-  );
-};
-
 /* ------------------------------------------------------------ page ------------------------------------------------------------ */
 
-/** JumboSQL: each user's own home page - the cards they chose, in their order, limited to what they may see. */
+/** pg_genin: each user's own home page - the cards an admin chose for them (Settings -> Users), limited to what they may see. */
 const Home: FC = () => {
   const { t } = useTranslation('shared');
   const user = useSessionUser();
   const me = useGetAuthMeQuery();
   const [put] = usePutAuthMePreferencesMutation();
-  const [open, setOpen] = useState(false);
   const prefs: UserPreferences = me.data?.preferences ?? {};
   const cards = chosenCards(me.data ? prefs : undefined, user);
-  const isApiToken = user?.username === 'api-token';
 
   const save = async (p: UserPreferences) => {
     try {
@@ -435,24 +306,9 @@ const Home: FC = () => {
             {t('homeSubtitle')}
           </Typography>
         </Box>
-        {!isApiToken ? (
-          <Button variant="outlined" startIcon={<TuneIcon />} onClick={() => setOpen(true)} disabled={!me.data}>
-            {t('homeCustomize')}
-          </Button>
-        ) : null}
       </Stack>
 
-      {!cards.length ? (
-        <Alert
-          severity="info"
-          action={
-            <Button size="small" onClick={() => setOpen(true)} endIcon={<OpenInNewIcon fontSize="small" />}>
-              {t('homeCustomize')}
-            </Button>
-          }>
-          {t('homeEmpty')}
-        </Alert>
-      ) : null}
+      {!cards.length ? <Alert severity="info">{t('homeEmpty')}</Alert> : null}
 
       <Box
         sx={{
@@ -482,8 +338,6 @@ const Home: FC = () => {
           }
         })}
       </Box>
-
-      <Customize open={open} onClose={() => setOpen(false)} prefs={prefs} cards={cards} save={save} />
     </Stack>
   );
 };

@@ -1,6 +1,6 @@
 package user
 
-// JumboSQL: user management - GET/POST /users, PATCH/DELETE /users/{id} (users.manage).
+// pg_genin: user management - GET/POST /users, PATCH/DELETE /users/{id} (users.manage).
 //
 // What a user may do is decided by access policies matching the user's name or attributes (group, team, ...).
 // "role" in requests is accepted as a shortcut for the attribute "group" (admin / operator / viewer match the
@@ -8,6 +8,7 @@ package user
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"regexp"
@@ -91,18 +92,37 @@ func (h *handlers) lockout(ctx context.Context, changed *storage.User, removedID
 	return nil
 }
 
-type getUsersHandler struct{ db storage.IStorage }
+type getUsersHandler struct {
+	db  storage.IStorage
+	acc *acc.Service
+}
 
-func NewGetUsersHandler(db storage.IStorage) userops.GetUsersHandler { return &getUsersHandler{db: db} }
+func NewGetUsersHandler(db storage.IStorage, a *acc.Service) userops.GetUsersHandler {
+	return &getUsersHandler{db: db, acc: a}
+}
 
 func (h *getUsersHandler) Handle(param userops.GetUsersParams) middleware.Responder {
 	users, err := h.db.GetUsers(param.HTTPRequest.Context())
 	if err != nil {
 		return middleware.Error(500, errPayload(err))
 	}
+	ctx := param.HTTPRequest.Context()
+	pctx := acc.RequestContext(param.HTTPRequest)
 	out := make([]*models.User, 0, len(users))
 	for i := range users {
-		out = append(out, authctl.ToModel(&users[i]))
+		u := &users[i]
+		m := authctl.ToModel(u)
+		// pg_genin: what the user may see (the home page editor offers only those cards) and their home page
+		if h.acc != nil {
+			m.Permissions = h.acc.Permissions(ctx, acc.Subject(&localmid.Principal{UserID: u.ID, Username: u.Username, Attributes: u.Attributes}), pctx)
+		}
+		if b, err := h.db.GetUserPreferences(ctx, u.ID); err == nil && len(b) > 0 {
+			var p map[string]any
+			if json.Unmarshal(b, &p) == nil {
+				m.Preferences = p
+			}
+		}
+		out = append(out, m)
 	}
 	return userops.NewGetUsersOK().WithPayload(out)
 }
@@ -199,6 +219,24 @@ func (h *patchUserHandler) Handle(param userops.PatchUsersIDParams) middleware.R
 			return bad(err)
 		}
 		req.PasswordHash = &hash
+	}
+	if hp := param.Body.Home; hp != nil { // pg_genin: the admin sets this user's home page; the user's notes stay
+		prefs := map[string]any{}
+		if b, err := h.db.GetUserPreferences(ctx, u.ID); err == nil && len(b) > 0 {
+			_ = json.Unmarshal(b, &prefs)
+		}
+		if len(hp.Cards) > 20 || len(hp.StartPage) > 200 || (hp.StartPage != "" && !strings.HasPrefix(hp.StartPage, "/")) {
+			return bad(errors.New("invalid home page"))
+		}
+		cards := hp.Cards
+		if cards == nil {
+			cards = []string{}
+		}
+		prefs["home"] = map[string]any{"cards": cards, "start_page": hp.StartPage}
+		b, _ := json.Marshal(prefs)
+		if err := h.db.SaveUserPreferences(ctx, u.ID, b); err != nil {
+			return bad(err)
+		}
 	}
 	updated, err := h.db.UpdateUser(ctx, req)
 	if err != nil {

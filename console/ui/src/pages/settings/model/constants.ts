@@ -34,5 +34,5 @@ const allSettingsTabs = [
   },
 ];
 
-// JumboSQL: tabs follow the access policies (the API enforces them as well)
+// pg_genin: tabs follow the access policies (the API enforces them as well)
 export const getSettingsTabs = () => allSettingsTabs.filter((tab) => canAny(tab.perms));

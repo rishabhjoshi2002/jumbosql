@@ -35,7 +35,7 @@ func (h *getOperationsHandler) Handle(param operation.GetOperationsParams) middl
 		Type:        param.Type,
 		Status:      param.Status,
 		SortBy:      param.SortBy,
-		OnlyClusters: func() []string { // JumboSQL access policies: only operations of clusters this user may see
+		OnlyClusters: func() []string { // pg_genin access policies: only operations of clusters this user may see
 			if h.access == nil {
 				return nil
 			}

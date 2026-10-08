@@ -436,7 +436,7 @@ paths:
 
   /clusters/{id}/switchover:
     post:
-      summary: "JumboSQL: Patroni switchover (leader moves to the candidate, or to the healthiest replica)"
+      summary: "pg_genin: Patroni switchover (leader moves to the candidate, or to the healthiest replica)"
       tags:
         - cluster
       parameters:
@@ -461,7 +461,7 @@ paths:
 
   /servers/{id}/restart:
     post:
-      summary: "JumboSQL: restart PostgreSQL on this node through Patroni"
+      summary: "pg_genin: restart PostgreSQL on this node through Patroni"
       tags:
         - cluster
       parameters:
@@ -481,7 +481,7 @@ paths:
 
   /servers/{id}/reinitialize:
     post:
-      summary: "JumboSQL: reinitialize this replica from the leader through Patroni"
+      summary: "pg_genin: reinitialize this replica from the leader through Patroni"
       tags:
         - cluster
       parameters:
@@ -501,7 +501,7 @@ paths:
 
   /auth/login:
     post:
-      summary: "JumboSQL: sign in with username and password"
+      summary: "pg_genin: sign in with username and password"
       tags:
         - auth
       parameters:
@@ -522,7 +522,7 @@ paths:
 
   /auth/logout:
     post:
-      summary: "JumboSQL: end the current session"
+      summary: "pg_genin: end the current session"
       tags:
         - auth
       responses:
@@ -531,7 +531,7 @@ paths:
 
   /auth/me:
     get:
-      summary: "JumboSQL: the signed-in user"
+      summary: "pg_genin: the signed-in user"
       tags:
         - auth
       responses:
@@ -542,7 +542,7 @@ paths:
 
   /auth/me/preferences:
     put:
-      summary: "JumboSQL: save the signed-in user's home page choices"
+      summary: "pg_genin: save the signed-in user's home page choices"
       tags:
         - auth
       parameters:
@@ -563,7 +563,7 @@ paths:
 
   /auth/password:
     post:
-      summary: "JumboSQL: change your own password"
+      summary: "pg_genin: change your own password"
       tags:
         - auth
       parameters:
@@ -582,7 +582,7 @@ paths:
 
   /users:
     get:
-      summary: "JumboSQL: list console users (admin)"
+      summary: "pg_genin: list console users (admin)"
       tags:
         - user
       responses:
@@ -593,7 +593,7 @@ paths:
             items:
               $ref: "#/definitions/User"
     post:
-      summary: "JumboSQL: add a local user (admin)"
+      summary: "pg_genin: add a local user (admin)"
       tags:
         - user
       parameters:
@@ -614,7 +614,7 @@ paths:
 
   /users/{id}:
     patch:
-      summary: "JumboSQL: change a user's role, display name or password (admin)"
+      summary: "pg_genin: change a user's role, display name or password (admin)"
       tags:
         - user
       parameters:
@@ -637,7 +637,7 @@ paths:
           schema:
             $ref: "#/definitions/Response.Error"
     delete:
-      summary: "JumboSQL: remove a user (admin)"
+      summary: "pg_genin: remove a user (admin)"
       tags:
         - user
       parameters:
@@ -655,7 +655,7 @@ paths:
 
   /clusters/{id}/patroni:
     post:
-      summary: "JumboSQL: run a patronictl-equivalent command through the Patroni REST API"
+      summary: "pg_genin: run a patronictl-equivalent command through the Patroni REST API"
       tags:
         - cluster
       parameters:
@@ -680,7 +680,7 @@ paths:
 
   /clusters/{id}/sql:
     post:
-      summary: "JumboSQL: run a SQL script on the cluster (through HAProxy's read-write port) and return every result set"
+      summary: "pg_genin: run a SQL script on the cluster (through HAProxy's read-write port) and return every result set"
       tags:
         - cluster
       parameters:
@@ -705,7 +705,7 @@ paths:
 
   /clusters/{id}/sql/cancel:
     post:
-      summary: "JumboSQL: cancel a running SQL editor script"
+      summary: "pg_genin: cancel a running SQL editor script"
       tags:
         - cluster
       parameters:
@@ -730,7 +730,7 @@ paths:
 
   /policies:
     get:
-      summary: "JumboSQL: list access policies"
+      summary: "pg_genin: list access policies"
       tags: [access]
       responses:
         '200':
@@ -740,7 +740,7 @@ paths:
             items:
               $ref: "#/definitions/Policy"
     post:
-      summary: "JumboSQL: create an access policy"
+      summary: "pg_genin: create an access policy"
       tags: [access]
       parameters:
         - name: body
@@ -760,7 +760,7 @@ paths:
 
   /policies/{id}:
     patch:
-      summary: "JumboSQL: replace an access policy"
+      summary: "pg_genin: replace an access policy"
       tags: [access]
       parameters:
         - name: id
@@ -782,7 +782,7 @@ paths:
           schema:
             $ref: "#/definitions/Response.Error"
     delete:
-      summary: "JumboSQL: delete an access policy"
+      summary: "pg_genin: delete an access policy"
       tags: [access]
       parameters:
         - name: id
@@ -799,7 +799,7 @@ paths:
 
   /policies/permissions:
     get:
-      summary: "JumboSQL: the permissions policies can grant"
+      summary: "pg_genin: the permissions policies can grant"
       tags: [access]
       responses:
         '200':
@@ -811,7 +811,7 @@ paths:
 
   /policies/simulate:
     post:
-      summary: "JumboSQL: what a user may do (optionally on one cluster and database), and which policies apply"
+      summary: "pg_genin: what a user may do (optionally on one cluster and database), and which policies apply"
       tags: [access]
       parameters:
         - name: body
@@ -831,7 +831,7 @@ paths:
 
   /audit:
     get:
-      summary: "JumboSQL: audit log"
+      summary: "pg_genin: audit log"
       tags: [access]
       parameters:
         - {name: username, in: query, type: string}
@@ -855,7 +855,7 @@ paths:
 
   /clusters/{id}/sql/access:
     get:
-      summary: "JumboSQL: what the signed-in user may do in the SQL editor on this cluster"
+      summary: "pg_genin: what the signed-in user may do in the SQL editor on this cluster"
       tags: [cluster]
       parameters:
         - {name: id, in: path, required: true, type: integer}
@@ -872,7 +872,7 @@ paths:
 
   /insights/summary:
     get:
-      summary: "JumboSQL: health, warnings and outlook of every cluster of a project (the clusters the user may see)"
+      summary: "pg_genin: health, warnings and outlook of every cluster of a project (the clusters the user may see)"
       tags: [cluster]
       parameters:
         - {name: project_id, in: query, required: true, type: integer}
@@ -889,7 +889,7 @@ paths:
 
   /clusters/{id}/monitoring:
     get:
-      summary: "JumboSQL: live monitoring of a cluster from its Prometheus (services, alerts, graphs)"
+      summary: "pg_genin: live monitoring of a cluster from its Prometheus (services, alerts, graphs)"
       tags: [cluster]
       parameters:
         - {name: id, in: path, required: true, type: integer}
@@ -906,7 +906,7 @@ paths:
 
   /clusters/{id}/insights:
     get:
-      summary: "JumboSQL: trends, forecasts and recommendations for a cluster (Insights page)"
+      summary: "pg_genin: trends, forecasts and recommendations for a cluster (Insights page)"
       tags: [cluster]
       parameters:
         - {name: id, in: path, required: true, type: integer}
@@ -925,7 +925,7 @@ paths:
 
   /clusters/{id}/logs:
     get:
-      summary: "JumboSQL: PostgreSQL log files of a cluster node"
+      summary: "pg_genin: PostgreSQL log files of a cluster node"
       tags: [cluster]
       parameters:
         - {name: id, in: path, required: true, type: integer}
@@ -942,7 +942,7 @@ paths:
 
   /clusters/{id}/logs/{file}:
     get:
-      summary: "JumboSQL: read (the end of) a PostgreSQL log file of a cluster node"
+      summary: "pg_genin: read (the end of) a PostgreSQL log file of a cluster node"
       tags: [cluster]
       parameters:
         - {name: id, in: path, required: true, type: integer}
@@ -1366,6 +1366,16 @@ definitions:
         description: Replaces all attributes when given
         additionalProperties:
           type: string
+      home:
+        type: object
+        description: "pg_genin: the user's home page, set by an admin (cards in order, start page)"
+        properties:
+          cards:
+            type: array
+            items:
+              type: string
+          start_page:
+            type: string
 
   Request.PasswordChange:
     type: object

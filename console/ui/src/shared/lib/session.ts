@@ -1,7 +1,7 @@
 import { clearDbdeskAuthCookie, setDbdeskAuthCookie } from '@shared/lib/dbdeskAuthCookie.ts';
 
 /**
- * JumboSQL: the signed-in user. The session token goes where the console has always kept its token
+ * pg_genin: the signed-in user. The session token goes where the console has always kept its token
  * (localStorage 'token', sent as Bearer by baseApi) and into the SQL editor cookie; the user's name and
  * role are kept for the header and for hiding admin-only screens. The API enforces roles either way.
  */

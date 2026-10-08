@@ -64,7 +64,7 @@ PG_CONSOLE_CLUSTERWATCHER_RUNEVERY    Duration            1m                    
 PG_CONSOLE_CLUSTERWATCHER_POOLSIZE    Integer             4                                                Amount of async request from ClusterWatcher
 ```
 
-JumboSQL: Patroni REST API access for the switchover / restart / reinitialize actions:
+pg_genin: Patroni REST API access for the switchover / restart / reinitialize actions:
 
 ```
 PG_CONSOLE_PATRONI_PORT               Integer             8009                                             Patroni REST API port on the database nodes

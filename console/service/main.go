@@ -71,7 +71,7 @@ func main() {
 	}
 
 	str := storage.NewDbStorage(dbPool)
-	// JumboSQL: the vault password goes to each deployment container as an environment variable
+	// pg_genin: the vault password goes to each deployment container as an environment variable
 	var automationEnv []string
 	if cfg.VaultPassword != "" {
 		automationEnv = append(automationEnv, "ANSIBLE_VAULT_PASSWORD="+cfg.VaultPassword)
@@ -99,12 +99,12 @@ func main() {
 	logAggregator := watcher.NewLogCollector(str, dockerManager)
 	defer logAggregator.Stop()
 
-	patroni.Port = cfg.Patroni.Port // JumboSQL: same Patroni port for cluster status and the Patroni console
+	patroni.Port = cfg.Patroni.Port // pg_genin: same Patroni port for cluster status and the Patroni console
 	clusterWatcher := watcher.NewServerWatcher(str, patroni.NewClient(log.Logger), cfg)
 	clusterWatcher.Run()
 	defer clusterWatcher.Stop()
 
-	// JumboSQL: Insights - samples every cluster for trends and forecasts
+	// pg_genin: Insights - samples every cluster for trends and forecasts
 	insightsCollector := insights.NewCollector(str, log.Logger, insights.OptionsFromConfig(cfg))
 	insightsCollector.Run()
 	defer insightsCollector.Stop()

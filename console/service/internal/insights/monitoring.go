@@ -1,6 +1,6 @@
 package insights
 
-// JumboSQL Observability dashboard: what the cluster's Prometheus knows right now - which services are up, which
+// pg_genin Observability dashboard: what the cluster's Prometheus knows right now - which services are up, which
 // alerts fire, and the main PostgreSQL / Patroni / etcd / HAProxy / PgBouncer / node graphs. Exporters differ between
 // setups (postgres_exporter, pgMonitor's ccp_* metrics, ...), so every panel tries a few queries and uses the first
 // that returns data.

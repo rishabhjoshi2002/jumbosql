@@ -109,7 +109,7 @@ const Section: FC<{ title: string; children: ReactNode }> = ({ title, children }
 
 const hasData = (m: Monitoring | undefined, ids: string[]) => ids.some((id) => (m?.panels[id]?.series.length ?? 0) > 0);
 
-/** JumboSQL: a cluster's health and main graphs, straight from its Prometheus. */
+/** pg_genin: a cluster's health and main graphs, straight from its Prometheus. */
 const MonitoringDashboard: FC<{ clusterId: number; clusterStatus?: string; minutes: number }> = ({
   clusterId,
   clusterStatus,

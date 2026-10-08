@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# build.sh - build and run JumboSQL on the console VM (needs Docker).
+# build.sh - build and run pg_genin on the console VM (needs Docker).
 #
 #   ./build.sh automation   build jumbosql/automation-ha:2.2.0 from automation-ha/ (needs ha-bundle.tar.gz there)
 #   ./build.sh console      build jumbosql/console:<version> (UI + API + console DB + SQL editor)
@@ -59,7 +59,7 @@ allow_console_to_vms() {
     install -d /etc/libvirt/hooks
     cat >/etc/libvirt/hooks/network <<'HOOK'
 #!/bin/bash
-# JumboSQL: let the console container (docker0) reach the VMs on libvirt networks (virbr*)
+# pg_genin: let the console container (docker0) reach the VMs on libvirt networks (virbr*)
 if [ "$2" = started ]; then
   nft list table ip libvirt_network >/dev/null 2>&1 \
     && { nft list chain ip libvirt_network guest_input | grep -qF 'iifname "docker0" oifname "virbr*" accept' \
@@ -112,7 +112,7 @@ run_console() {
     --restart=unless-stopped \
     "$CONSOLE_IMAGE"
   allow_console_to_vms || echo "warning: could not open docker0 -> virbr* (see README, KVM host)" >&2
-  echo "JumboSQL console is starting on port ${JUMBOSQL_PORT:-80}. Sign in as: admin (first start only creates it)"
+  echo "pg_genin console is starting on port ${JUMBOSQL_PORT:-80}. Sign in as: admin (first start only creates it)"
 }
 
 case "${1:-}" in

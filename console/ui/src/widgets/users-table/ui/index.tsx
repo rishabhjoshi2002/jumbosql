@@ -27,6 +27,8 @@ import LabelOutlined from '@mui/icons-material/LabelOutlined';
 import AddIcon from '@mui/icons-material/Add';
 import CloseIcon from '@mui/icons-material/Close';
 import DeleteOutline from '@mui/icons-material/DeleteOutline';
+import DashboardCustomizeOutlined from '@mui/icons-material/DashboardCustomizeOutlined';
+import HomeEditor from '@pages/home/ui/HomeEditor.tsx';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'react-toastify';
 import {
@@ -98,7 +100,7 @@ const AttributeRows: FC<{
 const formatDate = (v?: string | null) => (v ? new Date(v).toLocaleString() : '—');
 
 /**
- * JumboSQL: Settings > Users (admins only). Local users today; users from LDAP / SSO will show up here with
+ * pg_genin: Settings > Users (admins only). Local users today; users from LDAP / SSO will show up here with
  * their provider and can't have their password changed from the console.
  */
 const UsersTable: FC = () => {
@@ -107,6 +109,7 @@ const UsersTable: FC = () => {
   const users = useGetUsersQuery();
   const [addUser, addState] = usePostUsersMutation();
   const [patchUser] = usePatchUsersByIdMutation();
+  const [homeUser, setHomeUser] = useState<ApiUser | null>(null);
   const [deleteUser] = useDeleteUsersByIdMutation();
 
   const [addOpen, setAddOpen] = useState(false);
@@ -257,6 +260,11 @@ const UsersTable: FC = () => {
                   </TableCell>
                   <TableCell>{formatDate(u.last_login_at)}</TableCell>
                   <TableCell align="right" sx={{ whiteSpace: 'nowrap' }}>
+                    <Tooltip title={t('homeCustomize', { ns: 'shared' })}>
+                      <IconButton size="small" onClick={() => setHomeUser(u)}>
+                        <DashboardCustomizeOutlined fontSize="small" />
+                      </IconButton>
+                    </Tooltip>
                     {u.auth_provider === 'local' ? (
                       <Tooltip title={t('resetPassword')}>
                         <IconButton
@@ -283,6 +291,7 @@ const UsersTable: FC = () => {
           </TableBody>
         </Table>
       </TableContainer>
+      <HomeEditor user={homeUser} onClose={() => setHomeUser(null)} />
 
       <Alert severity="info">{t('rolesHelp')}</Alert>
 

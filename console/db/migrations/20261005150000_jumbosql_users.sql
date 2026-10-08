@@ -1,6 +1,6 @@
 -- +goose Up
 
--- JumboSQL: console users and login sessions.
+-- pg_genin: console users and login sessions.
 -- auth_provider is 'local' for users stored here; later providers (LDAP, OIDC/SSO) create rows with their
 -- own provider name and no password_hash, so roles and sessions work the same for every provider.
 create table if not exists public.users (

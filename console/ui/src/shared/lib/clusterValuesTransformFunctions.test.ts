@@ -18,7 +18,7 @@ describe('cluster form backup defaults', () => {
   });
 });
 
-// JumboSQL: getLocalMachineEnvs sends the HA inventory built from the VM roles in the inventory step
+// pg_genin: getLocalMachineEnvs sends the HA inventory built from the VM roles in the inventory step
 describe('getLocalMachineEnvs', () => {
   const values = (expert: boolean) => ({
     authenticationMethod: 'ssh_key',
