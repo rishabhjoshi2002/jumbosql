@@ -42,6 +42,7 @@ const (
 	UsersManage         = "users.manage"
 	PoliciesManage      = "policies.manage"
 	AuditView           = "audit.view"
+	DiscoverRun         = "discover.run"
 )
 
 type PermissionInfo struct {
@@ -67,6 +68,7 @@ var Catalog = []PermissionInfo{
 	{UsersManage, "Add, change and remove console users and their attributes", false},
 	{PoliciesManage, "Create, change and delete access policies", false},
 	{AuditView, "Read the audit log", false},
+	{DiscoverRun, "Discover: connect to any PostgreSQL servers the console can reach and map their architecture", false},
 }
 
 var clusterScoped = func() map[string]bool {

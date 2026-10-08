@@ -114,5 +114,8 @@ export const PERMISSION_GROUPS: { label: string; perms: string[] }[] = [
   { label: 'Patroni', perms: ['patroni.read', 'patroni.manage'] },
   { label: 'SQL editor', perms: ['sql.read', 'sql.write', 'sql.admin', 'sql.stats'] },
   { label: 'Logs and monitoring', perms: ['logs.view', 'insights.view', 'observability.manage'] },
-  { label: 'Administration', perms: ['settings.manage', 'users.manage', 'policies.manage', 'audit.view'] },
+  {
+    label: 'Administration',
+    perms: ['settings.manage', 'users.manage', 'policies.manage', 'audit.view', 'discover.run'],
+  },
 ];

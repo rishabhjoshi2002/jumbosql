@@ -12,6 +12,7 @@ import (
 	authctl "postgresql-cluster-console/internal/controllers/auth"
 	"postgresql-cluster-console/internal/controllers/cluster"
 	"postgresql-cluster-console/internal/controllers/dictionary"
+	discoverctl "postgresql-cluster-console/internal/controllers/discover"
 	"postgresql-cluster-console/internal/controllers/environment"
 	"postgresql-cluster-console/internal/controllers/operation"
 	"postgresql-cluster-console/internal/controllers/project"
@@ -198,6 +199,10 @@ func NewService(
 	api.ClusterGetClustersIDInsightsHandler = cluster.NewInsightsHandler(insightsSvc, db)
 	api.ClusterGetInsightsSummaryHandler = cluster.NewInsightsSummaryHandler(insightsSvc, db, accessSvc)
 	api.ClusterGetClustersIDMonitoringHandler = cluster.NewMonitoringHandler(insightsSvc)
+	api.DiscoverPostDiscoverHandler = discoverctl.NewPostDiscoverHandler(db)
+	api.DiscoverGetDiscoveriesHandler = discoverctl.NewGetDiscoveriesHandler(db)
+	api.DiscoverGetDiscoveriesIDHandler = discoverctl.NewGetDiscoveriesIDHandler(db)
+	api.DiscoverDeleteDiscoveriesIDHandler = discoverctl.NewDeleteDiscoveriesIDHandler(db)
 	api.ClusterGetClustersIDLogsHandler = logsList
 	api.ClusterGetClustersIDLogsFileHandler = logsRead
 

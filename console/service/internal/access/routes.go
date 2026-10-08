@@ -41,6 +41,10 @@ var routes = []Route{
 	r("GET", `/auth/me`, scopeNone, "auth.me"),
 	r("PUT", `/auth/me/preferences`, scopeNone, "auth.preferences"),
 	r("GET", `/insights/summary`, scopeNone, "insights.summary", policy.InsightsView),
+	r("POST", `/discover`, scopeNone, "discover.run", policy.DiscoverRun),
+	r("GET", `/discoveries`, scopeNone, "discover.list", policy.DiscoverRun),
+	r("GET", `/discoveries/\d+`, scopeNone, "discover.get", policy.DiscoverRun),
+	r("DELETE", `/discoveries/\d+`, scopeNone, "discover.delete", policy.DiscoverRun),
 
 	r("GET", `/(external/deployments|database/extensions|postgres_versions|clusters/default_name|environments|projects)`, scopeNone, "catalog.read", policy.ClustersView),
 	r("POST", `/environments`, scopeNone, "environments.create", policy.SettingsManage),

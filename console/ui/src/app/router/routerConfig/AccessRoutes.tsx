@@ -6,6 +6,7 @@ import RequirePermission from '@shared/ui/require-permission';
 const AuditLog = lazy(() => import('@pages/audit'));
 const PostgresLogs = lazy(() => import('@pages/postgres-logs'));
 const Insights = lazy(() => import('@pages/insights'));
+const Discover = lazy(() => import('@pages/discover'));
 
 // pg_genin: audit log (audit.view) and PostgreSQL server logs (logs.view)
 const AccessRoutes = () => [
@@ -26,6 +27,16 @@ const AccessRoutes = () => [
     element={
       <RequirePermission perms={['insights.view']}>
         <Insights />
+      </RequirePermission>
+    }
+  />,
+  <Route
+    key="discover"
+    path={RouterPaths.discover.absolutePath}
+    handle={{ breadcrumb: { label: 'title', ns: 'discover' } }}
+    element={
+      <RequirePermission perms={['discover.run']}>
+        <Discover />
       </RequirePermission>
     }
   />,

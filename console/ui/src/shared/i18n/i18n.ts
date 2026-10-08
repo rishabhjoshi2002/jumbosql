@@ -7,6 +7,7 @@ import clusters from './locales/en/clusters.json';
 import validation from './locales/en/validation.json';
 import toasts from './locales/en/toasts.json';
 import insights from './locales/en/insights.json';
+import discover from './locales/en/discover.json';
 import { LOCALES } from '../config/constants';
 
 import LanguageDetector from 'i18next-browser-languagedetector';
@@ -20,6 +21,7 @@ const resources = {
     validation,
     toasts,
     insights,
+    discover,
   },
 };
 
@@ -28,7 +30,7 @@ i18n
   .use(initReactI18next)
   .init({
     resources,
-    ns: ['shared', 'clusters', 'operations', 'settings', 'validation', 'toasts', 'insights'],
+    ns: ['shared', 'clusters', 'operations', 'settings', 'validation', 'toasts', 'insights', 'discover'],
     fallbackLng: LOCALES.EN_US,
     supportedLngs: Object.values(LOCALES),
     returnNull: false,

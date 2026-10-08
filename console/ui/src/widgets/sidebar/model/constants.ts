@@ -12,6 +12,7 @@ import PostgresLogsIcon from '@mui/icons-material/ReceiptLongOutlined';
 import InsightsIcon from '@mui/icons-material/TipsAndUpdatesOutlined';
 import AuditIcon from '@mui/icons-material/FactCheckOutlined';
 import HomeIcon from '@mui/icons-material/HomeOutlined';
+import DiscoverIcon from '@mui/icons-material/TravelExploreOutlined';
 import { canAny, getSessionUser, SessionUser } from '@shared/lib/session.ts';
 
 // pg_genin: menu items follow the user's access policies (perms: any one of them)
@@ -46,6 +47,12 @@ export const sidebarData = (t: TFunction, user: SessionUser | null = getSessionU
       label: t('title', { ns: 'insights' }),
       path: RouterPaths.insights.absolutePath,
       perms: ['insights.view'],
+    },
+    {
+      icon: DiscoverIcon,
+      label: t('title', { ns: 'discover' }),
+      path: RouterPaths.discover.absolutePath,
+      perms: ['discover.run'],
     },
     {
       icon: PostgresLogsIcon,

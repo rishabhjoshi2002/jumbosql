@@ -14,6 +14,7 @@ collection (version **2.2.0**). Based on [Autobase](https://github.com/autobase-
 | **Access policies (ABAC)** | **Settings → Access policies**: who (everyone, users, attribute conditions) may do what (permissions), where (clusters, environments, projects), with which data (databases, schemas, tables, hidden columns, row and time limits) and when (IP ranges, weekdays, hours). Deny wins, nothing is allowed by default. **Test access** shows what a user may do and which policy decides it. |
 | **Audit log** | Every change, SQL statement, log read, sign-in and refused request: who, when, from which IP, on which cluster, with what result. Filters, search, details per event. |
 | **Home page** | Everyone has their own: a greeting and the cards an admin picks and orders for them in Settings → Users (clusters summary, top risks, data growth, my clusters, recent queries, recent operations, shortcuts, private notes), limited to what their access allows, and the page that opens after sign-in. |
+| **Discover** | Map any PostgreSQL setup the console can reach, with just an inventory and a database login: primary, streaming and logical replicas, failover manager, every server's details, as a diagram. |
 | **Insights** | A health score (0-100) per cluster and an **All clusters** summary (worst first). Forecasts 30 days, 3 months, 6 months or 1 year ahead with a likely range: storage, disks, CPU, memory, connections, load and the biggest databases, with the date each one reaches its warning level and its limit and what to buy (vCPUs, disk size). Plus table bloat, unused indexes, top queries and a list of recommendations with the SQL. Print / save as PDF for management. |
 | **PostgreSQL logs** | Each node's server log in the browser: pick cluster, node and file, live tail, level filter (WARNING+/ERROR+), search with highlighting, download. |
 | **Create cluster** | **Inventory step**: add each VM (or **Import VM list** from the VM script), tick its roles (etcd, PostgreSQL + Patroni, HAProxy, PgBouncer, pgBackRest repo, Monitoring = Prometheus + Alertmanager + Grafana). One VM can hold one role or several. Live `inventory.yml` preview and download; the layout rules are checked as you type. |
@@ -203,6 +204,29 @@ Also on the page:
   (ANALYZE), tables read by full scans (missing index), unused indexes, low cache hit ratio, transaction ID
   wraparound risk, long-running and idle-in-transaction sessions, replica lag, temp files, deadlocks, one statement
   taking most of the time, and `pg_stat_statements` not enabled.
+
+## Discover (map any PostgreSQL setup)
+
+**Discover** in the side menu (`discover.run`, given to Administrators) looks at PostgreSQL servers that pg_genin did
+not build - any client, any layout - as long as the console can reach them. Give it:
+
+- the **inventory**: one server per line, `host`, `host:port` or `host port`;
+- one **database login** for all of them (a superuser shows everything; a role with `pg_monitor` and
+  `pg_read_all_settings` shows almost everything). The servers' `pg_hba.conf` must allow the console's IP.
+
+It connects to every server at once (read-only: catalog views and settings, then it disconnects) and works out:
+
+| | |
+|---|---|
+| **Roles** | primary, streaming standby (and cascading), logical replica, standalone; servers that could not be reached and why (refused, wrong password, pg_hba) |
+| **Links** | who streams from whom (sync/async, slot, lag), who subscribes to which publication, upstreams and clients that are not in the inventory |
+| **HA and tools** | Patroni (its REST API on 8008/8009), repmgr, pg_auto_failover, Citus, pglogical, BDR/PGD, pgBackRest / WAL-G / Barman archiving |
+| **Per server** | version, uptime, system identifier, timeline, connections, key settings, databases (size, tables, extensions, publications), replication slots, subscriptions, users and roles |
+| **Findings** | unreachable servers, standbys not streaming, unused slots keeping WAL, lag, split brain (two writable copies of one cluster), old versions, disabled subscriptions, no failover manager |
+
+The result is a diagram (one frame per physical cluster, solid arrows for streaming, dashed for logical replication),
+a plain-words summary and the details of each server. Results can be saved (the password never is), opened again,
+downloaded as JSON or printed. To try it, build the demo setup with `tools/pg-demo-cluster.sh` (above).
 
 ## PostgreSQL logs
 

@@ -7,6 +7,7 @@ import routerAuditPathsConfig from '@app/router/routerPathsConfig/routerAuditPat
 import routerLogsPathsConfig from '@app/router/routerPathsConfig/routerLogsPathsConfig.ts';
 import routerInsightsPathsConfig from '@app/router/routerPathsConfig/routerInsightsPathsConfig.ts';
 import routerHomePathsConfig from '@app/router/routerPathsConfig/routerHomePathsConfig.ts';
+import routerDiscoverPathsConfig from '@app/router/routerPathsConfig/routerDiscoverPathsConfig.ts';
 
 /*
   Combines route paths into one config
@@ -27,6 +28,7 @@ const RouterPaths = {
   audit: routerAuditPathsConfig,
   logs: routerLogsPathsConfig,
   insights: routerInsightsPathsConfig,
+  discover: routerDiscoverPathsConfig,
 } as const;
 
 export default RouterPaths;

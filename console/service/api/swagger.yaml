@@ -887,6 +887,70 @@ paths:
           schema:
             $ref: "#/definitions/Response.Error"
 
+  /discover:
+    post:
+      summary: "pg_genin: look at any PostgreSQL servers the console can reach and work out their architecture (read-only)"
+      tags: [discover]
+      parameters:
+        - name: body
+          in: body
+          required: true
+          schema:
+            $ref: "#/definitions/Request.Discover"
+      responses:
+        '200':
+          description: OK
+          schema:
+            type: object
+        '400':
+          description: Error
+          schema:
+            $ref: "#/definitions/Response.Error"
+
+  /discoveries:
+    get:
+      summary: "pg_genin: saved discoveries (newest first)"
+      tags: [discover]
+      responses:
+        '200':
+          description: OK
+          schema:
+            type: array
+            items:
+              type: object
+        '400':
+          description: Error
+          schema:
+            $ref: "#/definitions/Response.Error"
+
+  /discoveries/{id}:
+    get:
+      summary: "pg_genin: one saved discovery"
+      tags: [discover]
+      parameters:
+        - {name: id, in: path, required: true, type: integer}
+      responses:
+        '200':
+          description: OK
+          schema:
+            type: object
+        '400':
+          description: Error
+          schema:
+            $ref: "#/definitions/Response.Error"
+    delete:
+      summary: "pg_genin: delete a saved discovery"
+      tags: [discover]
+      parameters:
+        - {name: id, in: path, required: true, type: integer}
+      responses:
+        '204':
+          description: Deleted
+        '400':
+          description: Error
+          schema:
+            $ref: "#/definitions/Response.Error"
+
   /clusters/{id}/monitoring:
     get:
       summary: "pg_genin: live monitoring of a cluster from its Prometheus (services, alerts, graphs)"
@@ -1376,6 +1440,29 @@ definitions:
               type: string
           start_page:
             type: string
+
+  Request.Discover:
+    type: object
+    required: [inventory, username]
+    properties:
+      inventory:
+        type: string
+        description: "one server per line: host, host:port or host port"
+      username:
+        type: string
+      password:
+        type: string
+        description: "used for this run only, never stored"
+      database:
+        type: string
+        description: "database to log in to (default postgres)"
+      sslmode:
+        type: string
+      name:
+        type: string
+        description: "a name to save the result under"
+      save:
+        type: boolean
 
   Request.PasswordChange:
     type: object
