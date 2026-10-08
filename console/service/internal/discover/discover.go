@@ -510,6 +510,9 @@ func probe(ctx context.Context, req Request, t Target) *Node {
 	if err != nil {
 		r, err = q(ctx, c, fmt.Sprintf(subSQL, "''"))
 	}
+	if n.Role == "standby" { // a standby holds a copy of its primary's catalog: those subscriptions don't run here
+		r = nil
+	}
 	if err == nil {
 		for _, v := range r {
 			s := Subscription{Name: v[0], Database: v[1], Enabled: tb(v[2]), Publications: splitList(v[3]),
@@ -716,6 +719,12 @@ func conninfoHost(ci string) (string, int, bool) {
 		p = 5432
 	}
 	return h, p, true
+}
+
+// conninfoApp: the application_name in a connection string (how a standby names itself to its upstream)
+func conninfoApp(ci string) string {
+	m, _ := parseConninfo(ci)
+	return m["application_name"]
 }
 
 func conninfoDB(ci string) string {

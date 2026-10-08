@@ -79,6 +79,21 @@ func (g *graph) external(host string, port int, role string) *Node {
 	return n
 }
 
+func (g *graph) externalNamed(addr, app, role string) *Node {
+	if app == "" || app == "walreceiver" {
+		return g.external(addr, 0, role)
+	}
+	id := app + "@" + addr
+	if n := g.byID[id]; n != nil {
+		return n
+	}
+	n := g.external(addr, 0, role)
+	delete(g.byID, n.ID)
+	n.ID, n.Name = id, app
+	g.byID[id] = n
+	return n
+}
+
 func (g *graph) add(e Edge) {
 	key := e.Kind + "|" + e.From + "|" + e.To + "|" + e.Label
 	if !g.edges[key] {
@@ -106,13 +121,31 @@ func link(res *Result) {
 		}
 		e := Edge{From: up.ID, To: n.ID, Kind: "streaming", Slot: n.Receiver.SlotName, State: n.Receiver.Status,
 			Healthy: n.Receiver.Status == "streaming"}
-		for i := range up.Senders {
-			s := &up.Senders[i]
-			if s.Kind == "physical" && !s.matched && (n.aliases[s.ClientAddr] || (s.Application != "" && s.Application == n.Name)) {
-				s.matched = true
-				e.Sync, e.State, e.LagBytes, e.ReplayLag = s.SyncState, s.State, s.LagBytes, s.ReplayLag
-				break
+		// the upstream's walsender for this standby: same slot, else same application name, else the only one
+		// from its address
+		app := conninfoApp(n.primaryConninfo)
+		var pick *Sender
+		for pass := 0; pass < 3 && pick == nil; pass++ {
+			var hits []*Sender
+			for i := range up.Senders {
+				s := &up.Senders[i]
+				if s.Kind != "physical" || s.matched {
+					continue
+				}
+				switch {
+				case pass == 0 && n.Receiver.SlotName != "" && s.SlotName == n.Receiver.SlotName,
+					pass == 1 && s.Application != "" && (s.Application == app || s.Application == n.Name),
+					pass == 2 && n.aliases[s.ClientAddr]:
+					hits = append(hits, s)
+				}
 			}
+			if len(hits) == 1 {
+				pick = hits[0]
+			}
+		}
+		if pick != nil {
+			pick.matched = true
+			e.Sync, e.State, e.LagBytes, e.ReplayLag = pick.SyncState, pick.State, pick.LagBytes, pick.ReplayLag
 		}
 		g.add(e)
 	}
@@ -178,15 +211,25 @@ func link(res *Result) {
 			}
 			w.matched = true
 			target := g.byIP(w.ClientAddr, nil)
+			if target == n {
+				target = nil
+			}
 			if w.Kind == "physical" {
-				if target == nil {
-					target = g.external(w.ClientAddr, 0, "standby (not in the inventory)")
+				// only a standby that we could not tie to an upstream can be the reader
+				if target != nil && (target.Role != "standby" || target.Receiver != nil) {
+					target = nil
+				}
+				if target == nil { // one outside node per standby: the address, plus its name when it gives one
+					target = g.externalNamed(w.ClientAddr, w.Application, "standby (not in the inventory)")
 				}
 				g.add(Edge{From: n.ID, To: target.ID, Kind: "streaming", Sync: w.SyncState, State: w.State,
 					LagBytes: w.LagBytes, ReplayLag: w.ReplayLag, Slot: w.SlotName, Healthy: w.State == "streaming"})
 			} else {
+				if target != nil && target.Role == "standby" {
+					target = nil
+				}
 				if target == nil {
-					target = g.external(w.ClientAddr, 0, "subscriber (not in the inventory)")
+					target = g.externalNamed(w.ClientAddr, w.Application, "subscriber (not in the inventory)")
 				}
 				g.add(Edge{From: n.ID, To: target.ID, Kind: "logical", Label: "slot " + w.SlotName, State: w.State,
 					LagBytes: w.LagBytes, Slot: w.SlotName, Healthy: w.State == "streaming"})
@@ -424,6 +467,8 @@ func describe(res *Result) {
 					}
 				}
 			}
+		case physical > 1 && logical > 0:
+			name = plural(physical, "replicated cluster", "replicated clusters") + " linked by logical replication"
 		case physical > 1:
 			name = plural(physical, "replicated cluster", "replicated clusters")
 		default:
@@ -431,7 +476,7 @@ func describe(res *Result) {
 		}
 		if c.Subscribers > 0 {
 			name += " + " + plural(c.Subscribers, "logical replica", "logical replicas")
-		} else if logical > 0 {
+		} else if logical > 0 && !strings.Contains(name, "logical") {
 			name += " + logical replication"
 		}
 	}

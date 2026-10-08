@@ -16,10 +16,27 @@
 #   logical : its own cluster; database shop gets customers, products, orders through subscription shop_sub,
 #             plus a local table (daily_sales) that only exists here
 #
+# --layout cross (4 VMs): two separate HA clusters linked by logical replication in both directions
+#
+#       cluster A (transactions)                          cluster B (reporting)
+#       <set>-a-primary ──── logical: shop_pub ─────────►  <set>-b-primary   copies customers, products,
+#             │        ◄─── logical: dw_pub (daily_sales) ──    │           orders; builds daily_sales
+#             │ streaming, SYNCHRONOUS                          │ streaming, asynchronous
+#             ▼                                                 ▼
+#       <set>-a-standby                                   <set>-b-standby
+#
+#   a-primary : shop and hr (as above), and database analytics that gets daily_sales back from B (dw_sub)
+#   a-standby : synchronous standby (synchronous_standby_names): a commit on A waits for it
+#   b-primary : subscriber of shop_pub (shop_sub), publisher of dw_pub, with its own standby
+#   b-standby : asynchronous standby of b-primary
+#
 # Usage (as root on the KVM host, next to jumbosql-vms.sh):
-#   ./pg-demo-cluster.sh [--name SET]          create the 3 VMs (jumbosql-vms.sh --layout demo) and set them up
-#   ./pg-demo-cluster.sh --name SET --skip-vms set up VMs that jumbosql-vms.sh --layout demo already made
-#   ./pg-demo-cluster.sh --destroy SET         delete the VMs (same as jumbosql-vms.sh --destroy SET)
+#   ./pg-demo-cluster.sh [--name SET]                  3 VMs: primary, streaming standby, logical replica
+#   ./pg-demo-cluster.sh --layout cross [--name SET]   4 VMs: two clusters linked by logical replication
+#   ./pg-demo-cluster.sh ... --skip-vms                set up VMs that jumbosql-vms.sh already made
+#   ./pg-demo-cluster.sh --destroy SET                 delete the VMs (same as jumbosql-vms.sh --destroy SET)
+#
+# The cross layout makes smaller VMs (RAM_MB=2048, DISK=20G unless set) so both demos fit on one host.
 #
 # Passwords (env, else generated): DBA_PASSWORD (user dba, superuser - for pg_genin Discover),
 # REPL_PASSWORD (user replicator). They are printed at the end and saved to /root/pg-demo-<set>.txt (root only).
@@ -37,7 +54,7 @@ PGDG_RPM="https://download.postgresql.org/pub/repos/yum/reporpms/EL-9-x86_64/pgd
 SSH_OPTS=(-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -o BatchMode=yes
           -o ConnectTimeout=10 -o ServerAliveInterval=30)
 
-SET_NAME="" SKIP_VMS=0 STEP_NO=0
+SET_NAME="" SKIP_VMS=0 STEP_NO=0 LAYOUT=simple
 info() { printf '\033[1;34m==>\033[0m %s\n' "$*"; }
 step() { STEP_NO=$((STEP_NO + 1)); printf '\n\033[1;36m[%02d] %s\033[0m\n' "$STEP_NO" "$*"; }
 ok()   { printf '    \033[32mok\033[0m   %s\n' "$*"; }
@@ -54,6 +71,7 @@ psql_on() {
     "cd /tmp && sudo -u postgres env PGOPTIONS='-c client_min_messages=warning' $PGBIN/psql -X -q -v ON_ERROR_STOP=1 -d $db" <<<"$sql"
 }
 q() { printf "%s" "${1//\'/\'\'}"; }   # quote for a SQL string literal
+pg_port() { echo 5432; }               # the PostgreSQL port of a VM (the same on all of them)
 
 # no pipe: with pipefail, "tr </dev/urandom | head" fails when head closes the pipe
 gen_pw() { local p; p=$(LC_ALL=C tr -dc 'A-Za-z0-9' < <(head -c 600 /dev/urandom)); printf '%s' "${p:0:20}"; }
@@ -64,6 +82,7 @@ main() {
     case $1 in
       --name)     SET_NAME=${2:?--name needs a value}; shift ;;
       --skip-vms) SKIP_VMS=1 ;;
+      --layout)   LAYOUT=${2:?--layout needs simple or cross}; shift ;;
       --destroy)  exec "$VMS_SCRIPT" --destroy "${2:?--destroy needs a set name}" ;;
       -h|--help)  usage; exit 0 ;;
       *)          echo "Unknown option: $1"; usage; exit 2 ;;
@@ -71,13 +90,19 @@ main() {
     shift
   done
   [[ $EUID -eq 0 ]] || die "run this script as root on the KVM host"
-  SET_NAME=${SET_NAME:-pgdemo}
+  [[ $LAYOUT == simple || $LAYOUT == cross ]] || die "--layout must be simple or cross"
+  if [[ $LAYOUT == cross ]]; then SET_NAME=${SET_NAME:-pgcross}; else SET_NAME=${SET_NAME:-pgdemo}; fi
   [[ $SET_NAME =~ ^[a-z0-9][a-z0-9-]{0,20}$ ]] || die "--name: lowercase letters, digits and '-', max 21"
 
   if (( ! SKIP_VMS )); then
-    step "Create 3 VMs with jumbosql-vms.sh (layout demo, set $SET_NAME)"
     [[ -x $VMS_SCRIPT ]] || die "$VMS_SCRIPT not found (keep both scripts in the same folder)"
-    "$VMS_SCRIPT" --layout demo --name "$SET_NAME"
+    if [[ $LAYOUT == cross ]]; then
+      step "Create 4 VMs with jumbosql-vms.sh (layout demo-cross, set $SET_NAME)"
+      RAM_MB=${RAM_MB:-2048} DISK=${DISK:-20G} "$VMS_SCRIPT" --layout demo-cross --name "$SET_NAME"
+    else
+      step "Create 3 VMs with jumbosql-vms.sh (layout demo, set $SET_NAME)"
+      "$VMS_SCRIPT" --layout demo --name "$SET_NAME"
+    fi
   fi
 
   step "Read the VM list"
@@ -85,12 +110,23 @@ main() {
   SSH_KEY=/root/.ssh/jumbosql-$SET_NAME
   [[ -r $list ]] || die "$list not found - create the VMs first (without --skip-vms)"
   [[ -r $SSH_KEY ]] || die "$SSH_KEY not found"
-  P_NAME=$(awk '!/^#/ && $1 ~ /-primary$/ {print $1}' "$list"); P_IP=$(awk '!/^#/ && $1 ~ /-primary$/ {print $2}' "$list")
-  S_NAME=$(awk '!/^#/ && $1 ~ /-standby$/ {print $1}' "$list"); S_IP=$(awk '!/^#/ && $1 ~ /-standby$/ {print $2}' "$list")
-  L_NAME=$(awk '!/^#/ && $1 ~ /-logical$/ {print $1}' "$list"); L_IP=$(awk '!/^#/ && $1 ~ /-logical$/ {print $2}' "$list")
-  [[ -n $P_IP && -n $S_IP && -n $L_IP ]] || die "$list must list <set>-primary, -standby and -logical (use --layout demo)"
-  SUBNET_CIDR="${P_IP%.*}.0/24"
-  ok "primary $P_IP   standby $S_IP   logical $L_IP   (network $SUBNET_CIDR)"
+  # vm SUFFIX FIELD: the name (1) or IP (2) of <set>-SUFFIX in the VM list
+  vm() { awk -v s="$SET_NAME-$1" -v f="$2" '!/^#/ && $1 == s {print $f}' "$list"; }
+  if [[ $LAYOUT == cross ]]; then
+    A1_NAME=$(vm a-primary 1); A1_IP=$(vm a-primary 2); A2_NAME=$(vm a-standby 1); A2_IP=$(vm a-standby 2)
+    B1_NAME=$(vm b-primary 1); B1_IP=$(vm b-primary 2); B2_NAME=$(vm b-standby 1); B2_IP=$(vm b-standby 2)
+    [[ -n $A1_IP && -n $A2_IP && -n $B1_IP && -n $B2_IP ]] || die "$list must list <set>-a-primary, -a-standby, -b-primary, -b-standby"
+    ALL_IPS=("$A1_IP" "$A2_IP" "$B1_IP" "$B2_IP")
+    SUBNET_CIDR="${A1_IP%.*}.0/24"
+    ok "A: primary $A1_IP standby $A2_IP   B: primary $B1_IP standby $B2_IP   (network $SUBNET_CIDR)"
+  else
+    P_NAME=$(vm primary 1); P_IP=$(vm primary 2); S_NAME=$(vm standby 1); S_IP=$(vm standby 2)
+    L_NAME=$(vm logical 1); L_IP=$(vm logical 2)
+    [[ -n $P_IP && -n $S_IP && -n $L_IP ]] || die "$list must list <set>-primary, -standby and -logical (use --layout demo)"
+    ALL_IPS=("$P_IP" "$S_IP" "$L_IP")
+    SUBNET_CIDR="${P_IP%.*}.0/24"
+    ok "primary $P_IP   standby $S_IP   logical $L_IP   (network $SUBNET_CIDR)"
+  fi
 
   local secrets=/root/pg-demo-$SET_NAME.txt
   if [[ -r $secrets ]]; then   # re-run: keep the passwords already in use
@@ -102,17 +138,23 @@ main() {
   ( umask 077; printf 'DBA_PASSWORD=%s\nREPL_PASSWORD=%s\n' "$DBA_PASSWORD" "$REPL_PASSWORD" >"$secrets" )
 
   install_pg
-  setup_primary
-  setup_standby
-  setup_logical
-  verify
-  summary
+  if [[ $LAYOUT == cross ]]; then
+    setup_cross
+    verify_cross
+    summary_cross
+  else
+    setup_primary
+    setup_standby "$P_IP" "$S_IP" "$S_NAME"
+    setup_logical
+    verify
+    summary
+  fi
 }
 
 # ---------------------------------------------------------------------------------------------------------
 install_pg() {
   local ip
-  for ip in "$P_IP" "$S_IP" "$L_IP"; do
+  for ip in "${ALL_IPS[@]}"; do
     step "Install PostgreSQL $PG_MAJOR on $ip"
     on "$ip" "
       if ! rpm -q postgresql$PG_MAJOR-server >/dev/null 2>&1; then
@@ -255,8 +297,9 @@ FROM generate_series(1, 300 - (SELECT count(*) FROM employees)) g;
   ok "users dba, replicator, app_user; databases shop (~20k orders) and hr; publication shop_pub; slot standby_slot"
 }
 
-setup_standby() {
-  step "Standby ($S_NAME): copy the primary with pg_basebackup and follow it (streaming replication)"
+setup_standby() {   # setup_standby UPSTREAM_IP STANDBY_IP STANDBY_NAME (the upstream has a slot standby_slot)
+  local up=$1 S_IP=$2 S_NAME=$3
+  step "Standby ($S_NAME): copy $up with pg_basebackup and follow it (streaming replication)"
   on "$S_IP" "
     if [[ -f $PGDATA/standby.signal ]]; then
       echo 'already a standby'
@@ -265,12 +308,12 @@ setup_standby() {
       rm -rf $PGDATA && install -d -o postgres -g postgres -m 700 $PGDATA
       # PGAPPNAME names this standby in the primary's pg_stat_replication (-R keeps it in primary_conninfo)
       cd /tmp && sudo -u postgres env PGPASSWORD='$(q "$REPL_PASSWORD")' PGAPPNAME='$S_NAME' \
-        $PGBIN/pg_basebackup -h $P_IP -U replicator -D $PGDATA -X stream -S standby_slot -R -c fast
+        $PGBIN/pg_basebackup -h $up -p $(pg_port "$up") -U replicator -D $PGDATA -X stream -S standby_slot -R -c fast
       sed -i \"s/^cluster_name = .*/cluster_name = '\$(hostname -s)'/\" $PGDATA/conf.d/pg_demo.conf
     fi
     systemctl enable -q postgresql-$PG_MAJOR
     systemctl restart postgresql-$PG_MAJOR"
-  ok "standby is streaming from $P_IP"
+  ok "standby is streaming from $up"
 }
 
 setup_logical() {
@@ -299,7 +342,7 @@ CREATE TABLE IF NOT EXISTS orders (
 CREATE TABLE IF NOT EXISTS daily_sales (day date PRIMARY KEY, orders int, revenue numeric(14,2));
 RESET ROLE;
 SELECT format('CREATE SUBSCRIPTION shop_sub CONNECTION %L PUBLICATION shop_pub',
-              'host=$P_IP port=5432 dbname=shop user=replicator password=$(q "$REPL_PASSWORD") application_name=$L_NAME')
+              'host=$P_IP port=$(pg_port "$P_IP") dbname=shop user=replicator password=$(q "$REPL_PASSWORD") application_name=$L_NAME')
  WHERE NOT EXISTS (SELECT FROM pg_subscription WHERE subname = 'shop_sub') \\gexec
 "
   # wait for the first copy, then fill the local reporting table
@@ -362,6 +405,103 @@ summary() {
     Try it:   ssh -i $SSH_KEY root@$P_IP "sudo -u postgres psql -c 'select * from pg_stat_replication'"
     Remove:   $0 --destroy $SET_NAME
 EOF
+}
+
+# --------------------------------------------------- layout cross ---------------------------------------------------
+setup_cross() {
+  # cluster A: the transaction database (same as the simple layout's primary) and its synchronous standby
+  P_IP=$A1_IP P_NAME=$A1_NAME setup_primary
+  setup_standby "$A1_IP" "$A2_IP" "$A2_NAME"
+  step "Cluster A: make $A2_NAME a synchronous standby"
+  psql_on "$A1_IP" postgres "ALTER SYSTEM SET synchronous_standby_names = 'FIRST 1 (\"$A2_NAME\")';
+SELECT pg_reload_conf();" >/dev/null
+  ok "a commit on $A1_NAME now waits for $A2_NAME"
+
+  # cluster B: subscribes to A's orders (the simple layout's logical replica), builds daily_sales
+  P_IP=$A1_IP L_IP=$B1_IP L_NAME=$B1_NAME setup_logical
+  step "Cluster B ($B1_NAME): replication user, slot for its standby, publication dw_pub"
+  psql_on "$B1_IP" postgres "
+DO \$\$ BEGIN
+  IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'replicator') THEN CREATE ROLE replicator LOGIN REPLICATION; END IF;
+END \$\$;
+ALTER ROLE replicator PASSWORD '$(q "$REPL_PASSWORD")';
+SELECT pg_create_physical_replication_slot('standby_slot') WHERE NOT EXISTS (SELECT FROM pg_replication_slots WHERE slot_name = 'standby_slot');
+" >/dev/null
+  psql_on "$B1_IP" shop "
+GRANT SELECT ON daily_sales TO replicator;
+SELECT 'CREATE PUBLICATION dw_pub FOR TABLE daily_sales' WHERE NOT EXISTS (SELECT FROM pg_publication WHERE pubname = 'dw_pub') \\gexec
+"
+  ok "publication dw_pub (daily_sales) on $B1_NAME"
+  setup_standby "$B1_IP" "$B2_IP" "$B2_NAME"
+
+  # back to A: database analytics receives daily_sales from B
+  step "Cluster A ($A1_NAME): database analytics subscribes to dw_pub on $B1_NAME"
+  psql_on "$A1_IP" postgres "SELECT 'CREATE DATABASE analytics OWNER app_user' WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = 'analytics') \\gexec"
+  psql_on "$A1_IP" analytics "
+SET ROLE app_user;
+CREATE TABLE IF NOT EXISTS daily_sales (day date PRIMARY KEY, orders int, revenue numeric(14,2));
+RESET ROLE;
+SELECT format('CREATE SUBSCRIPTION dw_sub CONNECTION %L PUBLICATION dw_pub',
+              'host=$B1_IP port=$(pg_port "$B1_IP") dbname=shop user=replicator password=$(q "$REPL_PASSWORD") application_name=$A1_NAME')
+ WHERE NOT EXISTS (SELECT FROM pg_subscription WHERE subname = 'dw_sub') \\gexec
+"
+  local state=""
+  for _ in $(seq 1 60); do
+    state=$(psql_on "$A1_IP" analytics "\\pset tuples_only on
+SELECT count(*) FILTER (WHERE srsubstate <> 'r') FROM pg_subscription_rel;" | tr -d ' \n')
+    [[ $state == 0 ]] && break
+    sleep 2
+  done
+  [[ $state == 0 ]] || die "dw_sub did not finish its first copy (check $A1_IP: journalctl -u postgresql-$PG_MAJOR)"
+  ok "subscription dw_sub copies daily_sales from $B1_NAME into analytics on $A1_NAME"
+}
+
+count_on() { psql_on "$1" "$2" "\\pset tuples_only on
+$3" | tr -d ' \n'; }
+
+verify_cross() {
+  step "Check replication"
+  printf '    %s - readers (pg_stat_replication):\n' "$A1_NAME"
+  psql_on "$A1_IP" postgres "SELECT application_name, client_addr, state, sync_state FROM pg_stat_replication ORDER BY 1;" | sed 's/^/      /'
+  printf '    %s - readers (pg_stat_replication):\n' "$B1_NAME"
+  psql_on "$B1_IP" postgres "SELECT application_name, client_addr, state, sync_state FROM pg_stat_replication ORDER BY 1;" | sed 's/^/      /'
+  # a new order on A travels: A -> A's standby (streaming), A -> B (logical) -> B's standby (streaming)
+  psql_on "$A1_IP" shop "INSERT INTO orders (customer_id, status, total, ordered_at) VALUES (1, 'new', 999.00, now());"
+  sleep 3
+  # B rebuilds today's daily_sales row, which flows back to A's analytics database (logical)
+  psql_on "$B1_IP" shop "INSERT INTO daily_sales SELECT ordered_at::date, count(*), sum(total) FROM orders
+ WHERE ordered_at::date = current_date GROUP BY 1 ON CONFLICT (day) DO UPDATE SET orders = excluded.orders, revenue = excluded.revenue;"
+  sleep 3
+  local a2 b1 b2 back
+  a2=$(count_on "$A2_IP" shop "SELECT count(*) FROM orders;")
+  b1=$(count_on "$B1_IP" shop "SELECT count(*) FROM orders;")
+  b2=$(count_on "$B2_IP" shop "SELECT count(*) FROM orders;")
+  back=$(count_on "$A1_IP" analytics "SELECT coalesce(max(orders), 0) FROM daily_sales WHERE day = current_date;")
+  ok "orders: $A2_NAME $a2, $B1_NAME $b1, $B2_NAME $b2;  today's daily_sales back on $A1_NAME: $back orders"
+}
+
+summary_cross() {
+  step "Done: demo set $SET_NAME (two clusters linked by logical replication)"
+  local inv=/root/pg-demo-$SET_NAME-inventory.txt
+  { echo "# pg_genin Discover inventory (host port), demo set $SET_NAME"
+    printf '%s 5432\n' "$A1_IP" "$A2_IP" "$B1_IP" "$B2_IP"; } >"$inv"
+  cat <<SUMMARY
+
+    Cluster A   $A1_NAME   $A1_IP   primary     shop, hr, analytics; publishes shop_pub; subscribes dw_pub
+                $A2_NAME   $A2_IP   standby     synchronous streaming replica of $A1_NAME
+    Cluster B   $B1_NAME   $B1_IP   primary     subscribes shop_pub; publishes dw_pub (daily_sales)
+                $B2_NAME   $B2_IP   standby     asynchronous streaming replica of $B1_NAME
+
+    For pg_genin -> Discover:
+      inventory   $(tr '\n' ' ' < <(grep -v '^#' "$inv" | awk '{print $1":"$2}'))   ($inv)
+      username    dba
+      password    $DBA_PASSWORD
+    Replication user: replicator / $REPL_PASSWORD
+    Passwords saved in /root/pg-demo-$SET_NAME.txt (root only).
+
+    Note: $A2_NAME is synchronous - if it is down, commits on $A1_NAME wait.
+    Remove:   $0 --destroy $SET_NAME
+SUMMARY
 }
 
 main "$@"

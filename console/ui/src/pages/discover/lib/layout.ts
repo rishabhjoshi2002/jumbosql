@@ -29,21 +29,26 @@ export const layout = (nodes: DNode[], edges: DEdge[], groups: DGroup[]): Layout
     ? groups
     : nodes.map((n) => ({ id: n.id, system_id: '', name: n.name ?? n.id, members: [n.id], ha: '' }));
 
-  // 1. column of every group: how many logical hops from a group that only sends
+  // 1. column of every group: logical hops from where the data starts (a group that only sends; in a cycle,
+  //    the group listed first in the inventory). Breadth-first, so each group gets its shortest distance.
   const col: Record<string, number> = {};
-  gs.forEach((g) => (col[g.id] = 0));
   const logical = edges.filter((e) => e.kind === 'logical' && groupOf[e.from] !== groupOf[e.to]);
-  for (let i = 0; i < gs.length; i++) {
-    let changed = false;
-    logical.forEach((e) => {
-      const a = groupOf[e.from];
-      const b = groupOf[e.to];
-      if (col[b] < col[a] + 1 && col[a] + 1 < gs.length) {
-        col[b] = col[a] + 1;
-        changed = true;
-      }
-    });
-    if (!changed) break;
+  const hasIncoming = new Set(logical.map((e) => groupOf[e.to]));
+  const seeds = [...gs.filter((g) => !hasIncoming.has(g.id)), ...gs];
+  for (const seed of seeds) {
+    if (col[seed.id] !== undefined) continue;
+    col[seed.id] = 0;
+    const queue = [seed.id];
+    while (queue.length) {
+      const a = queue.shift()!;
+      logical.forEach((e) => {
+        const b = groupOf[e.to];
+        if (groupOf[e.from] === a && col[b] === undefined) {
+          col[b] = col[a] + 1;
+          queue.push(b);
+        }
+      });
+    }
   }
 
   // 2. inside a group: levels of the streaming tree
@@ -139,8 +144,17 @@ export const layout = (nodes: DNode[], edges: DEdge[], groups: DGroup[]): Layout
         b.y,
       ];
     } else if (b.x > a.x + a.w) {
+      // forward (left to right), in the upper part of the boxes
       const dx = (b.x - a.x - a.w) / 2;
-      p = [a.x + a.w, a.y + a.h / 2, a.x + a.w + dx, a.y + a.h / 2, b.x - dx, b.y + b.h / 2, b.x, b.y + b.h / 2];
+      const ya = a.y + a.h * 0.36;
+      const yb = b.y + b.h * 0.36;
+      p = [a.x + a.w, ya, a.x + a.w + dx, ya, b.x - dx, yb, b.x, yb];
+    } else if (b.x + b.w < a.x) {
+      // back (right to left), in the lower part, so the two directions never overlap
+      const dx = (a.x - b.x - b.w) / 2;
+      const ya = a.y + a.h * 0.72;
+      const yb = b.y + b.h * 0.72;
+      p = [a.x, ya, a.x - dx, ya, b.x + b.w + dx, yb, b.x + b.w, yb];
     } else {
       // same column: loop out to the right
       p = [

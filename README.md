@@ -291,6 +291,16 @@ with plain PostgreSQL 17 from the PGDG repository - `<set>-primary` (databases `
 ./tools/pg-demo-cluster.sh --destroy pgdemo
 ```
 
+A second layout, `--layout cross` (4 VMs, `jumbosql-vms.sh --layout demo-cross`), builds **two HA clusters linked by
+logical replication in both directions**: cluster A (`a-primary` + a **synchronous** streaming standby) sends
+customers, products and orders to cluster B (`b-primary` + an asynchronous standby), and B sends its `daily_sales`
+back to A's `analytics` database.
+
+```bash
+./tools/pg-demo-cluster.sh --layout cross --name pgcross   # smaller VMs: RAM_MB=2048 DISK=20G unless set
+./tools/pg-demo-cluster.sh --destroy pgcross
+```
+
 At the end it prints the inventory (`IP:5432` of each VM) and the `dba` user and password, and saves them in
 `/root/pg-demo-<set>-inventory.txt` and `/root/pg-demo-<set>.txt` (root only). The VMs need internet access for
 the PGDG repository.

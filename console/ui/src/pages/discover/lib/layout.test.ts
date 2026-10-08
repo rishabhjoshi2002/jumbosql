@@ -29,4 +29,23 @@ describe('discover layout', () => {
     expect(l.paths).toHaveLength(3);
     expect(l.frames.filter((f) => f.framed)).toHaveLength(2);
   });
+  it('draws a logical link back to the left below the one going right', () => {
+    const nodes = [node('a', 'primary', 'g1'), node('b', 'primary', 'g2')];
+    const e = (from: string, to: string): DEdge => ({
+      from,
+      to,
+      kind: 'logical',
+      lag_bytes: 0,
+      replay_lag_seconds: 0,
+      healthy: true,
+    });
+    const groups: DGroup[] = [
+      { id: 'g1', system_id: '1', name: 'A', primary: 'a', members: ['a'], ha: '' },
+      { id: 'g2', system_id: '2', name: 'B', primary: 'b', members: ['b'], ha: '' },
+    ];
+    const l = layout(nodes, [e('b', 'a'), e('a', 'b')], groups);
+    expect(l.boxes.b.x).toBeGreaterThan(l.boxes.a.x); // in a cycle, the first group stays on the left
+    const [back, fwd] = l.paths;
+    expect(back.ly).toBeGreaterThan(fwd.ly);
+  });
 });

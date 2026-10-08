@@ -11,6 +11,8 @@
 #                       automation connects through localhost, so they stay on one VM)   (9 VMs by default)
 #   demo                3 plain VMs named primary, standby, logical - for tools/pg-demo-cluster.sh (plain
 #                       PostgreSQL 17 with streaming and logical replication, to try Discover in pg_genin)
+#   demo-cross          4 plain VMs named a-primary, a-standby, b-primary, b-standby - for
+#                       pg-demo-cluster.sh --layout cross (two clusters linked by logical replication)
 #
 # Each VM gets:
 #   - a free static IP on the libvirt network (picked automatically, or --ips), reserved in libvirt DHCP
@@ -176,7 +178,12 @@ add_vm() { L_SUFFIX+=("$1"); L_ROLES+=("$2"); L_RAM+=("$3"); L_DISK+=("$4"); }
 
 build_layout() {   # role names are the ones pg_genin's inventory step uses
   local i etcd_n
-  if [[ $LAYOUT == demo ]]; then
+  if [[ $LAYOUT == demo-cross ]]; then
+    add_vm a-primary postgres "$RAM_MB" "$DISK"
+    add_vm a-standby postgres "$RAM_MB" "$DISK"
+    add_vm b-primary postgres "$RAM_MB" "$DISK"
+    add_vm b-standby postgres "$RAM_MB" "$DISK"
+  elif [[ $LAYOUT == demo ]]; then
     add_vm primary postgres "$RAM_MB" "$DISK"
     add_vm standby postgres "$RAM_MB" "$DISK"
     add_vm logical postgres "$RAM_MB" "$DISK"
@@ -537,7 +544,7 @@ main() {
     esac
     shift
   done
-  [[ $LAYOUT == combined || $LAYOUT == split || $LAYOUT == demo ]] || { echo "--layout must be combined, split or demo"; exit 2; }
+  [[ $LAYOUT =~ ^(combined|split|demo|demo-cross)$ ]] || { echo "--layout must be combined, split, demo or demo-cross"; exit 2; }
   if [[ $LAYOUT == split ]]; then
     (( ! COUNT_SET )) || { echo "--count is for the combined layout; use --db N with --layout split"; exit 2; }
     [[ $DB_COUNT =~ ^[0-9]+$ ]] && (( DB_COUNT >= 2 && DB_COUNT <= 5 )) || { echo "--db must be 2-5"; exit 2; }
