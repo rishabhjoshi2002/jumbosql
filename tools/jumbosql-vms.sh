@@ -9,6 +9,8 @@
 #   split               3 etcd, --db N PostgreSQL + Patroni (default 3), 1 proxy (HAProxy + PgBouncer),
 #                       1 pgBackRest repo, 1 monitor (Prometheus + Alertmanager + Grafana, which the HA
 #                       automation connects through localhost, so they stay on one VM)   (9 VMs by default)
+#   demo                3 plain VMs named primary, standby, logical - for tools/pg-demo-cluster.sh (plain
+#                       PostgreSQL 17 with streaming and logical replication, to try Discover in pg_genin)
 #
 # Each VM gets:
 #   - a free static IP on the libvirt network (picked automatically, or --ips), reserved in libvirt DHCP
@@ -174,7 +176,11 @@ add_vm() { L_SUFFIX+=("$1"); L_ROLES+=("$2"); L_RAM+=("$3"); L_DISK+=("$4"); }
 
 build_layout() {   # role names are the ones pg_genin's inventory step uses
   local i etcd_n
-  if [[ $LAYOUT == split ]]; then
+  if [[ $LAYOUT == demo ]]; then
+    add_vm primary postgres "$RAM_MB" "$DISK"
+    add_vm standby postgres "$RAM_MB" "$DISK"
+    add_vm logical postgres "$RAM_MB" "$DISK"
+  elif [[ $LAYOUT == split ]]; then
     for i in 1 2 3; do add_vm "etcd$i" etcd "$RAM_SMALL" "$DISK_SMALL"; done
     for (( i = 1; i <= DB_COUNT; i++ )); do add_vm "pg$i" patroni "$RAM_DB" "$DISK_DB"; done
     add_vm proxy    "haproxy,pgbouncer" "$RAM_SMALL" "$DISK_SMALL"
@@ -531,7 +537,7 @@ main() {
     esac
     shift
   done
-  [[ $LAYOUT == combined || $LAYOUT == split ]] || { echo "--layout must be combined or split"; exit 2; }
+  [[ $LAYOUT == combined || $LAYOUT == split || $LAYOUT == demo ]] || { echo "--layout must be combined, split or demo"; exit 2; }
   if [[ $LAYOUT == split ]]; then
     (( ! COUNT_SET )) || { echo "--count is for the combined layout; use --db N with --layout split"; exit 2; }
     [[ $DB_COUNT =~ ^[0-9]+$ ]] && (( DB_COUNT >= 2 && DB_COUNT <= 5 )) || { echo "--db must be 2-5"; exit 2; }

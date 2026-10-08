@@ -239,6 +239,22 @@ with Red Hat (prompted), installs `glibc-langpack-en` and `chrony`, and creates 
 (`/root/.ssh/jumbosql-<set>`). If any step fails, everything that run created is rolled back. The summary prints the
 hostnames, IPs, suggested roles and the key to paste into pg_genin. Sizes: `RAM_MB=4096 VCPUS=2 DISK=40G`.
 
+### Demo: an ordinary PostgreSQL 17 setup (to try Discover)
+
+`tools/pg-demo-cluster.sh` builds something pg_genin did **not** deploy: 3 VMs (`jumbosql-vms.sh --layout demo`)
+with plain PostgreSQL 17 from the PGDG repository - `<set>-primary` (databases `shop` and `hr` with sample data),
+`<set>-standby` (streaming replica through slot `standby_slot`) and `<set>-logical` (subscriber of publication
+`shop_pub`, plus a table of its own).
+
+```bash
+./tools/pg-demo-cluster.sh --name pgdemo        # asks for the root password and Red Hat registration like jumbosql-vms.sh
+./tools/pg-demo-cluster.sh --destroy pgdemo
+```
+
+At the end it prints the inventory (`IP:5432` of each VM) and the `dba` user and password, and saves them in
+`/root/pg-demo-<set>-inventory.txt` and `/root/pg-demo-<set>.txt` (root only). The VMs need internet access for
+the PGDG repository.
+
 ## Create a cluster
 
 1. **Clusters → Create cluster**. In **Inventory (virtual machines)** add each VM (hostname, IP) and tick its roles.
