@@ -72,6 +72,7 @@ type Database struct {
 	Tables        int           `json:"tables"`
 	Extensions    []string      `json:"extensions"`
 	Publications  []Publication `json:"publications"`
+	Inventory     *Inventory    `json:"inventory,omitempty"` // everything inside (for migrations)
 	Error         string        `json:"error,omitempty"`
 	connectFailed bool
 }
@@ -543,6 +544,9 @@ func probe(ctx context.Context, req Request, t Target) *Node {
 			dc = conn
 		}
 		probeDatabase(ctx, dc, d, n)
+		ictx, cancel := context.WithTimeout(ctx, 30*time.Second)
+		d.Inventory = collectInventory(ictx, dc, n.VersionNum)
+		cancel()
 		if dc != c {
 			dc.Close(context.Background())
 		}

@@ -5,9 +5,11 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strings"
 	"time"
 
+	acc "postgresql-cluster-console/internal/access"
 	"postgresql-cluster-console/internal/controllers"
 	disc "postgresql-cluster-console/internal/discover"
 	"postgresql-cluster-console/internal/storage"
@@ -134,4 +136,49 @@ func (h *deleteHandler) Handle(param ops.DeleteDiscoveriesIDParams) middleware.R
 		return ops.NewDeleteDiscoveriesIDBadRequest().WithPayload(controllers.MakeErrorPayload(err, controllers.BaseError))
 	}
 	return ops.NewDeleteDiscoveriesIDNoContent()
+}
+
+/* ------------------------------------------------------------ read-only queries ------------------------------------------------------------ */
+
+type queryHandler struct{ access *acc.Service }
+
+func NewPostDiscoverQueryHandler(a *acc.Service) ops.PostDiscoverQueryHandler {
+	return &queryHandler{access: a}
+}
+
+func (h *queryHandler) Handle(param ops.PostDiscoverQueryParams) middleware.Responder {
+	r := param.HTTPRequest
+	ctx := r.Context()
+	b := param.Body
+	bad := func(err error) middleware.Responder {
+		return ops.NewPostDiscoverQueryBadRequest().WithPayload(controllers.MakeErrorPayload(err, controllers.BaseError))
+	}
+	if b == nil || b.Host == nil || b.Port == nil || b.Username == nil || b.SQL == nil {
+		return bad(errors.New("host, port, username and sql are required"))
+	}
+	audit := func(outcome string, status int, extra map[string]any) {
+		d := map[string]any{"server": fmt.Sprintf("%s:%d", *b.Host, *b.Port), "database": b.Database, "user": *b.Username, "sql": *b.SQL}
+		for k, v := range extra {
+			d[k] = v
+		}
+		h.access.Audit(ctx, acc.AuditEventFor(r, localmid.PrincipalFrom(ctx), "discover.query", outcome, status, 0, d))
+	}
+	if _, err := disc.CheckReadOnly(*b.SQL); err != nil {
+		audit("denied", 400, map[string]any{"reason": err.Error()})
+		return bad(err)
+	}
+	qctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 45*time.Second)
+	defer cancel()
+	res, err := disc.RunQuery(qctx, disc.QueryRequest{Target: disc.Target{Host: strings.TrimSpace(*b.Host), Port: int(*b.Port)},
+		User: *b.Username, Password: b.Password, Database: b.Database, SSLMode: b.Sslmode, SQL: *b.SQL, MaxRows: int(b.MaxRows)})
+	if err != nil {
+		audit("error", 400, map[string]any{"error": err.Error()})
+		return bad(err)
+	}
+	if res.Error != "" {
+		audit("error", 200, map[string]any{"error": res.Error})
+	} else {
+		audit("ok", 200, map[string]any{"rows": res.RowCount})
+	}
+	return ops.NewPostDiscoverQueryOK().WithPayload(res)
 }

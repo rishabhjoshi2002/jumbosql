@@ -224,8 +224,24 @@ It connects to every server at once (read-only: catalog views and settings, then
 | **Per server** | version, uptime, system identifier, timeline, connections, key settings, databases (size, tables, extensions, publications), replication slots, subscriptions, users and roles |
 | **Findings** | unreachable servers, standbys not streaming, unused slots keeping WAL, lag, split brain (two writable copies of one cluster), old versions, disabled subscriptions, no failover manager |
 
-The result is a diagram (one frame per physical cluster, solid arrows for streaming, dashed for logical replication),
-a plain-words summary and the details of each server. Results can be saved (the password never is), opened again,
+The result has three views:
+
+- **Architecture**: a diagram (one frame per physical cluster, solid arrows for streaming, dashed for logical
+  replication), a plain-words summary, findings, and the details of each server.
+- **Databases & migration**: a readiness table of every database on the writable servers, and a database explorer
+  with everything inside each database - tables (rows, data / index / TOAST size, primary key, replica identity,
+  dead rows, last vacuum), indexes (method, size, unique, scans, unused, invalid, definition), schemas, views and
+  materialized views, functions and procedures (language, security definer), sequences (how full), foreign keys
+  (with or without an index), enums / domains / composite types, triggers, foreign servers, column types in use and
+  extensions - plus a **readiness checklist**: tables without a primary key or replica identity, unlogged tables,
+  large objects, sequences, materialized views, triggers, untrusted languages, tablespaces, collation, invalid
+  indexes, transaction ID age. Every list sorts, searches and exports to CSV.
+- **Query**: 34 ready-made queries (sizes, readiness, indexes, health, activity, replication, users and security)
+  in a drop-down, or your own. Only reading statements run (`SELECT`, `WITH`, `SHOW`, `EXPLAIN`, `TABLE`,
+  `VALUES`), one at a time, inside a `READ ONLY` transaction with a 30-second limit; functions that act on the
+  server (`pg_terminate_backend`, `pg_reload_conf`, replication slot functions, `dblink`, file access, ...) are
+  refused, and every query is written to the audit log. For extra safety use a login with only `pg_monitor` and
+  `pg_read_all_data`. Results can be saved (the password never is), opened again,
 downloaded as JSON or printed. To try it, build the demo setup with `tools/pg-demo-cluster.sh` (above).
 
 ## PostgreSQL logs

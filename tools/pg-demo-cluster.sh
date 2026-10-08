@@ -8,8 +8,10 @@
 #             └──────── logical replication (shop_pub) ───────►  <set>-logical   own read-write server,
 #                                                                                 copies 3 tables of "shop"
 #
-#   primary : databases shop (customers, products, orders, order_items) and hr (departments, employees),
-#             publication shop_pub, physical replication slot standby_slot
+#   primary : databases shop (customers, products, orders, order_items, payments, ...) and hr (departments,
+#             employees), publication shop_pub, physical replication slot standby_slot; plus things a migration
+#             review should flag: a table without a primary key, an unlogged table, an enum, a trigger,
+#             a materialized view and a large object
 #   standby : pg_basebackup copy of the primary, follows it through standby_slot
 #   logical : its own cluster; database shop gets customers, products, orders through subscription shop_sub,
 #             plus a local table (daily_sales) that only exists here
@@ -213,7 +215,26 @@ FROM orders o CROSS JOIN LATERAL (SELECT id, price FROM products WHERE o.id > 0 
 WHERE NOT EXISTS (SELECT FROM order_items i WHERE i.order_id = o.id);
 UPDATE orders o SET total = s.t FROM (SELECT order_id, sum(qty * price) t FROM order_items GROUP BY 1) s
  WHERE s.order_id = o.id AND o.total = 0;
+-- things a migration review should notice
+DO \$\$ BEGIN
+  IF NOT EXISTS (SELECT FROM pg_type WHERE typname = 'payment_method') THEN
+    CREATE TYPE payment_method AS ENUM ('card', 'upi', 'netbanking', 'cod');
+  END IF;
+END \$\$;
+CREATE TABLE IF NOT EXISTS payments (order_id bigint, method payment_method, amount numeric(12,2), paid_at timestamptz DEFAULT now());
+CREATE UNLOGGED TABLE IF NOT EXISTS session_cache (token text, customer_id int, expires_at timestamptz);
+CREATE TABLE IF NOT EXISTS audit_trail (at timestamptz DEFAULT now(), table_name text, action text, row_id bigint);
+CREATE OR REPLACE FUNCTION log_order_change() RETURNS trigger LANGUAGE plpgsql AS \$f\$
+BEGIN INSERT INTO audit_trail (table_name, action, row_id) VALUES (TG_TABLE_NAME, TG_OP, NEW.id); RETURN NEW; END \$f\$;
+DROP TRIGGER IF EXISTS orders_audit ON orders;
+CREATE TRIGGER orders_audit AFTER INSERT OR UPDATE ON orders FOR EACH ROW EXECUTE FUNCTION log_order_change();
+CREATE MATERIALIZED VIEW IF NOT EXISTS monthly_sales AS
+  SELECT date_trunc('month', ordered_at) AS month, count(*) AS orders, sum(total) AS revenue FROM orders GROUP BY 1;
+INSERT INTO payments (order_id, method, amount)
+SELECT id, (ARRAY['card','upi','netbanking','cod']::payment_method[])[1 + (id % 4)], total FROM orders
+WHERE NOT EXISTS (SELECT FROM payments) AND status IN ('paid','shipped','delivered');
 RESET ROLE;
+SELECT lo_from_bytea(0, 'invoice template v1') WHERE NOT EXISTS (SELECT FROM pg_largeobject_metadata);
 GRANT SELECT ON customers, products, orders TO replicator;
 SELECT 'CREATE PUBLICATION shop_pub FOR TABLE customers, products, orders'
  WHERE NOT EXISTS (SELECT FROM pg_publication WHERE pubname = 'shop_pub') \\gexec

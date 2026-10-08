@@ -907,6 +907,26 @@ paths:
           schema:
             $ref: "#/definitions/Response.Error"
 
+  /discover/query:
+    post:
+      summary: "pg_genin: run one read-only query (SELECT / WITH / SHOW / EXPLAIN) on a server found by Discover"
+      tags: [discover]
+      parameters:
+        - name: body
+          in: body
+          required: true
+          schema:
+            $ref: "#/definitions/Request.DiscoverQuery"
+      responses:
+        '200':
+          description: OK
+          schema:
+            type: object
+        '400':
+          description: Error
+          schema:
+            $ref: "#/definitions/Response.Error"
+
   /discoveries:
     get:
       summary: "pg_genin: saved discoveries (newest first)"
@@ -1463,6 +1483,27 @@ definitions:
         description: "a name to save the result under"
       save:
         type: boolean
+
+  Request.DiscoverQuery:
+    type: object
+    required: [host, port, username, sql]
+    properties:
+      host:
+        type: string
+      port:
+        type: integer
+      username:
+        type: string
+      password:
+        type: string
+      database:
+        type: string
+      sslmode:
+        type: string
+      sql:
+        type: string
+      max_rows:
+        type: integer
 
   Request.PasswordChange:
     type: object

@@ -42,3 +42,63 @@ func TestConninfo(t *testing.T) {
 		t.Fatalf("multi-host: %s %d", h, p)
 	}
 }
+
+func TestCheckReadOnly(t *testing.T) {
+	ok := []string{
+		"select 1", "  SELECT * FROM t;", "with x as (select 1) select * from x", "show work_mem", "explain select 1",
+		"(select 1) union (select 2)", "-- comment\nselect ';' as semi", "table pg_settings", "values (1)",
+		"select pg_size_pretty(pg_database_size(current_database()))",
+	}
+	for _, s := range ok {
+		if _, err := CheckReadOnly(s); err != nil {
+			t.Errorf("%q refused: %v", s, err)
+		}
+	}
+	bad := []string{
+		"", "delete from t", "update t set a=1", "drop table t", "commit", "begin", "set work_mem='1GB'",
+		"select 1; drop table t", "select pg_terminate_backend(123)", "select pg_reload_conf()",
+		"SELECT PG_DROP_REPLICATION_SLOT('x')", "select * from dblink('x','y') as t(a int)",
+		"select query_to_xml('delete from t', true, true, '')", "copy t to '/tmp/x'", "vacuum t",
+		"/* x */ insert into t values (1)", "select lo_export(1, '/tmp/x')", "select nextval('s')",
+	}
+	for _, s := range bad {
+		if _, err := CheckReadOnly(s); err == nil {
+			t.Errorf("%q accepted", s)
+		}
+	}
+}
+
+func TestReadiness(t *testing.T) {
+	inv := &Inventory{
+		Tables: []DBTable{
+			{Schema: "public", Name: "orders", Kind: "table", PrimaryKey: true, ReplIdent: "default"},
+			{Schema: "public", Name: "log", Kind: "table", ReplIdent: "default"},
+			{Schema: "public", Name: "cache", Kind: "table", Unlogged: true, PrimaryKey: true, ReplIdent: "default"},
+		},
+		Sequences: []DBSeq{{Schema: "public", Name: "ids", UsedPct: 90, LastValue: "1932735283", MaxValue: "2147483647", DataType: "integer"}},
+		Indexes:   []DBIndex{{Schema: "public", Name: "bad_idx", Valid: false}},
+		Counts:    DBCounts{LargeObjects: 2, Sequences: 1},
+		XIDAge:    1_200_000_000, Collation: "en_US.UTF-8", LocaleProv: "libc",
+	}
+	got := map[string]string{}
+	for _, c := range readiness(inv) {
+		got[c.Title] = c.Status
+	}
+	want := map[string]string{
+		"1 table has no primary key and no replica identity": "critical",
+		"1 unlogged table":                "warning",
+		"2 large objects":                 "warning",
+		"Sequence public.ids is 90% used": "critical",
+		"1 invalid index":                 "warning",
+		"Transaction ID age 1200000000":   "critical",
+		"Collation en_US.UTF-8 (libc)":    "info",
+	}
+	for title, st := range want {
+		if got[title] != st {
+			t.Errorf("%q: got %q, want %q (all: %v)", title, got[title], st, got)
+		}
+	}
+	if first := readiness(inv)[0].Status; first != "critical" {
+		t.Errorf("critical first, got %s", first)
+	}
+}

@@ -25,7 +25,93 @@ export type DDatabase = {
   tables: number;
   extensions: string[] | null;
   publications: DPublication[] | null;
+  inventory?: DInventory;
   error?: string;
+};
+
+/** everything inside one database (for migrations) */
+export type DCheck = { status: 'critical' | 'warning' | 'info' | 'ok'; title: string; detail: string };
+export type DTable = {
+  schema: string;
+  name: string;
+  kind: 'table' | 'partitioned' | 'partition';
+  unlogged?: boolean;
+  rows: number;
+  total_bytes: number;
+  table_bytes: number;
+  index_bytes: number;
+  toast_bytes: number;
+  columns: number;
+  primary_key: boolean;
+  replica_identity: string;
+  dead_rows: number;
+  seq_scans: number;
+  idx_scans: number;
+  last_vacuum?: string;
+  last_analyze?: string;
+  owner: string;
+  tablespace?: string;
+};
+export type DIndex = {
+  schema: string;
+  table: string;
+  name: string;
+  method: string;
+  size_bytes: number;
+  unique: boolean;
+  primary: boolean;
+  valid: boolean;
+  scans: number;
+  definition: string;
+};
+export type DInventory = {
+  collation?: string;
+  ctype?: string;
+  locale_provider?: string;
+  connection_limit: number;
+  tablespace?: string;
+  xid_age: number;
+  counts: Record<string, number>;
+  schemas: { name: string; owner: string; tables: number; size_bytes: number }[];
+  tables: DTable[];
+  indexes: DIndex[];
+  views: {
+    schema: string;
+    name: string;
+    materialized: boolean;
+    populated: boolean;
+    size_bytes: number;
+    owner: string;
+  }[];
+  functions: {
+    schema: string;
+    name: string;
+    args: string;
+    kind: string;
+    language: string;
+    owner: string;
+    security_definer: boolean;
+  }[];
+  sequences: {
+    schema: string;
+    name: string;
+    data_type: string;
+    last_value: string;
+    max_value: string;
+    used_pct: number;
+    cycle: boolean;
+  }[];
+  foreign_keys: { table: string; name: string; references: string; definition: string; indexed: boolean }[];
+  types: { schema: string; name: string; kind: string; detail?: string }[];
+  triggers: { table: string; name: string; function: string; enabled: string }[];
+  foreign_servers: string[];
+  column_types: { type: string; columns: number }[];
+  checks: DCheck[];
+  partial?: string[];
+  truncated?: string[];
+  largest_table?: string;
+  total_rows_estimate: number;
+  user_data_bytes: number;
 };
 export type DSender = {
   application_name: string;
@@ -144,11 +230,33 @@ export type DiscoverRequest = {
   save?: boolean;
 };
 
+export type QueryRequest = {
+  host: string;
+  port: number;
+  username: string;
+  password: string;
+  database: string;
+  sslmode?: string;
+  sql: string;
+  max_rows?: number;
+};
+export type QueryResult = {
+  columns: string[];
+  rows: (string | null)[][];
+  row_count: number;
+  truncated: boolean;
+  duration_ms: number;
+  error?: string;
+};
+
 const injectedRtkApi = api.enhanceEndpoints({ addTagTypes: ['Discoveries'] }).injectEndpoints({
   endpoints: (build) => ({
     postDiscover: build.mutation<Discovery, DiscoverRequest>({
       query: (body) => ({ url: `/discover`, method: 'POST', body }),
       invalidatesTags: (_r, _e, arg) => (arg.save ? ['Discoveries'] : []),
+    }),
+    postDiscoverQuery: build.mutation<QueryResult, QueryRequest>({
+      query: (body) => ({ url: `/discover/query`, method: 'POST', body }),
     }),
     getDiscoveries: build.query<DiscoveryListItem[], void>({
       query: () => ({ url: `/discoveries` }),
@@ -163,5 +271,10 @@ const injectedRtkApi = api.enhanceEndpoints({ addTagTypes: ['Discoveries'] }).in
   overrideExisting: false,
 });
 
-export const { usePostDiscoverMutation, useGetDiscoveriesQuery, useLazyGetDiscoveryQuery, useDeleteDiscoveryMutation } =
-  injectedRtkApi;
+export const {
+  usePostDiscoverQueryMutation,
+  usePostDiscoverMutation,
+  useGetDiscoveriesQuery,
+  useLazyGetDiscoveryQuery,
+  useDeleteDiscoveryMutation,
+} = injectedRtkApi;

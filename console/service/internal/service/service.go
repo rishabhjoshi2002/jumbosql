@@ -200,6 +200,7 @@ func NewService(
 	api.ClusterGetInsightsSummaryHandler = cluster.NewInsightsSummaryHandler(insightsSvc, db, accessSvc)
 	api.ClusterGetClustersIDMonitoringHandler = cluster.NewMonitoringHandler(insightsSvc)
 	api.DiscoverPostDiscoverHandler = discoverctl.NewPostDiscoverHandler(db)
+	api.DiscoverPostDiscoverQueryHandler = discoverctl.NewPostDiscoverQueryHandler(accessSvc)
 	api.DiscoverGetDiscoveriesHandler = discoverctl.NewGetDiscoveriesHandler(db)
 	api.DiscoverGetDiscoveriesIDHandler = discoverctl.NewGetDiscoveriesIDHandler(db)
 	api.DiscoverDeleteDiscoveriesIDHandler = discoverctl.NewDeleteDiscoveriesIDHandler(db)

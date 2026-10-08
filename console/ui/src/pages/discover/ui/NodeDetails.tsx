@@ -19,6 +19,7 @@ import { useTranslation } from 'react-i18next';
 import { DNode, DResult } from '@shared/api/api/discover.ts';
 import { bytes } from '@pages/insights/lib/format.ts';
 import { roleKey, useRoleColors } from './Topology.tsx';
+import DatabaseExplorer from './DatabaseExplorer.tsx';
 
 const Fact: FC<{ label: string; children: ReactNode }> = ({ label, children }) => (
   <Box sx={{ minWidth: 0 }}>
@@ -252,22 +253,7 @@ const NodeDetails: FC<{ node: DNode; result: DResult }> = ({ node: n, result }) 
           </Stack>
         ) : null}
 
-        {tab === 'databases' ? (
-          <MiniTable
-            empty={t('noDatabases')}
-            head={[t('c_name'), t('c_owner'), t('c_size'), t('c_tables'), t('c_extensions'), t('c_publications')]}
-            rows={(n.databases ?? []).map((d) => [
-              d.name,
-              d.owner,
-              bytes(d.size_bytes),
-              String(d.tables),
-              (d.extensions ?? []).join(', ') || (d.error ? d.error : '—'),
-              (d.publications ?? [])
-                .map((p) => `${p.name} (${p.all_tables ? t('allTables') : (p.tables ?? []).join(', ')})`)
-                .join('; ') || '—',
-            ])}
-          />
-        ) : null}
+        {tab === 'databases' ? <DatabaseExplorer node={n} /> : null}
 
         {tab === 'settings' ? (
           <Stack gap={1}>
