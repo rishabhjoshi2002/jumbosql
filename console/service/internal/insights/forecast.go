@@ -22,6 +22,9 @@ type Fit struct {
 	R2        float64   `json:"r2"` // 0..1, how well the line explains the data
 	N         int       `json:"n"`
 	Span      float64   `json:"span_days"` // how many days of data the fit is based on
+	xMean     float64   // for the prediction range
+	sxx       float64
+	sigma     float64 // standard deviation of the residuals
 }
 
 // LinearFit fits a straight line (ordinary least squares). Needs at least 2 points over a non-zero time span.
@@ -60,7 +63,12 @@ func LinearFit(pts []Point) (Fit, bool) {
 	if ssTot > 0 {
 		r2 = math.Max(0, 1-ssRes/ssTot)
 	}
-	return Fit{Origin: origin, Slope: slope, Intercept: icpt, R2: r2, N: len(pts), Span: span}, true
+	sigma := 0.0
+	if len(pts) > 2 {
+		sigma = math.Sqrt(ssRes / float64(len(pts)-2))
+	}
+	return Fit{Origin: origin, Slope: slope, Intercept: icpt, R2: r2, N: len(pts), Span: span,
+		xMean: sx / n, sxx: sxx - sx*sx/n, sigma: sigma}, true
 }
 
 // At is the fitted value at time t.
@@ -172,39 +180,170 @@ func Last(pts []Point) float64 {
 	return pts[len(pts)-1].V
 }
 
-// Forecast is what the UI shows for one metric: now, trend per day, the value in N days, and the line to draw.
+// Projection is the predicted value some days ahead, with its likely range (about 95 %).
+type Projection struct {
+	Days     int       `json:"days"`
+	At       time.Time `json:"at"`
+	V        float64   `json:"v"`
+	Low      float64   `json:"low"`
+	High     float64   `json:"high"`
+	Reliable bool      `json:"reliable"` // false when it looks much further ahead than the history behind it
+}
+
+// BandPoint is one point of the forecast line with its range.
+type BandPoint struct {
+	T    time.Time `json:"t"`
+	V    float64   `json:"v"`
+	Low  float64   `json:"low"`
+	High float64   `json:"high"`
+}
+
+// Horizons shown in capacity planning.
+var Horizons = []int{30, 90, 180, 365}
+
+// Forecast is what the UI shows for one metric: now, the trend, projections and the line (with range) to draw.
 type Forecast struct {
-	Current     float64 `json:"current"`
-	PerDay      float64 `json:"per_day"`
-	In30Days    float64 `json:"in_30_days"`
-	Horizon     int     `json:"horizon_days"`
-	R2          float64 `json:"r2"`
-	SpanDays    float64 `json:"span_days"`
-	Confidence  string  `json:"confidence"`
-	Line        []Point `json:"line"` // from the last sample to the horizon (2 points)
-	HasForecast bool    `json:"has_forecast"`
+	Current        float64      `json:"current"`
+	PerDay         float64      `json:"per_day"`          // growth per day now (compound: at today's level)
+	GrowthPctMonth float64      `json:"growth_pct_month"` // % per 30 days
+	In30Days       float64      `json:"in_30_days"`
+	Horizon        int          `json:"horizon_days"`
+	Model          string       `json:"model"` // linear | compound
+	R2             float64      `json:"r2"`
+	SpanDays       float64      `json:"span_days"`
+	Confidence     string       `json:"confidence"`
+	Line           []Point      `json:"line"` // from the last sample to the horizon (2 points)
+	Band           []BandPoint  `json:"band"` // the same, with the likely range, in steps
+	Projections    []Projection `json:"projections"`
+	HasForecast    bool         `json:"has_forecast"`
+
+	fit  Fit // value (linear) or log(value) (compound) against days
+	last time.Time
 }
 
 // MinForecastSpan: less history than this gives no forecast (minutes of samples make wild trends).
 var MinForecastSpan = time.Hour
 
-// MakeForecast fits pts and projects horizon days ahead (never below zero).
+// ValueAt: predicted value and its likely range at time t.
+func (f Forecast) ValueAt(t time.Time) (v, low, high float64) {
+	if !f.HasForecast {
+		return f.Current, f.Current, f.Current
+	}
+	x := t.Sub(f.fit.Origin).Hours() / 24
+	mid := f.fit.Intercept + f.fit.Slope*x
+	hw := 0.0
+	if f.fit.N > 2 && f.fit.sxx > 0 {
+		hw = 1.96 * f.fit.sigma * math.Sqrt(1+1/float64(f.fit.N)+(x-f.fit.xMean)*(x-f.fit.xMean)/f.fit.sxx)
+	}
+	if f.Model == "compound" {
+		capLog := math.Log(math.Max(f.Current, 1e-9) * 1000) // never more than 1000 x today
+		return math.Exp(math.Min(mid, capLog)), math.Exp(math.Min(mid-hw, capLog)), math.Exp(math.Min(mid+hw, capLog))
+	}
+	return math.Max(0, mid), math.Max(0, mid-hw), math.Max(0, mid+hw)
+}
+
+// DaysTo: days from now until the predicted value reaches limit (0 = already, -1 = not growing towards it).
+func (f Forecast) DaysTo(limit float64, now time.Time) float64 {
+	if !f.HasForecast || limit <= 0 {
+		return -1
+	}
+	cur, _, _ := f.ValueAt(now)
+	if cur >= limit || f.Current >= limit {
+		return 0
+	}
+	if f.fit.Slope <= 0 {
+		return -1
+	}
+	x0 := now.Sub(f.fit.Origin).Hours() / 24
+	var x float64
+	if f.Model == "compound" {
+		x = (math.Log(limit) - f.fit.Intercept) / f.fit.Slope
+	} else {
+		x = (limit - f.fit.Intercept) / f.fit.Slope
+	}
+	return math.Max(0, x-x0)
+}
+
+// MakeForecast fits pts (straight line, or compound growth when that fits clearly better) and projects horizon
+// days ahead.
 func MakeForecast(pts []Point, horizon int, now time.Time) Forecast {
-	f := Forecast{Current: Last(pts), Horizon: horizon, Confidence: "low"}
+	f := Forecast{Current: Last(pts), Horizon: horizon, Confidence: "low", Model: "linear", Projections: []Projection{}}
 	fit, ok := LinearFit(pts)
 	if !ok || fit.Span < MinForecastSpan.Hours()/24 {
 		f.In30Days = f.Current // not enough history for a trend yet
 		return f
 	}
-	end := now.Add(time.Duration(horizon) * 24 * time.Hour)
-	f.PerDay = fit.Slope
-	f.R2 = fit.R2
-	f.SpanDays = fit.Span
+	f.fit, f.R2, f.SpanDays, f.HasForecast = fit, fit.R2, fit.Span, true
+	f.last = pts[len(pts)-1].T
+
+	// compound growth: a straight line through log(value) - only when every value is positive, there is a week of
+	// history, and it explains the data clearly better than the straight line
+	if fit.Slope > 0 && fit.Span >= 7 && len(pts) >= 12 {
+		positive := true
+		logs := make([]Point, len(pts))
+		for i, p := range pts {
+			if p.V <= 0 {
+				positive = false
+				break
+			}
+			logs[i] = Point{T: p.T, V: math.Log(p.V)}
+		}
+		if positive {
+			if lf, ok := LinearFit(logs); ok && lf.Slope > 0 {
+				var ssRes, ssTot, mean float64
+				for _, p := range pts {
+					mean += p.V
+				}
+				mean /= float64(len(pts))
+				for _, p := range pts {
+					x := p.T.Sub(lf.Origin).Hours() / 24
+					r := p.V - math.Exp(lf.Intercept+lf.Slope*x)
+					ssRes += r * r
+					ssTot += (p.V - mean) * (p.V - mean)
+				}
+				if ssTot > 0 {
+					// it must at least halve the error the straight line leaves unexplained
+					if r2 := math.Max(0, 1-ssRes/ssTot); 1-r2 < 0.5*(1-fit.R2) {
+						f.Model, f.fit, f.R2 = "compound", lf, r2
+					}
+				}
+			}
+		}
+	}
+
 	f.Confidence = fit.Confidence()
-	// project along the fitted line (a noisy last sample, or today's partial busy hour, doesn't skew it)
-	last := pts[len(pts)-1].T
-	f.In30Days = math.Max(0, fit.At(end))
-	f.Line = []Point{{T: last, V: math.Max(0, fit.At(last))}, {T: end, V: f.In30Days}}
-	f.HasForecast = true
+	if f.Model == "compound" {
+		f.PerDay = f.Current * (math.Exp(f.fit.Slope) - 1)
+		f.GrowthPctMonth = 100 * (math.Exp(30*f.fit.Slope) - 1)
+	} else {
+		f.PerDay = fit.Slope
+		if f.Current > 0 {
+			f.GrowthPctMonth = 100 * 30 * fit.Slope / f.Current
+		}
+	}
+	day := 24 * time.Hour
+	f.In30Days, _, _ = f.ValueAt(now.Add(30 * day))
+	end := now.Add(time.Duration(horizon) * day)
+	startV, _, _ := f.ValueAt(f.last)
+	endV, _, _ := f.ValueAt(end)
+	f.Line = []Point{{T: f.last, V: startV}, {T: end, V: endV}}
+	const steps = 16
+	for i := 0; i <= steps; i++ {
+		t := f.last.Add(time.Duration(float64(end.Sub(f.last)) * float64(i) / steps))
+		v, lo, hi := f.ValueAt(t)
+		f.Band = append(f.Band, BandPoint{T: t, V: v, Low: lo, High: hi})
+	}
+	for _, d := range Horizons {
+		t := now.Add(time.Duration(d) * day)
+		v, lo, hi := f.ValueAt(t)
+		f.Projections = append(f.Projections, Projection{Days: d, At: t, V: v, Low: lo, High: hi,
+			Reliable: float64(d) <= 4*math.Max(f.SpanDays, 1)})
+	}
+	// looking much further ahead than the history behind it lowers the confidence
+	if float64(horizon) > 8*f.SpanDays {
+		f.Confidence = "low"
+	} else if float64(horizon) > 3*f.SpanDays && f.Confidence == "high" {
+		f.Confidence = "medium"
+	}
 	return f
 }

@@ -1,6 +1,6 @@
 import { FC, useEffect, useMemo, useRef, useState } from 'react';
 import { Box, Stack, Typography, useTheme } from '@mui/material';
-import { TPoint } from '@shared/api/api/insights.ts';
+import { BandPoint, TPoint } from '@shared/api/api/insights.ts';
 import { niceTicks } from '../lib/format.ts';
 
 /** Categorical slots (validated for CVD separation on the console's light and dark surfaces), in fixed order. */
@@ -16,6 +16,8 @@ export type ChartSeries = {
   slot: number;
   /** projection from the last sample, drawn dashed in the same hue */
   forecast?: TPoint[] | null;
+  /** projection with its likely range: drawn as a dashed line inside a soft band (replaces `forecast`) */
+  band?: BandPoint[] | null;
   /** soft area wash under the line (single-series charts) */
   area?: boolean;
 };
@@ -24,7 +26,7 @@ interface Props {
   series: ChartSeries[];
   format: (v: number) => string;
   /** horizontal limits, e.g. disk size or max_connections */
-  limits?: { value: number; label: string }[];
+  limits?: { value: number; label: string; tone?: 'warning' }[];
   height?: number;
   yMax?: number;
   empty?: string;
@@ -61,11 +63,12 @@ const TrendChart: FC<Props> = ({ series, format, limits = [], height = 220, yMax
       series.map((s) => ({
         ...s,
         pts: s.points.map((p) => ({ t: new Date(p.t).getTime(), v: p.v })),
-        fc: (s.forecast ?? []).map((p) => ({ t: new Date(p.t).getTime(), v: p.v })),
+        fc: (s.band?.length ? s.band : (s.forecast ?? [])).map((p) => ({ t: new Date(p.t).getTime(), v: p.v })),
+        bd: (s.band ?? []).map((p) => ({ t: new Date(p.t).getTime(), low: p.low, high: p.high })),
       })),
     [series],
   );
-  const all = data.flatMap((s) => [...s.pts, ...s.fc]);
+  const all = data.flatMap((s) => [...s.pts, ...s.fc, ...s.bd.map((b) => ({ t: b.t, v: b.high }))]);
   const hasData = data.some((s) => s.pts.length > 1);
 
   const tMin = Math.min(...all.map((p) => p.t));
@@ -92,21 +95,30 @@ const TrendChart: FC<Props> = ({ series, format, limits = [], height = 220, yMax
     for (const p of pts) if (!best || Math.abs(p.t - t) < Math.abs(best.t - t)) best = p;
     return best;
   };
+  // piecewise-linear value of a projection at time t
+  const lerp = <K extends string>(pts: ({ t: number } & Record<K, number>)[], key: K, t: number) => {
+    for (let i = 1; i < pts.length; i++) {
+      if (t <= pts[i].t) {
+        const a = pts[i - 1];
+        const b = pts[i];
+        return a[key] + ((b[key] - a[key]) * (t - a.t)) / Math.max(1, b.t - a.t);
+      }
+    }
+    return pts[pts.length - 1][key];
+  };
   const hoverRows =
     hover === null
       ? []
       : data
           .map((s) => {
             const inForecast = s.fc.length > 1 && hover > s.fc[0].t;
-            const p = inForecast
-              ? {
-                  t: hover,
-                  v: s.fc[0].v + ((s.fc[1].v - s.fc[0].v) * (hover - s.fc[0].t)) / Math.max(1, s.fc[1].t - s.fc[0].t),
-                }
-              : nearest(s.pts, hover);
-            return p ? { name: s.name, slot: s.slot, v: p.v, t: p.t, forecast: inForecast } : null;
+            const p = inForecast ? { t: hover, v: lerp(s.fc, 'v', hover) } : nearest(s.pts, hover);
+            const range =
+              inForecast && s.bd.length > 1 ? { low: lerp(s.bd, 'low', hover), high: lerp(s.bd, 'high', hover) } : null;
+            return p ? { name: s.name, slot: s.slot, v: p.v, t: p.t, forecast: inForecast, range } : null;
           })
           .filter((r): r is NonNullable<typeof r> => !!r);
+  const hasBand = data.some((s) => s.bd.length > 1);
 
   if (!hasData) {
     return (
@@ -128,7 +140,7 @@ const TrendChart: FC<Props> = ({ series, format, limits = [], height = 220, yMax
 
   return (
     <Box ref={ref} sx={{ position: 'relative', userSelect: 'none', width: '100%', minWidth: 0, overflow: 'hidden' }}>
-      {legend || series.length > 1 || series.some((s) => s.forecast?.length) ? (
+      {legend || series.length > 1 || series.some((s) => s.forecast?.length || s.band?.length) ? (
         <Stack direction="row" gap={2} flexWrap="wrap" mb={0.5}>
           {series.map((s) => (
             <Stack key={s.name} direction="row" alignItems="center" gap={0.75}>
@@ -138,7 +150,15 @@ const TrendChart: FC<Props> = ({ series, format, limits = [], height = 220, yMax
               </Typography>
             </Stack>
           ))}
-          {series.some((s) => s.forecast?.length) ? (
+          {hasBand ? (
+            <Stack direction="row" alignItems="center" gap={0.75}>
+              <Box sx={{ width: 14, height: 10, borderRadius: 0.5, bgcolor: ink, opacity: 0.18 }} />
+              <Typography variant="caption" color="text.secondary">
+                likely range
+              </Typography>
+            </Stack>
+          ) : null}
+          {series.some((s) => s.forecast?.length || s.band?.length) ? (
             <Stack direction="row" alignItems="center" gap={0.75}>
               <svg width="14" height="2">
                 <line x1="0" y1="1" x2="14" y2="1" stroke={ink} strokeWidth="2" strokeDasharray="4 3" />
@@ -187,7 +207,8 @@ const TrendChart: FC<Props> = ({ series, format, limits = [], height = 220, yMax
               x2={M.left + iw}
               y1={y(l.value)}
               y2={y(l.value)}
-              stroke={theme.palette.error.main}
+              stroke={l.tone === 'warning' ? theme.palette.warning.main : theme.palette.error.main}
+              strokeDasharray={l.tone === 'warning' ? '4 4' : undefined}
               strokeWidth={1}
             />
             <text x={M.left + iw} y={y(l.value) - 5} textAnchor="end" fontSize={11} fill={theme.palette.text.primary}>
@@ -214,6 +235,18 @@ const TrendChart: FC<Props> = ({ series, format, limits = [], height = 220, yMax
                 strokeLinejoin="round"
                 strokeLinecap="round"
               />
+              {s.bd.length > 1 ? (
+                <path
+                  d={`${s.bd.map((b, i) => `${i ? 'L' : 'M'}${x(b.t).toFixed(1)},${y(b.high).toFixed(1)}`).join('')}${[
+                    ...s.bd,
+                  ]
+                    .reverse()
+                    .map((b) => `L${x(b.t).toFixed(1)},${y(Math.max(0, b.low)).toFixed(1)}`)
+                    .join('')}Z`}
+                  fill={c}
+                  opacity={0.14}
+                />
+              ) : null}
               {s.fc.length > 1 ? (
                 <>
                   <path
@@ -224,7 +257,14 @@ const TrendChart: FC<Props> = ({ series, format, limits = [], height = 220, yMax
                     strokeDasharray="5 4"
                     strokeLinecap="round"
                   />
-                  <circle cx={x(s.fc[1].t)} cy={y(s.fc[1].v)} r={4} fill={c} stroke={surface} strokeWidth={2} />
+                  <circle
+                    cx={x(s.fc[s.fc.length - 1].t)}
+                    cy={y(s.fc[s.fc.length - 1].v)}
+                    r={4}
+                    fill={c}
+                    stroke={surface}
+                    strokeWidth={2}
+                  />
                 </>
               ) : null}
             </g>
@@ -253,7 +293,9 @@ const TrendChart: FC<Props> = ({ series, format, limits = [], height = 220, yMax
           sx={{
             position: 'absolute',
             top: 28,
-            left: Math.min(Math.max(x(hover) + 12, 0), width - 200),
+            // beside the pointer, on the side with more room
+            ...(x(hover) > width / 2 ? { right: width - x(hover) + 12 } : { left: x(hover) + 12 }),
+            whiteSpace: 'nowrap',
             pointerEvents: 'none',
             bgcolor: 'background.paper',
             border: 1,
@@ -280,6 +322,7 @@ const TrendChart: FC<Props> = ({ series, format, limits = [], height = 220, yMax
                 {format(r.v)}
               </Typography>
               <Typography variant="caption" color="text.secondary">
+                {r.range ? `${format(r.range.low)} – ${format(r.range.high)} · ` : ''}
                 {r.name}
               </Typography>
             </Stack>

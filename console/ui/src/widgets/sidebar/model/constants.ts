@@ -11,11 +11,18 @@ import ObservabilityIcon from '@mui/icons-material/MonitorHeartOutlined';
 import PostgresLogsIcon from '@mui/icons-material/ReceiptLongOutlined';
 import InsightsIcon from '@mui/icons-material/TipsAndUpdatesOutlined';
 import AuditIcon from '@mui/icons-material/FactCheckOutlined';
+import HomeIcon from '@mui/icons-material/HomeOutlined';
 import { canAny, getSessionUser, SessionUser } from '@shared/lib/session.ts';
 
 // JumboSQL: menu items follow the user's access policies (perms: any one of them)
 export const sidebarData = (t: TFunction, user: SessionUser | null = getSessionUser()) => {
   const all = [
+    {
+      icon: HomeIcon,
+      label: t('home', { ns: 'shared' }),
+      path: RouterPaths.home.absolutePath,
+      perms: [] as string[],
+    },
     {
       icon: ClustersIcon,
       label: t('clusters', { ns: 'clusters' }),
@@ -66,7 +73,7 @@ export const sidebarData = (t: TFunction, user: SessionUser | null = getSessionU
     },
   ];
   return all
-    .filter((item) => canAny(item.perms, undefined, user))
+    .filter((item) => !item.perms.length || canAny(item.perms, undefined, user))
     .map((item) => ({ icon: item.icon, label: item.label, path: item.path }));
 };
 

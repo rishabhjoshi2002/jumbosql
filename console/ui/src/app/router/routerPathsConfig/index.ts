@@ -6,6 +6,7 @@ import routerObservabilityPathsConfig from '@app/router/routerPathsConfig/router
 import routerAuditPathsConfig from '@app/router/routerPathsConfig/routerAuditPathsConfig.ts';
 import routerLogsPathsConfig from '@app/router/routerPathsConfig/routerLogsPathsConfig.ts';
 import routerInsightsPathsConfig from '@app/router/routerPathsConfig/routerInsightsPathsConfig.ts';
+import routerHomePathsConfig from '@app/router/routerPathsConfig/routerHomePathsConfig.ts';
 
 /*
   Combines route paths into one config
@@ -17,6 +18,7 @@ const RouterPaths = {
   notFound: {
     absolutePath: 'notFound',
   },
+  home: routerHomePathsConfig,
   clusters: routerClustersPathsConfig,
   operations: routerOperationsPathsConfig,
   settings: routerSettingsPathsConfig,

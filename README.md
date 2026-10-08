@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="console/ui/src/shared/assets/jumbosqlLogo.png" alt="JumboSQL" width="220">
+  <img src="console/ui/src/shared/assets/pgGeninLogo.png" alt="pg_genin" width="220">
 </p>
 
 # JumboSQL: Keen PostgreSQL HA
@@ -13,13 +13,14 @@ collection (version **2.2.0**). Based on [Autobase](https://github.com/autobase-
 | **Sign-in** | Username and password, users with **attributes** (group, team, region, …) managed in **Settings → Users**. Accounts are stored in the console today; LDAP and SSO plug in later on the server side. |
 | **Access policies (ABAC)** | **Settings → Access policies**: who (everyone, users, attribute conditions) may do what (permissions), where (clusters, environments, projects), with which data (databases, schemas, tables, hidden columns, row and time limits) and when (IP ranges, weekdays, hours). Deny wins, nothing is allowed by default. **Test access** shows what a user may do and which policy decides it. |
 | **Audit log** | Every change, SQL statement, log read, sign-in and refused request: who, when, from which IP, on which cluster, with what result. Filters, search, details per event. |
-| **Insights** | Trends and forecasts per cluster: database and table growth, storage needed in 30 days, transactions per second, connections vs the limit, table bloat (dead rows), unused indexes, top queries, and CPU / memory / disk per node from Prometheus with suggested vCPUs and disk size. A list of recommendations says what to fix and gives the SQL. |
+| **Home page** | Everyone has their own: a greeting and the cards they pick and order (clusters summary, top risks, data growth, my clusters, recent queries, recent operations, shortcuts, private notes), limited to what their access allows. They also choose the page that opens after sign-in. |
+| **Insights** | A health score (0-100) per cluster and an **All clusters** summary (worst first). Forecasts 30 days, 3 months, 6 months or 1 year ahead with a likely range: storage, disks, CPU, memory, connections, load and the biggest databases, with the date each one reaches its warning level and its limit and what to buy (vCPUs, disk size). Plus table bloat, unused indexes, top queries and a list of recommendations with the SQL. Print / save as PDF for management. |
 | **PostgreSQL logs** | Each node's server log in the browser: pick cluster, node and file, live tail, level filter (WARNING+/ERROR+), search with highlighting, download. |
 | **Create cluster** | **Inventory step**: add each VM (or **Import VM list** from the VM script), tick its roles (etcd, PostgreSQL + Patroni, HAProxy, PgBouncer, pgBackRest repo, Monitoring = Prometheus + Alertmanager + Grafana). One VM can hold one role or several. Live `inventory.yml` preview and download; the layout rules are checked as you type. |
 | **Patroni console** | On each cluster page: `list`, `history`, `show-config`, `edit-config`, `pause`/`resume`, `switchover`, `failover`, `restart`, `reload`, `reinit` and a **rolling restart**. Every result shows the equivalent `patronictl` command. |
 | **Observability** | A live monitoring dashboard per cluster from its Prometheus: cluster / PostgreSQL / etcd / services health, firing alerts, last backup, and graphs for connections, TPS, replication lag, cache hit, database size, CPU, memory, disk, load, network and etcd. Links to Grafana, Prometheus and Alertmanager (URLs can be overridden per cluster). |
 | **SQL editor** | Built-in, pgAdmin-style query tool: object browser (schemas, tables with columns, views, functions, sequences), query tabs, every statement's result (also `SHOW`, `EXPLAIN`, `RETURNING`), Messages with notices and errors (SQLSTATE, detail, hint, position marked in the editor), Explain / Explain analyze, Cancel, CSV export, query history. Runs through HAProxy's read-write port, so always on the current Patroni leader. Follows the access policies: read-only / read-write / admin, only allowed databases, hidden columns and tables locked in the object browser, row and time limits. |
-| **Branding** | JumboSQL look (navy and logo blue), with a light watermark on every page: *JumboSQL, managed by Keen & Able Computers Pvt. Ltd.* |
+| **Branding** | JumboSQL look (navy and logo blue) with the pg_genin logo, and a light watermark on every page: *JumboSQL, managed by Keen & Able Computers Pvt. Ltd.* |
 
 ## How it fits together
 
@@ -134,10 +135,29 @@ allowed everything). Audit events are kept for 180 days (`PG_CONSOLE_AUDIT_RETEN
 LDAP / SSO later: the API checks credentials through a provider interface (`console/service/internal/auth`),
 so an LDAP or OIDC provider is added next to the local one; its groups become attributes.
 
+## Home page
+
+**Home** is the first page after sign-in, and it is personal. **Customize** (top right) turns cards on and off, puts
+them in order and sets the **start page** (Home, or any page in the menu). The choices are saved to the user's
+account (`PUT /api/v1/auth/me/preferences`), so they follow the user to any browser. Cards only show what the user's
+access policies allow: someone without `insights.view` gets **My clusters** instead of the clusters summary, and the
+shortcuts list only the pages they may open. **My notes** is a private notepad on the same account.
+
 ## Insights (growth, load and forecasts)
 
-**Insights** in the side menu (`insights.view`) answers "how fast is this cluster growing, how busy is it, what will
-it need next month, and what should I fix?".
+**Insights** in the side menu (`insights.view`) answers "how healthy is each cluster, how fast is it growing, what
+will it need, by when, and what should I fix?".
+
+With more than one cluster it opens on **All clusters**: every cluster you may see, worst first, with its health
+score, nodes up, data size and growth, size in one year, when its disk fills up, busy-hour CPU and main concern, plus
+the top risks across all clusters and a data-growth comparison. The summaries are refreshed every hour by the
+console (and on demand with the refresh button), so the page opens instantly. Pick one cluster for its tabs:
+**Overview** (health score, outlook in plain words, headline numbers, charts), **Capacity planning**, **Findings**,
+**Databases & tables**, **Queries** and **Nodes**. **Look ahead** sets how far the forecasts go: 30 days, 3 months,
+6 months or 1 year. The print button prints the open tab or saves it as a PDF.
+
+**Health score** = 100 − 25 for each critical finding − 8 for each warning − up to 10 for small tips. 85 and above is
+*good*, 60 to 84 *fair*, below 60 *poor*.
 
 Where the numbers come from:
 
@@ -151,16 +171,34 @@ Where the numbers come from:
 Samples are kept 90 days (`PG_CONSOLE_INSIGHTS_RETENTION`, e.g. `4320h`); `PG_CONSOLE_INSIGHTS_ENABLED=false` turns
 sampling off. The sampler connects like the SQL editor does (HAProxy read-write port, the leader).
 
-Forecasts are straight-line trends (least squares) of the chosen period, projected 30 days ahead, with a confidence
-(low / medium / high) from how much history there is and how well a straight line fits. Load and CPU use the trend of
-each day's busy hour (95th percentile), not the average. The first forecasts appear after one hour of samples;
-give it about a week to see busy and quiet days. What the page works out:
+How the forecasts work, in short:
 
-- **Storage**: growth per day per database and table, size in 30 days, days until each node's disk reaches 80 % and
-  100 %, and the disk size to have in 30 days (keeping 25 % free).
-- **CPU**: busy-hour CPU now and in 30 days, and the vCPUs that keep the busy hour near 65 %.
-- **Connections**: busy-hour connections against `max_connections`, and where they are heading.
-- **Recommendations** (critical / warning / info, with the reason and what to do, SQL to copy): disk filling up,
+- The trend is the best straight line through the history (least squares). If the history curves upward (it grows
+  by a percentage, like interest), compound growth is used instead, but only when it explains the data clearly
+  better (at least halves the error) and there are 7+ days of history.
+- Every forecast has a **likely range** (95 %): where the value lands 95 times out of 100 if the trend holds. It
+  widens the further ahead it looks. A forecast more than 4 times further ahead than the history behind it is marked
+  *rough*, and the confidence (low / medium / high) drops. Compound growth is never projected beyond 1000 × today.
+- Load, CPU and memory use the trend of each day's busy hour (95th percentile), not the average.
+- The first forecasts appear after one hour of samples; give it about a week to see busy and quiet days, and a few
+  weeks before trusting a one-year view.
+
+**Capacity planning** lists every resource with today's value, the value at the end of the look-ahead (and its
+range), growth per month, the date it reaches its warning level and its limit, and what is needed:
+
+| Resource | Warning / limit | Needed |
+|---|---|---|
+| Disk of each node (data directory) | 80 % / full | disk size that keeps 25 % free, rounded up to 10 GB |
+| CPU of each node (busy hour) | 75 % / 100 % | vCPUs that keep the busy hour near 65 % |
+| Memory of each node | 90 % / 100 % | |
+| Connections (busy hour) | 80 % of / `max_connections` | |
+| All databases, the biggest databases, transactions per second | trend only | |
+
+Status: **Act** = the limit is reached within the look-ahead, **Watch** = the warning level is, **OK** = neither.
+Click a row to see its chart with the forecast range and the expected value in 1, 3, 6 and 12 months.
+
+Also on the page:
+- **Findings** (critical / warning / info, with the reason and what to do, SQL to copy): disk filling up,
   CPU or memory running hot, connections near the limit, bloated tables (VACUUM / pg_repack), stale statistics
   (ANALYZE), tables read by full scans (missing index), unused indexes, low cache hit ratio, transaction ID
   wraparound risk, long-running and idle-in-transaction sessions, replica lag, temp files, deadlocks, one statement

@@ -6,7 +6,7 @@ import Stack from '@mui/material/Stack';
 import TextField from '@mui/material/TextField';
 import Toolbar from '@mui/material/Toolbar';
 import Typography from '@mui/material/Typography';
-import logoIcon from '@shared/assets/jumbosqlIcon.png';
+import logoIcon from '@shared/assets/pgGeninIcon.png';
 import UserMenu from '@features/user-menu';
 import { BRAND } from '@shared/theme/theme.ts';
 import ThemeToggle from '@features/theme-toggle';

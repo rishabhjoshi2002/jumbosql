@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { bytes, compact, daysText, niceTicks, suggestedCores } from './format';
+import { bytes, compact, daysText, horizonLabel, niceTicks, scoreColor, suggestedCores, unitValue } from './format';
 
 describe('insights formatting', () => {
   it('formats bytes and numbers', () => {
@@ -24,5 +24,17 @@ describe('insights formatting', () => {
   it('suggests CPUs like the server does', () => {
     expect(suggestedCores(4, 60, 70)).toBe(4);
     expect(suggestedCores(4, 85, 100)).toBe(7);
+  });
+});
+
+describe('capacity helpers', () => {
+  it('formats values by unit and horizons in plain words', () => {
+    expect(unitValue(1536, 'bytes')).toBe('1.5 KB');
+    expect(unitValue(42.4, 'pct')).toBe('42%');
+    expect(unitValue(12.5, 'per_sec')).toBe('12.5/s');
+    expect(unitValue(99.6, 'count')).toBe('100');
+    expect(unitValue(undefined, 'bytes')).toBe('—');
+    expect([30, 90, 180, 365].map(horizonLabel)).toEqual(['30 days', '3 months', '6 months', '1 year']);
+    expect([90, 60, 10].map(scoreColor)).toEqual(['success', 'warning', 'error']);
   });
 });

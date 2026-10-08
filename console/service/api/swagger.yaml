@@ -540,6 +540,27 @@ paths:
           schema:
             $ref: "#/definitions/User"
 
+  /auth/me/preferences:
+    put:
+      summary: "JumboSQL: save the signed-in user's home page choices"
+      tags:
+        - auth
+      parameters:
+        - name: body
+          in: body
+          required: true
+          schema:
+            type: object
+      responses:
+        '200':
+          description: OK
+          schema:
+            type: object
+        '400':
+          description: Error
+          schema:
+            $ref: "#/definitions/Response.Error"
+
   /auth/password:
     post:
       summary: "JumboSQL: change your own password"
@@ -849,6 +870,23 @@ paths:
           schema:
             $ref: "#/definitions/Response.Error"
 
+  /insights/summary:
+    get:
+      summary: "JumboSQL: health, warnings and outlook of every cluster of a project (the clusters the user may see)"
+      tags: [cluster]
+      parameters:
+        - {name: project_id, in: query, required: true, type: integer}
+        - {name: refresh, in: query, type: boolean, description: "rebuild every summary now instead of using the hourly ones"}
+      responses:
+        '200':
+          description: OK
+          schema:
+            type: object
+        '400':
+          description: Error
+          schema:
+            $ref: "#/definitions/Response.Error"
+
   /clusters/{id}/monitoring:
     get:
       summary: "JumboSQL: live monitoring of a cluster from its Prometheus (services, alerts, graphs)"
@@ -874,6 +912,7 @@ paths:
         - {name: id, in: path, required: true, type: integer}
         - {name: days, in: query, type: integer, description: "history window in days (default 30)"}
         - {name: database, in: query, type: string, description: "database whose tables are analysed (default: the largest)"}
+        - {name: horizon, in: query, type: integer, description: "days the forecasts look ahead (default 30, up to 365)"}
       responses:
         '200':
           description: OK
@@ -1281,6 +1320,9 @@ definitions:
       permissions:
         type: object
         description: "Only in /auth/me: {global: [permissions], clusters: {<id>: [permissions]}}"
+      preferences:
+        type: object
+        description: "Only in /auth/me: the user's home page choices"
       auth_provider:
         type: string
       created_at:

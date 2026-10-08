@@ -1,5 +1,5 @@
 import { lazy } from 'react';
-import { Navigate, Route } from 'react-router-dom';
+import { Route } from 'react-router-dom';
 import RouterPaths from '@app/router/routerPathsConfig';
 
 const Clusters = lazy(() => import('@pages/clusters'));
@@ -8,8 +8,6 @@ const OverviewCluster = lazy(() => import('@pages/overview-cluster'));
 
 const ClustersRoutes = () => (
   <Route>
-    {/*redirects to "clusters" when opening homepage*/}
-    <Route path="" element={<Navigate to={RouterPaths.clusters.absolutePath} />} />
     <Route
       path={RouterPaths.clusters.absolutePath}
       handle={{

@@ -61,3 +61,37 @@ export const suggestedCores = (cores: number, p95: number, forecast: number) => 
   if (!cores || next < 75) return cores;
   return Math.max(cores, Math.ceil((cores * next) / 65));
 };
+
+/** a value in a capacity item's unit */
+export const unitValue = (v: number | undefined | null, unit: string) => {
+  if (v === undefined || v === null || !Number.isFinite(v)) return '—';
+  switch (unit) {
+    case 'bytes':
+      return bytes(v);
+    case 'pct':
+      return pct(v);
+    case 'per_sec':
+      return `${compact(v)}/s`;
+    default:
+      return compact(Math.round(v));
+  }
+};
+
+/** "30 days", "3 months", "1 year" for a horizon */
+export const horizonLabel = (d: number) =>
+  d >= 360
+    ? `${Math.round(d / 365)} year${d >= 700 ? 's' : ''}`
+    : d >= 85
+      ? `${Math.round(d / 30)} months`
+      : `${d} days`;
+
+/** short date, e.g. "12 Mar 2027" */
+export const shortDate = (iso?: string | null) =>
+  iso ? new Date(iso).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' }) : '—';
+
+/** health score colour */
+export const scoreColor = (score: number) => (score >= 85 ? 'success' : score >= 60 ? 'warning' : 'error');
+
+/** "+12.5%" growth per month; very fast growth (tiny starting point) reads "> +999%" */
+export const growthPct = (n: number) =>
+  n >= 1000 ? '> +999%' : `${n > 0 ? '+' : ''}${n.toFixed(Math.abs(n) >= 100 ? 0 : 1)}%`;

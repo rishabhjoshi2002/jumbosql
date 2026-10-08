@@ -3,6 +3,7 @@ package auth
 // JumboSQL: /auth/login, /auth/logout, /auth/me, /auth/password
 
 import (
+	"encoding/json"
 	"errors"
 	"net/http"
 	"strings"
@@ -136,7 +137,46 @@ func (h *meHandler) Handle(param authops.GetAuthMeParams) middleware.Responder {
 	}
 	m := ToModel(u)
 	m.Permissions = perms
+	if b, err := h.db.GetUserPreferences(param.HTTPRequest.Context(), u.ID); err == nil {
+		var prefs map[string]any
+		if json.Unmarshal(b, &prefs) == nil {
+			m.Preferences = prefs
+		}
+	}
 	return authops.NewGetAuthMeOK().WithPayload(m)
+}
+
+// JumboSQL: PUT /auth/me/preferences - the user's own home page choices (cards, their order, start page).
+type preferencesHandler struct{ db storage.IStorage }
+
+func NewPutAuthMePreferencesHandler(db storage.IStorage) authops.PutAuthMePreferencesHandler {
+	return &preferencesHandler{db: db}
+}
+
+const maxPreferencesBytes = 32 << 10
+
+func (h *preferencesHandler) Handle(param authops.PutAuthMePreferencesParams) middleware.Responder {
+	bad := func(msg string) middleware.Responder {
+		return authops.NewPutAuthMePreferencesBadRequest().WithPayload(&models.ResponseError{Code: http.StatusBadRequest, Title: msg, Description: msg})
+	}
+	p := localmid.PrincipalFrom(param.HTTPRequest.Context())
+	if p == nil || p.UserID == 0 {
+		return bad("preferences belong to a user; the API token has none")
+	}
+	b, err := json.Marshal(param.Body)
+	if err != nil {
+		return bad("preferences must be a JSON object")
+	}
+	if _, ok := param.Body.(map[string]any); !ok {
+		return bad("preferences must be a JSON object")
+	}
+	if len(b) > maxPreferencesBytes {
+		return bad("preferences are too large")
+	}
+	if err := h.db.SaveUserPreferences(param.HTTPRequest.Context(), p.UserID, b); err != nil {
+		return authops.NewPutAuthMePreferencesBadRequest().WithPayload(controllers.MakeErrorPayload(err, controllers.BaseError))
+	}
+	return authops.NewPutAuthMePreferencesOK().WithPayload(param.Body)
 }
 
 type passwordHandler struct{ db storage.IStorage }

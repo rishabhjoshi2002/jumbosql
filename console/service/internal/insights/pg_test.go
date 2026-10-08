@@ -41,7 +41,8 @@ func TestPostgresQueries(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := rows(ctx, w, `create table public.t (id int primary key, v text);
+	// autovacuum would clean the dead rows this test wants to see
+	if _, err := rows(ctx, w, `create table public.t (id int primary key, v text) with (autovacuum_enabled = false);
 		create index t_v on public.t (v);
 		insert into public.t select g, md5(g::text) from generate_series(1, 20000) g;
 		delete from public.t where id % 2 = 0;`); err != nil {

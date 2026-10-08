@@ -15,8 +15,6 @@ import VisibilityOutlined from '@mui/icons-material/VisibilityOutlined';
 import VisibilityOffOutlined from '@mui/icons-material/VisibilityOffOutlined';
 import { useTranslation } from 'react-i18next';
 import { useLocation, useNavigate } from 'react-router-dom';
-import RouterPaths from '@app/router/routerPathsConfig';
-import { generateAbsoluteRouterPath } from '@shared/lib/functions.ts';
 import { Controller, useForm } from 'react-hook-form';
 import { LoginFormValues } from '@pages/login/model/types.ts';
 import { LOGIN_FORM_FIELD_NAMES } from '@pages/login/model/constants.ts';
@@ -24,8 +22,8 @@ import { usePostAuthLoginMutation } from '@shared/api/api/auth.ts';
 import { setSession } from '@shared/lib/session.ts';
 import { BRAND } from '@shared/theme/theme.ts';
 import { version } from '../../../../package.json';
-import logo from '@shared/assets/jumbosqlLogo.png';
-import logoIcon from '@shared/assets/jumbosqlIcon.png';
+import logo from '@shared/assets/pgGeninLogo.png';
+import logoIcon from '@shared/assets/pgGeninIcon.png';
 import Watermark from '@shared/ui/watermark';
 
 const highlights = ['loginHighlightInventory', 'loginHighlightPatroni', 'loginHighlightObservability'];
@@ -56,7 +54,8 @@ const Login: FC = () => {
       }).unwrap();
       setSession(res.token, res.user);
       const back = (location.state as { path?: string } | null)?.path;
-      navigate(back && back !== '/login' ? back : generateAbsoluteRouterPath(RouterPaths.clusters.absolutePath));
+      // "/" opens the user's own start page
+      navigate(back && back !== '/login' ? back : '/');
     } catch (e) {
       const status = (e as { status?: number })?.status;
       setError(status === 401 ? t('invalidCredentials') : t('signInFailed'));

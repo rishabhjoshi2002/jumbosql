@@ -163,6 +163,7 @@ func NewService(
 	api.AuthPostAuthLoginHandler = authctl.NewPostAuthLoginHandler(authSvc, log.Logger)
 	api.AuthPostAuthLogoutHandler = authctl.NewPostAuthLogoutHandler(authSvc)
 	api.AuthGetAuthMeHandler = authctl.NewGetAuthMeHandler(db)
+	api.AuthPutAuthMePreferencesHandler = authctl.NewPutAuthMePreferencesHandler(db)
 	api.AuthPostAuthPasswordHandler = authctl.NewPostAuthPasswordHandler(db)
 	api.UserGetUsersHandler = user.NewGetUsersHandler(db)
 	api.UserPostUsersHandler = user.NewPostUserHandler(db, accessSvc)
@@ -194,7 +195,8 @@ func NewService(
 	// JumboSQL: PostgreSQL logs viewer
 	logsList, logsRead := cluster.NewLogsHandlers(db, patroniActions, cfg.DbDesk.SSLMode)
 	insightsSvc := insights.NewService(db, log.Logger, insights.OptionsFromConfig(cfg))
-	api.ClusterGetClustersIDInsightsHandler = cluster.NewInsightsHandler(insightsSvc)
+	api.ClusterGetClustersIDInsightsHandler = cluster.NewInsightsHandler(insightsSvc, db)
+	api.ClusterGetInsightsSummaryHandler = cluster.NewInsightsSummaryHandler(insightsSvc, db, accessSvc)
 	api.ClusterGetClustersIDMonitoringHandler = cluster.NewMonitoringHandler(insightsSvc)
 	api.ClusterGetClustersIDLogsHandler = logsList
 	api.ClusterGetClustersIDLogsFileHandler = logsRead

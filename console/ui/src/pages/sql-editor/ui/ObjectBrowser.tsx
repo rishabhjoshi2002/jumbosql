@@ -311,7 +311,7 @@ const ObjectBrowser: FC<Props> = ({ run, database, reloadKey, onOpen, onInsert, 
                                         !c.readable ? (
                                           lockIcon
                                         ) : c.pk ? (
-                                          <KeyIcon sx={{ fontSize: 14, color: 'warning.main' }} />
+                                          <KeyIcon color="warning" sx={{ fontSize: 14 }} />
                                         ) : (
                                           <ViewColumnOutlinedIcon sx={{ fontSize: 14 }} />
                                         )

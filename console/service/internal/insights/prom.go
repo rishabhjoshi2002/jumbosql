@@ -93,6 +93,7 @@ type Host struct {
 	MemTotal     float64  `json:"mem_total_bytes"`
 	Mem          []Point  `json:"mem"` // % used
 	MemP95       float64  `json:"mem_p95"`
+	MemForecast  Forecast `json:"mem_forecast"` // of the daily p95
 	Mount        string   `json:"mount,omitempty"`
 	DiskSize     float64  `json:"disk_size_bytes"`
 	DiskUsed     []Point  `json:"disk_used"` // bytes
@@ -113,7 +114,10 @@ const fsFilter = `fstype!~"tmpfs|devtmpfs|overlay|squashfs|nsfs|ramfs|fuse.*"`
 
 // Hosts reads CPU, memory and filesystem history for the nodes (servers: ip -> name / role). dataDir picks the
 // filesystem that holds PostgreSQL's data directory (longest mount point prefix), else "/".
-func (p *Prometheus) Hosts(ctx context.Context, servers map[string][2]string, dataDir string, days int, now time.Time) ([]Host, error) {
+func (p *Prometheus) Hosts(ctx context.Context, servers map[string][2]string, dataDir string, days, horizon int, now time.Time) ([]Host, error) {
+	if horizon <= 0 {
+		horizon = 30
+	}
 	start := now.Add(-time.Duration(days) * 24 * time.Hour)
 	step := time.Duration(days) * 24 * time.Hour / 240
 	if step < 5*time.Minute {
@@ -179,8 +183,9 @@ func (p *Prometheus) Hosts(ctx context.Context, servers map[string][2]string, da
 	for _, h := range hosts {
 		h.CPUP95 = Percentile(h.CPU, 95)
 		h.MemP95 = Percentile(h.Mem, 95)
-		h.CPUForecast = MakeForecast(dailyPercentile(h.CPU, 95), 30, now)
-		h.DiskForecast = MakeForecast(h.DiskUsed, 30, now)
+		h.CPUForecast = MakeForecast(dailyPercentile(h.CPU, 95), horizon, now)
+		h.MemForecast = MakeForecast(dailyPercentile(h.Mem, 95), horizon, now)
+		h.DiskForecast = MakeForecast(h.DiskUsed, horizon, now)
 		if fit, ok := LinearFit(h.DiskUsed); ok && h.DiskSize > 0 {
 			h.DaysToFull = fit.DaysUntil(h.DiskSize, now)
 			h.DaysTo80 = fit.DaysUntil(0.8*h.DiskSize, now)

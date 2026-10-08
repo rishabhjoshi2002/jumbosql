@@ -2,6 +2,7 @@ package insights
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"sync"
 	"time"
@@ -34,6 +35,7 @@ type Collector struct {
 	mu         sync.Mutex
 	lastTables map[int64]time.Time
 	lastPurge  time.Time
+	svc        *Service
 	cancel     context.CancelFunc
 	wg         sync.WaitGroup
 }
@@ -48,7 +50,8 @@ func NewCollector(db storage.IStorage, log zerolog.Logger, opts Options) *Collec
 	if opts.MaxDatabases <= 0 {
 		opts.MaxDatabases = 20
 	}
-	return &Collector{db: db, log: log.With().Str("module", "insights").Logger(), opts: opts, lastTables: map[int64]time.Time{}}
+	return &Collector{db: db, log: log.With().Str("module", "insights").Logger(), opts: opts, lastTables: map[int64]time.Time{},
+		svc: NewService(db, log, opts)}
 }
 
 // Run starts sampling in the background (the first round a little after start-up).
@@ -178,7 +181,17 @@ func (c *Collector) CollectCluster(ctx context.Context, clusterID int64, now tim
 			}
 		}
 	}
-	return c.db.AddMetricSamples(ctx, clusterID, samples)
+	if err := c.db.AddMetricSamples(ctx, clusterID, samples); err != nil {
+		return err
+	}
+	if tablesDue { // hourly: refresh the cluster's summary for the multi-cluster view (health, warnings, outlook)
+		if rep, err := c.svc.Build(ctx, clusterID, 30, 30, ""); err == nil {
+			if b, err := json.Marshal(Summarize(rep)); err == nil {
+				_ = c.db.SaveInsightSummary(ctx, clusterID, rep.GeneratedAt, b)
+			}
+		}
+	}
+	return nil
 }
 
 // OptionsFromConfig reads PG_CONSOLE_INSIGHTS_* (and the SQL editor's sslmode for the connections).

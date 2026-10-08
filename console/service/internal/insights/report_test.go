@@ -68,7 +68,7 @@ func TestHostsAndRecommendations(t *testing.T) {
 	srv := fakeProm(t, now)
 	defer srv.Close()
 	p := &Prometheus{BaseURL: srv.URL}
-	hosts, err := p.Hosts(t.Context(), map[string][2]string{"10.0.0.11": {"pg1", "leader"}}, "/pgdata/17/data", 14, now)
+	hosts, err := p.Hosts(t.Context(), map[string][2]string{"10.0.0.11": {"pg1", "leader"}}, "/pgdata/17/data", 14, 30, now)
 	if err != nil {
 		t.Fatal(err)
 	}

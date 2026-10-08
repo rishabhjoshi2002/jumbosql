@@ -13,6 +13,15 @@ export type ApiUser = {
   auth_provider?: string;
   created_at?: string;
   last_login_at?: string | null;
+  /** only from /auth/me: the user's own choices (home page cards, start page, notes) */
+  preferences?: UserPreferences;
+};
+
+/** JumboSQL: personal home page settings, saved per user on the server */
+export type UserPreferences = {
+  home?: { cards?: string[]; start_page?: string };
+  notes?: string;
+  [k: string]: unknown;
 };
 
 export type LoginResponse = { token: string; expires_at: string; user: ApiUser };
@@ -28,6 +37,9 @@ const injectedRtkApi = api.enhanceEndpoints({ addTagTypes: ['Users'] }).injectEn
     getAuthMe: build.query<ApiUser, void>({
       query: () => ({ url: `/auth/me` }),
       keepUnusedDataFor: 0,
+    }),
+    putAuthMePreferences: build.mutation<UserPreferences, UserPreferences>({
+      query: (body) => ({ url: `/auth/me/preferences`, method: 'PUT', body }),
     }),
     postAuthPassword: build.mutation<void, { current_password: string; new_password: string }>({
       query: (body) => ({ url: `/auth/password`, method: 'POST', body }),
@@ -65,6 +77,7 @@ export const {
   usePostAuthLogoutMutation,
   useGetAuthMeQuery,
   usePostAuthPasswordMutation,
+  usePutAuthMePreferencesMutation,
   useGetUsersQuery,
   usePostUsersMutation,
   usePatchUsersByIdMutation,

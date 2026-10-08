@@ -90,3 +90,42 @@ func (s *dbStorage) PurgeMetricSamples(ctx context.Context, olderThan time.Durat
 	}
 	return tag.RowsAffected(), nil
 }
+
+// SaveInsightSummary keeps the latest summary of a cluster's Insights report (JSON).
+func (s *dbStorage) SaveInsightSummary(ctx context.Context, clusterID int64, at time.Time, summary []byte) error {
+	_, err := s.db.Exec(ctx, `insert into insight_reports (cluster_id, at, summary) values ($1, $2, $3)
+		on conflict (cluster_id) do update set at = excluded.at, summary = excluded.summary`, clusterID, at, summary)
+	return err
+}
+
+// GetInsightSummaries returns the cached summaries of the given clusters (cluster id -> JSON).
+func (s *dbStorage) GetInsightSummaries(ctx context.Context, clusterIDs []int64) (map[int64][]byte, error) {
+	rows, err := s.db.Query(ctx, `select cluster_id, summary from insight_reports where cluster_id = any($1)`, clusterIDs)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[int64][]byte{}
+	for rows.Next() {
+		var id int64
+		var b []byte
+		if err := rows.Scan(&id, &b); err != nil {
+			return nil, err
+		}
+		out[id] = b
+	}
+	return out, rows.Err()
+}
+
+// GetUserPreferences: the user's home page choices (JSON object, "{}" when none).
+func (s *dbStorage) GetUserPreferences(ctx context.Context, userID int64) ([]byte, error) {
+	var b []byte
+	err := s.db.QueryRow(ctx, `select coalesce(preferences, '{}'::jsonb) from users where user_id = $1`, userID).Scan(&b)
+	return b, err
+}
+
+// SaveUserPreferences replaces the user's home page choices.
+func (s *dbStorage) SaveUserPreferences(ctx context.Context, userID int64, prefs []byte) error {
+	_, err := s.db.Exec(ctx, `update users set preferences = $2 where user_id = $1`, userID, prefs)
+	return err
+}

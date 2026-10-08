@@ -1,6 +1,6 @@
 import { FC } from 'react';
 import { Box, Typography, useTheme } from '@mui/material';
-import logo from '@shared/assets/jumbosqlIcon.png';
+import logo from '@shared/assets/pgGeninIcon.png';
 
 /**
  * JumboSQL: faint brand watermark on every page - logo, product name and the managing company.

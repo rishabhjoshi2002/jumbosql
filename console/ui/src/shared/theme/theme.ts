@@ -86,6 +86,20 @@ export const createAppTheme = (mode: PaletteMode) => {
               color: `${t.text} !important`,
               '& path, & circle, & rect, & polygon': { fill: `${t.text} !important` },
             },
+            // Status icons (color="error" | "warning" | "success" | "info") keep their meaning
+            ...Object.fromEntries(
+              (
+                [
+                  ['Error', t.danger],
+                  ['Warning', isLight ? '#ed6c02' : '#ffa726'],
+                  ['Success', isLight ? '#2e7d32' : '#66bb6a'],
+                  ['Info', isLight ? '#0288d1' : '#29b6f6'],
+                ] as const
+              ).map(([k, c]) => [
+                `svg.MuiSvgIcon-color${k}, svg.MuiSvgIcon-color${k} path`,
+                { fill: `${c} !important`, color: `${c} !important` },
+              ]),
+            ),
             // Header and sidebar are dark in both modes: light icons and text there
             '[data-surface="chrome"] svg.MuiSvgIcon-root, [data-surface="chrome"] svg.MuiSvgIcon-root path': {
               fill: `${BRAND.chromeText} !important`,

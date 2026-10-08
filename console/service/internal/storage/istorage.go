@@ -29,6 +29,10 @@ type IStorage interface {
 	GetMetricSamples(ctx context.Context, clusterID int64, metrics []string, from time.Time) ([]MetricSample, error)
 	FirstMetricSample(ctx context.Context, clusterID int64) (time.Time, int64, error)
 	PurgeMetricSamples(ctx context.Context, olderThan time.Duration) (int64, error)
+	SaveInsightSummary(ctx context.Context, clusterID int64, at time.Time, summary []byte) error
+	GetInsightSummaries(ctx context.Context, clusterIDs []int64) (map[int64][]byte, error)
+	GetUserPreferences(ctx context.Context, userID int64) ([]byte, error)
+	SaveUserPreferences(ctx context.Context, userID int64, prefs []byte) error
 
 	// JumboSQL: users and login sessions
 	CountUsers(ctx context.Context) (int64, error)

@@ -42,10 +42,15 @@ type DBGrowth struct {
 
 // Report is everything the Insights page shows for one cluster.
 type Report struct {
-	GeneratedAt time.Time `json:"generated_at"`
-	ClusterID   int64     `json:"cluster_id"`
-	Cluster     string    `json:"cluster"`
-	Days        int       `json:"days"`
+	GeneratedAt time.Time      `json:"generated_at"`
+	ClusterID   int64          `json:"cluster_id"`
+	Cluster     string         `json:"cluster"`
+	Days        int            `json:"days"`
+	Horizon     int            `json:"horizon"` // days ahead the forecasts look
+	Score       int            `json:"score"`   // health score 0..100
+	Grade       string         `json:"grade"`   // good | fair | poor
+	Outlook     []OutlookLine  `json:"outlook"`
+	Capacity    []CapacityItem `json:"capacity"`
 	Collection  struct {
 		Enabled  bool      `json:"enabled"`
 		Interval string    `json:"interval"`
@@ -98,10 +103,14 @@ type Report struct {
 var sampledMetrics = []string{MClusterSize, MConnections, MMaxConnections, MXact, MRollbacks, MTupWritten, MTupFetched,
 	MBlksHit, MBlksRead, MTempBytes, MDeadlocks, MDBSize}
 
-// Build the report. days = history window (and fit window); database = whose tables to show ("" = the largest).
-func (s *Service) Build(ctx context.Context, clusterID int64, days int, database string) (*Report, error) {
+// Build the report. days = history window (and fit window); horizon = days the forecasts look ahead;
+// database = whose tables to show ("" = the largest).
+func (s *Service) Build(ctx context.Context, clusterID int64, days, horizon int, database string) (*Report, error) {
 	if days <= 0 {
 		days = 30
+	}
+	if horizon <= 0 {
+		horizon = 30
 	}
 	now := time.Now()
 	cl, err := s.db.GetCluster(ctx, clusterID)
@@ -131,14 +140,16 @@ func (s *Service) Build(ctx context.Context, clusterID int64, days int, database
 	}
 
 	size := get(MClusterSize, "")
-	r.Storage.Forecast = MakeForecast(size, 30, now)
+	r.Storage.Forecast = MakeForecast(size, horizon, now)
+	dbSeries := map[string][]Point{}
 	r.Storage.Points = Downsample(size, 300)
 	for k, pts := range series {
 		metric, key, _ := strings.Cut(k, "\x00")
 		if metric != MDBSize {
 			continue
 		}
-		r.Storage.Databases = append(r.Storage.Databases, DBGrowth{Name: key, Size: Last(pts), Forecast: MakeForecast(pts, 30, now),
+		dbSeries[key] = pts
+		r.Storage.Databases = append(r.Storage.Databases, DBGrowth{Name: key, Size: Last(pts), Forecast: MakeForecast(pts, horizon, now),
 			Points: Downsample(pts, 120)})
 	}
 	sort.Slice(r.Storage.Databases, func(i, j int) bool { return r.Storage.Databases[i].Size > r.Storage.Databases[j].Size })
@@ -146,13 +157,13 @@ func (s *Service) Build(ctx context.Context, clusterID int64, days int, database
 	tps := Rates(get(MXact, ""), maxGap)
 	r.Load.TPS = Downsample(tps, 300)
 	r.Load.TPSPeak = Percentile(tps, 95)
-	r.Load.TPSForecast = MakeForecast(dailyPercentile(tps, 95), 30, now)
+	r.Load.TPSForecast = MakeForecast(dailyPercentile(tps, 95), horizon, now)
 	r.Load.Writes = Downsample(Rates(get(MTupWritten, ""), maxGap), 300)
 	r.Load.Reads = Downsample(Rates(get(MTupFetched, ""), maxGap), 300)
 	conns := get(MConnections, "")
 	r.Load.Connections = Downsample(conns, 300)
 	r.Load.ConnPeak = Percentile(conns, 95)
-	r.Load.ConnForecast = MakeForecast(dailyPercentile(conns, 95), 30, now)
+	r.Load.ConnForecast = MakeForecast(dailyPercentile(conns, 95), horizon, now)
 	r.Load.MaxConnections = Last(get(MMaxConnections, ""))
 	r.Load.CacheHit = Downsample(hitRatio(get(MBlksHit, ""), get(MBlksRead, ""), maxGap), 300)
 	if tr := Rates(get(MTempBytes, ""), maxGap); len(tr) > 0 {
@@ -234,7 +245,7 @@ func (s *Service) Build(ctx context.Context, clusterID int64, days int, database
 			dataDir = r.Overview.DataDirectory
 		}
 		p := &Prometheus{BaseURL: prom, HTTP: s.httpCli}
-		hosts, err := p.Hosts(ctx, servers, dataDir, days, now)
+		hosts, err := p.Hosts(ctx, servers, dataDir, days, horizon, now)
 		if err != nil {
 			r.HostsError = err.Error()
 		}
@@ -242,6 +253,7 @@ func (s *Service) Build(ctx context.Context, clusterID int64, days int, database
 	}
 
 	r.Recommendations = Recommend(r, now)
+	BuildCapacity(r, size, conns, tps, dbSeries, horizon, now)
 	return r, nil
 }
 
