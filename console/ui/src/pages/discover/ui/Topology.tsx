@@ -58,8 +58,15 @@ const Topology: FC<{ result: DResult; selected?: string; onSelect: (id: string) 
         sx={{ overflowX: 'auto', border: 1, borderColor: 'divider', borderRadius: 2, bgcolor: 'background.default' }}>
         <svg
           viewBox={`0 0 ${lay.width + 2 * M} ${lay.height + 2 * M}`}
-          width="100%"
-          style={{ minWidth: Math.min(lay.width + 2 * M, 900), display: 'block' }}
+          // natural size (never blown up), shrinks to fit down to 900 px, then scrolls
+          style={{
+            display: 'block',
+            margin: '0 auto',
+            width: '100%',
+            height: 'auto',
+            maxWidth: lay.width + 2 * M,
+            minWidth: Math.min(lay.width + 2 * M, 900),
+          }}
           role="img"
           aria-label={result.architecture}>
           <defs>

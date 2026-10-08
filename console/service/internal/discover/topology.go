@@ -399,6 +399,8 @@ func describe(res *Result) {
 	}
 	var name string
 	switch {
+	case c.Reachable == 0 && allLoginFailed(res):
+		name = "Login failed on every server"
 	case c.Reachable == 0:
 		name = "Nothing reachable"
 	case len(res.Groups) == 1 && streaming == 0 && logical == 0:
@@ -608,4 +610,19 @@ func findings(res *Result) {
 	}
 	order := map[string]int{"critical": 0, "warning": 1, "info": 2}
 	sort.SliceStable(res.Findings, func(i, j int) bool { return order[res.Findings[i].Severity] < order[res.Findings[j].Severity] })
+}
+
+// allLoginFailed: every server answered but refused the login (wrong user/password or pg_hba)
+func allLoginFailed(res *Result) bool {
+	n := 0
+	for _, x := range res.Nodes {
+		if x.External {
+			continue
+		}
+		if !strings.Contains(x.Error, "username or password") && !strings.Contains(x.Error, "pg_hba") {
+			return false
+		}
+		n++
+	}
+	return n > 0
 }
