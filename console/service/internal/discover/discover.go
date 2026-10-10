@@ -35,6 +35,15 @@ type Request struct {
 	Password string
 	Database string // the database to log in to first (default postgres)
 	SSLMode  string
+
+	// infrastructure (all optional): the machines of the inventory, SSH for read-only commands, Prometheus for trends
+	Hosts   []InvHost
+	SSH     *SSHAuth
+	KeyFile string // written by PrepareSSH
+	Askpass string
+	PromURL string
+	Days    int // history to read from Prometheus
+	Horizon int // days ahead to size for
 }
 
 type Setting struct {
@@ -200,6 +209,8 @@ type Result struct {
 	Edges        []Edge    `json:"edges"`
 	Groups       []Group   `json:"groups"`
 	Findings     []Finding `json:"findings"`
+	Infra        *Infra    `json:"infra,omitempty"`  // machines and everything around PostgreSQL
+	Sizing       *Sizing   `json:"sizing,omitempty"` // hardware and settings advice
 	Counts       struct {
 		Nodes       int     `json:"nodes"`
 		Reachable   int     `json:"reachable"`
@@ -260,6 +271,11 @@ func ParseInventory(text string) ([]Target, error) {
 // Run probes every target (in parallel) and puts the picture together.
 func Run(ctx context.Context, req Request) *Result {
 	res := &Result{At: time.Now().UTC(), Edges: []Edge{}, Groups: []Group{}, Findings: []Finding{}, Summary: []string{}}
+	var infra *Infra
+	if len(req.Hosts) > 0 {
+		infra = probeInfra(ctx, req)
+		req.Targets = pgTargets(req, infra)
+	}
 	nodes := make([]*Node, len(req.Targets))
 	var wg sync.WaitGroup
 	sem := make(chan struct{}, 8)
@@ -278,6 +294,11 @@ func Run(ctx context.Context, req Request) *Result {
 	res.Nodes = nodes
 	link(res)
 	describe(res)
+	if infra != nil {
+		finishInfra(ctx, res, infra, req)
+		res.Infra = infra
+		res.Sizing = sizing(ctx, res, infra, req)
+	}
 	return res
 }
 
@@ -355,6 +376,9 @@ var shownSettings = []string{
 	"archive_command", "restore_command", "data_checksums", "ssl", "password_encryption",
 	"shared_preload_libraries", "cluster_name", "timezone", "max_worker_processes", "max_logical_replication_workers",
 	"autovacuum", "log_destination", "logging_collector", "log_directory",
+	"wal_buffers", "min_wal_size", "max_wal_size", "checkpoint_completion_target", "random_page_cost",
+	"effective_io_concurrency", "max_parallel_workers", "max_parallel_workers_per_gather",
+	"max_parallel_maintenance_workers", "huge_pages", "wal_compression",
 }
 
 func probe(ctx context.Context, req Request, t Target) *Node {

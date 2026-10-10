@@ -1,5 +1,6 @@
 // pg_genin: Discover - map any PostgreSQL servers the console can reach (POST /discover, saved results).
 import { baseApi as api } from '../baseApi.ts';
+import type { InsightsHost } from './insights.ts';
 
 export type DSetting = { name: string; value: string; unit?: string };
 export type DPublication = { name: string; all_tables: boolean; tables: string[] | null };
@@ -200,6 +201,8 @@ export type DResult = {
   edges: DEdge[];
   groups: DGroup[];
   findings: DFinding[];
+  infra?: DInfra;
+  sizing?: DSizing;
   counts: {
     nodes: number;
     reachable: number;
@@ -210,6 +213,104 @@ export type DResult = {
     size_bytes: number;
   };
 };
+/** the machines and everything around PostgreSQL */
+export type DComponent = {
+  kind: string;
+  layer: 'entry' | 'balancer' | 'pooler' | 'database' | 'ha' | 'dcs' | 'backup' | 'monitoring' | 'platform' | 'other';
+  label: string;
+  version?: string;
+  package?: string;
+  path?: string;
+  running: boolean;
+  ports?: number[] | null;
+  sources: string[];
+  details?: Record<string, string>;
+  endpoint?: string;
+};
+export type DHost = {
+  address: string;
+  name?: string;
+  groups?: string[] | null;
+  reachable: boolean;
+  open_ports: number[];
+  ssh: 'ok' | 'failed' | 'not tried';
+  ssh_error?: string;
+  sudo?: string;
+  os?: string;
+  kernel?: string;
+  arch?: string;
+  cpus?: number;
+  cpu_model?: string;
+  mem_bytes?: number;
+  swap_bytes?: number;
+  virtualization?: string;
+  booted_at?: string;
+  load?: string;
+  disks?: { mount: string; fs: string; size_bytes: number; used_bytes: number }[] | null;
+  listening?: { port: number; addr: string; process?: string }[] | null;
+  services?: string[] | null;
+  packages?: { name: string; version: string }[] | null;
+  components: DComponent[];
+  roles: string[];
+  vips?: string[] | null;
+};
+export type DRoute = {
+  host: string;
+  kind: string;
+  name: string;
+  port: number;
+  mode?: string;
+  targets: string[];
+  resolved: string[];
+};
+export type DInfra = {
+  stack: string;
+  summary: string[];
+  hosts: DHost[];
+  routes: DRoute[];
+  vips: string[];
+  prometheus?: string;
+  prometheus_error?: string;
+  prometheus_targets?: { job: string; instance: string; health: string; host?: string }[] | null;
+  ssh_used: boolean;
+};
+export type DSize = { cpus: number; mem_bytes: number; disk_bytes: number };
+export type DHostSizing = {
+  address: string;
+  name: string;
+  roles: string[] | null;
+  pg_role?: string;
+  current: DSize;
+  recommended: DSize;
+  cpu_peak_pct: number;
+  cpu_ahead_pct: number;
+  mem_peak_pct: number;
+  mem_ahead_pct: number;
+  disk_used_bytes: number;
+  disk_ahead_bytes: number;
+  status: 'right' | 'under' | 'over' | 'unknown';
+  reasons: string[];
+  trend?: InsightsHost;
+};
+export type DTuning = {
+  node: string;
+  host: string;
+  role: string;
+  for: DSize;
+  changes: { name: string; current: string; recommended: string; restart: boolean; reason: string }[];
+  script: string;
+};
+export type DSizing = {
+  source: 'prometheus' | 'machines';
+  prometheus?: string;
+  error?: string;
+  days: number;
+  horizon: number;
+  hosts: DHostSizing[];
+  tuning: DTuning[];
+  notes: string[];
+};
+
 export type Discovery = {
   id?: number;
   name: string;
@@ -228,6 +329,14 @@ export type DiscoverRequest = {
   sslmode?: string;
   name?: string;
   save?: boolean;
+  pg_port?: number;
+  ssh_user?: string;
+  ssh_port?: number;
+  ssh_password?: string;
+  ssh_key?: string;
+  prometheus_url?: string;
+  days?: number;
+  horizon?: number;
 };
 
 export type QueryRequest = {

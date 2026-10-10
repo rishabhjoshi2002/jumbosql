@@ -1,5 +1,8 @@
 import { FC, useEffect, useState } from 'react';
 import {
+  Accordion,
+  AccordionDetails,
+  AccordionSummary,
   Alert,
   Box,
   Button,
@@ -31,6 +34,7 @@ import DownloadOutlined from '@mui/icons-material/DownloadOutlined';
 import ErrorOutlineIcon from '@mui/icons-material/ErrorOutline';
 import WarningAmberIcon from '@mui/icons-material/WarningAmber';
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
+import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'react-toastify';
 import {
@@ -45,30 +49,9 @@ import Topology, { roleKey, useRoleColors } from './Topology.tsx';
 import NodeDetails from './NodeDetails.tsx';
 import DatabaseExplorer, { CHECK_ICON, dbStatus } from './DatabaseExplorer.tsx';
 import QueryRunner from './QueryRunner.tsx';
-
-const Card: FC<{ title?: string; subtitle?: string; children: React.ReactNode; action?: React.ReactNode }> = ({
-  title,
-  subtitle,
-  children,
-  action,
-}) => (
-  <Box sx={{ border: 1, borderColor: 'divider', borderRadius: 2, p: 2, bgcolor: 'background.paper', minWidth: 0 }}>
-    {title ? (
-      <Stack direction="row" alignItems="flex-start" gap={1} mb={1.25}>
-        <Box flex={1}>
-          <Typography fontWeight={700}>{title}</Typography>
-          {subtitle ? (
-            <Typography variant="caption" color="text.secondary">
-              {subtitle}
-            </Typography>
-          ) : null}
-        </Box>
-        {action}
-      </Stack>
-    ) : null}
-    {children}
-  </Box>
-);
+import Card from './Card.tsx';
+import Infrastructure from './Infrastructure.tsx';
+import Sizing from './Sizing.tsx';
 
 const SEV = {
   critical: <ErrorOutlineIcon fontSize="small" color="error" />,
@@ -77,6 +60,20 @@ const SEV = {
 };
 
 const countLines = (s: string) => s.split('\n').filter((l) => l.replace(/#.*/, '').trim()).length;
+// machines in an inventory: lines of an INI inventory's host sections (not vars / children); YAML: unknown
+const countHosts = (s: string): number | null => {
+  if (!/^\s*\[[^\]]+\]\s*$/m.test(s)) return /^\s*all:\s*$/m.test(s) ? null : countLines(s);
+  const seen = new Set<string>();
+  let kind = 'hosts';
+  s.split('\n').forEach((raw) => {
+    const l = raw.replace(/[#;].*/, '').trim();
+    if (!l) return;
+    if (l.startsWith('[')) kind = l.includes(':') ? 'other' : 'hosts';
+    else if (kind === 'hosts') seen.add(l.split(/\s+/)[0]);
+  });
+  return seen.size;
+};
+const isAnsible = (s: string) => /^\s*\[[^\]]+\]\s*$/m.test(s) || /^\s*all:\s*$/m.test(s);
 
 /** pg_genin Discover: point at any PostgreSQL servers, get the architecture and every detail. */
 const Discover: FC = () => {
@@ -90,10 +87,17 @@ const Discover: FC = () => {
     sslmode: 'prefer',
     name: '',
     save: true,
+    ssh_user: '',
+    ssh_port: '22',
+    ssh_password: '',
+    ssh_key: '',
+    prometheus_url: '',
+    days: '30',
+    horizon: '180',
   });
   const [current, setCurrent] = useState<Discovery | null>(null);
   const [selected, setSelected] = useState<string>('');
-  const [view, setView] = useState<'architecture' | 'databases' | 'query'>('architecture');
+  const [view, setView] = useState<'infra' | 'architecture' | 'databases' | 'query' | 'sizing'>('infra');
   const [dbServer, setDbServer] = useState('');
   const [dbName, setDbName] = useState('');
   const [run, running] = usePostDiscoverMutation();
@@ -104,6 +108,7 @@ const Discover: FC = () => {
   const node = res?.nodes.find((n) => n.id === selected) ?? res?.nodes[0];
 
   useEffect(() => {
+    if (res && !res.infra) setView((v) => (v === 'infra' || v === 'sizing' ? 'architecture' : v));
     if (res) setDbServer(res.nodes.find((n) => n.reachable && n.role !== 'standby')?.id ?? '');
     if (res) setSelected(res.nodes.find((n) => n.role === 'primary')?.id ?? res.nodes[0]?.id ?? '');
   }, [res]);
@@ -111,7 +116,23 @@ const Discover: FC = () => {
   const set = (k: keyof typeof form, v: string | boolean) => setForm((f) => ({ ...f, [k]: v }));
   const submit = async () => {
     try {
-      const out = await run({ ...form, name: form.name.trim() || undefined }).unwrap();
+      const out = await run({
+        inventory: form.inventory,
+        username: form.username,
+        password: form.password,
+        database: form.database,
+        sslmode: form.sslmode,
+        save: form.save,
+        name: form.name.trim() || undefined,
+        ssh_user: form.ssh_user.trim() || undefined,
+        ssh_port: Number(form.ssh_port) || undefined,
+        ssh_password: form.ssh_user.trim() ? form.ssh_password || undefined : undefined,
+        ssh_key: form.ssh_user.trim() ? form.ssh_key.trim() || undefined : undefined,
+        prometheus_url: form.prometheus_url.trim() || undefined,
+        days: Number(form.days) || undefined,
+        horizon: Number(form.horizon) || undefined,
+      }).unwrap();
+      setView(out.result.infra ? 'infra' : 'architecture');
       setCurrent(out);
       if (form.save) toast.success(t('saved'));
     } catch (e) {
@@ -126,7 +147,14 @@ const Discover: FC = () => {
     }
   };
   const again = (d: { inventory: string; username: string; name: string }) => {
-    setForm((f) => ({ ...f, inventory: d.inventory, username: d.username, name: d.name, password: '' }));
+    setForm((f) => ({
+      ...f,
+      inventory: d.inventory,
+      username: d.username,
+      name: d.name,
+      password: '',
+      ssh_password: '',
+    }));
     toast.info(t('enterPassword'));
   };
   const download = () => {
@@ -139,7 +167,7 @@ const Discover: FC = () => {
     URL.revokeObjectURL(a.href);
   };
 
-  const n = countLines(form.inventory);
+  const n = countHosts(form.inventory) ?? countLines(form.inventory);
   // databases to review: writable servers (a standby holds the same data as its primary)
   const readinessRows = (res?.nodes ?? [])
     .filter((x) => x.reachable && !x.external && x.role !== 'standby')
@@ -182,12 +210,14 @@ const Discover: FC = () => {
               <TextField
                 label={t('inventory')}
                 multiline
-                minRows={5}
-                maxRows={14}
+                minRows={6}
+                maxRows={18}
                 value={form.inventory}
                 onChange={(e) => set('inventory', e.target.value)}
-                placeholder={'10.0.0.11\n10.0.0.12:5432\n10.0.0.13 5433'}
-                helperText={t('inventoryHelp', { count: n })}
+                placeholder={
+                  '10.0.0.11\n10.0.0.12:5432\n\n# or an Ansible inventory:\n[master]\n10.0.0.11 hostname=pgnode01\n[replica]\n10.0.0.12 hostname=pgnode02\n[balancers]\n10.0.0.20'
+                }
+                helperText={isAnsible(form.inventory) ? t('inventoryAnsible') : t('inventoryHelp', { count: n })}
                 InputProps={{ sx: { fontFamily: '"JetBrains Mono", monospace', fontSize: 13 } }}
               />
               <Stack direction="row" gap={1}>
@@ -231,6 +261,109 @@ const Discover: FC = () => {
                   ))}
                 </TextField>
               </Stack>
+              <Accordion
+                disableGutters
+                elevation={0}
+                sx={{ border: 1, borderColor: 'divider', borderRadius: 1.5, '&:before': { display: 'none' } }}>
+                <AccordionSummary expandIcon={<ExpandMoreIcon />}>
+                  <Box>
+                    <Typography variant="body2" fontWeight={700}>
+                      {t('machinesSection')}
+                    </Typography>
+                    <Typography variant="caption" color="text.secondary">
+                      {form.ssh_user.trim() || form.prometheus_url.trim()
+                        ? [
+                            form.ssh_user.trim() && `SSH ${form.ssh_user.trim()}`,
+                            form.prometheus_url.trim() && 'Prometheus',
+                          ]
+                            .filter(Boolean)
+                            .join(' · ')
+                        : t('machinesSectionHelp')}
+                    </Typography>
+                  </Box>
+                </AccordionSummary>
+                <AccordionDetails>
+                  <Stack gap={1.5}>
+                    <Stack direction="row" gap={1}>
+                      <TextField
+                        label={t('sshUser')}
+                        size="small"
+                        fullWidth
+                        value={form.ssh_user}
+                        onChange={(e) => set('ssh_user', e.target.value)}
+                        autoComplete="off"
+                      />
+                      <TextField
+                        label={t('sshPort')}
+                        size="small"
+                        sx={{ width: 100 }}
+                        value={form.ssh_port}
+                        onChange={(e) => set('ssh_port', e.target.value.replace(/\D/g, ''))}
+                      />
+                    </Stack>
+                    <TextField
+                      label={t('sshPassword')}
+                      size="small"
+                      type="password"
+                      value={form.ssh_password}
+                      onChange={(e) => set('ssh_password', e.target.value)}
+                      autoComplete="new-password"
+                      disabled={!form.ssh_user.trim()}
+                    />
+                    <TextField
+                      label={t('sshKey')}
+                      size="small"
+                      multiline
+                      minRows={2}
+                      maxRows={6}
+                      value={form.ssh_key}
+                      onChange={(e) => set('ssh_key', e.target.value)}
+                      placeholder="-----BEGIN OPENSSH PRIVATE KEY-----"
+                      disabled={!form.ssh_user.trim()}
+                      InputProps={{ sx: { fontFamily: '"JetBrains Mono", monospace', fontSize: 12 } }}
+                    />
+                    <TextField
+                      label={t('promUrl')}
+                      size="small"
+                      value={form.prometheus_url}
+                      onChange={(e) => set('prometheus_url', e.target.value)}
+                      placeholder="http://10.0.0.30:9090"
+                      helperText={t('promUrlHelp')}
+                    />
+                    <Stack direction="row" gap={1}>
+                      <TextField
+                        select
+                        label={t('history')}
+                        size="small"
+                        fullWidth
+                        value={form.days}
+                        onChange={(e) => set('days', e.target.value)}>
+                        {['7', '14', '30', '60', '90'].map((d) => (
+                          <MenuItem key={d} value={d}>
+                            {t('daysN', { count: Number(d) })}
+                          </MenuItem>
+                        ))}
+                      </TextField>
+                      <TextField
+                        select
+                        label={t('sizeFor')}
+                        size="small"
+                        fullWidth
+                        value={form.horizon}
+                        onChange={(e) => set('horizon', e.target.value)}>
+                        {['90', '180', '365'].map((d) => (
+                          <MenuItem key={d} value={d}>
+                            {t('aheadN', { count: Number(d) })}
+                          </MenuItem>
+                        ))}
+                      </TextField>
+                    </Stack>
+                    <Typography variant="caption" color="text.secondary">
+                      {t('sshNote')}
+                    </Typography>
+                  </Stack>
+                </AccordionDetails>
+              </Accordion>
               <TextField
                 label={t('name')}
                 size="small"
@@ -281,7 +414,7 @@ const Discover: FC = () => {
                     </Typography>
                     <Typography variant="caption" color="text.secondary" component="div" noWrap>
                       {t('savedLine', {
-                        count: countLines(d.inventory),
+                        count: countHosts(d.inventory) ?? countLines(d.inventory),
                         date: new Date(d.created_at).toLocaleString(),
                         by: d.created_by || '—',
                       })}
@@ -356,7 +489,7 @@ const Discover: FC = () => {
                       {t('loginAs', { user: current.username })}
                     </Typography>
                     <Typography variant="h5" fontWeight={800} mt={0.25}>
-                      {res.architecture}
+                      {res.infra?.stack ?? res.architecture}
                     </Typography>
                   </Box>
                   <Stack direction="row" gap={0.5} data-print-hide>
@@ -422,10 +555,15 @@ const Discover: FC = () => {
                   minHeight: 44,
                   '& .MuiTab-root': { minHeight: 44, fontWeight: 600 },
                 }}>
-                <Tab value="architecture" label={t('v_architecture')} />
+                {res.infra ? <Tab value="infra" label={t('v_infra')} /> : null}
+                <Tab value="architecture" label={t('v_postgres')} />
                 <Tab value="databases" label={t('v_databases')} />
                 <Tab value="query" label={t('v_query')} />
+                {res.sizing ? <Tab value="sizing" label={t('v_sizing')} /> : null}
               </Tabs>
+
+              {view === 'infra' && res.infra ? <Infrastructure result={res} /> : null}
+              {view === 'sizing' && res.sizing ? <Sizing result={res} /> : null}
 
               {view === 'architecture' ? (
                 <>

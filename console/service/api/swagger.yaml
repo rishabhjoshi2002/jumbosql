@@ -1467,7 +1467,7 @@ definitions:
     properties:
       inventory:
         type: string
-        description: "one server per line: host, host:port or host port"
+        description: "one server per line (host, host:port or host port), or an Ansible inventory (INI or YAML)"
       username:
         type: string
       password:
@@ -1483,6 +1483,29 @@ definitions:
         description: "a name to save the result under"
       save:
         type: boolean
+      pg_port:
+        type: integer
+        description: "PostgreSQL port when the inventory does not say (default 5432)"
+      ssh_user:
+        type: string
+        description: "optional: SSH login for read-only commands on the machines"
+      ssh_port:
+        type: integer
+      ssh_password:
+        type: string
+        description: "used for this run only, never stored"
+      ssh_key:
+        type: string
+        description: "private key; used for this run only, never stored"
+      prometheus_url:
+        type: string
+        description: "optional: Prometheus to read usage history from (default: one found on the machines)"
+      days:
+        type: integer
+        description: "days of history to read (default 30)"
+      horizon:
+        type: integer
+        description: "days ahead to size for (default 180)"
 
   Request.DiscoverQuery:
     type: object

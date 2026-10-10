@@ -1,0 +1,473 @@
+package discover
+
+// Sizing: what each machine really needs (from the Prometheus history when there is one, else from what it
+// has now), and PostgreSQL settings that fit the memory and CPUs. Costs are worked out in the browser, with
+// the prices the user types in.
+
+import (
+	"context"
+	"fmt"
+	"math"
+	"net"
+	"sort"
+	"strconv"
+	"strings"
+	"time"
+
+	"postgresql-cluster-console/internal/insights"
+)
+
+type Size struct {
+	CPUs      int     `json:"cpus"`
+	MemBytes  float64 `json:"mem_bytes"`
+	DiskBytes float64 `json:"disk_bytes"`
+}
+
+type HostSizing struct {
+	Address     string         `json:"address"`
+	Name        string         `json:"name"`
+	Roles       []string       `json:"roles"`
+	PGRole      string         `json:"pg_role,omitempty"`
+	Current     Size           `json:"current"`
+	Recommended Size           `json:"recommended"`
+	CPUPeak     float64        `json:"cpu_peak_pct"` // p95 over the history, -1 = unknown
+	CPUAhead    float64        `json:"cpu_ahead_pct"`
+	MemPeak     float64        `json:"mem_peak_pct"`
+	MemAhead    float64        `json:"mem_ahead_pct"`
+	DiskUsed    float64        `json:"disk_used_bytes"`
+	DiskAhead   float64        `json:"disk_ahead_bytes"`
+	Status      string         `json:"status"` // right | under | over | unknown
+	Reasons     []string       `json:"reasons"`
+	Trend       *insights.Host `json:"trend,omitempty"`
+}
+
+type PGChange struct {
+	Name        string `json:"name"`
+	Current     string `json:"current"`
+	Recommended string `json:"recommended"`
+	Restart     bool   `json:"restart"`
+	Reason      string `json:"reason"`
+}
+
+type NodeTuning struct {
+	Node    string     `json:"node"`
+	Host    string     `json:"host"`
+	Role    string     `json:"role"`
+	For     Size       `json:"for"` // the hardware the values are for
+	Changes []PGChange `json:"changes"`
+	Script  string     `json:"script"`
+}
+
+type Sizing struct {
+	Source     string       `json:"source"` // prometheus | machines | none
+	Prometheus string       `json:"prometheus,omitempty"`
+	Error      string       `json:"error,omitempty"`
+	Days       int          `json:"days"`
+	Horizon    int          `json:"horizon"`
+	Hosts      []HostSizing `json:"hosts"`
+	Tuning     []NodeTuning `json:"tuning"`
+	Notes      []string     `json:"notes"`
+}
+
+const gib = 1 << 30
+
+var memSteps = []float64{1, 2, 4, 8, 12, 16, 24, 32, 48, 64, 96, 128, 192, 256, 384, 512, 768, 1024}
+var cpuSteps = []int{1, 2, 4, 6, 8, 12, 16, 24, 32, 48, 64, 96, 128}
+
+func roundMem(b float64) float64 {
+	for _, s := range memSteps {
+		if b <= s*gib {
+			return s * gib
+		}
+	}
+	return math.Ceil(b/(256*gib)) * 256 * gib
+}
+
+func roundCPU(n float64) int {
+	for _, s := range cpuSteps {
+		if n <= float64(s) {
+			return s
+		}
+	}
+	return int(math.Ceil(n/32) * 32)
+}
+
+// the least a machine doing this should have
+func roleMin(roles []string) (cpus int, mem float64, disk float64) {
+	cpus, mem, disk = 1, 1*gib, 10*gib
+	for _, r := range roles {
+		switch r {
+		case "database":
+			cpus, mem, disk = max(cpus, 2), math.Max(mem, 4*gib), math.Max(disk, 20*gib)
+		case "monitoring":
+			cpus, mem, disk = max(cpus, 2), math.Max(mem, 2*gib), math.Max(disk, 20*gib)
+		case "dcs", "ha":
+			cpus, mem = max(cpus, 2), math.Max(mem, 2*gib)
+		}
+	}
+	return
+}
+
+func sizing(ctx context.Context, res *Result, inf *Infra, req Request) *Sizing {
+	days, horizon := req.Days, req.Horizon
+	if days <= 0 {
+		days = 30
+	}
+	if horizon <= 0 {
+		horizon = 180
+	}
+	sz := &Sizing{Source: "machines", Days: days, Horizon: horizon, Hosts: []HostSizing{}, Tuning: []NodeTuning{}, Notes: []string{}}
+	ix := newHostIndex(inf.Hosts, res)
+
+	// the PostgreSQL role and data directory of each machine
+	pgRole := map[*HostInfo]string{}
+	dataDirs := map[string]int{}
+	dbBytes := map[*HostInfo]float64{}
+	for _, n := range res.Nodes {
+		if n.External || !n.Reachable {
+			continue
+		}
+		if h := ix.find(n.Host); h != nil {
+			pgRole[h] = n.Role
+			for _, d := range n.Databases {
+				dbBytes[h] += d.SizeBytes
+			}
+		}
+		if n.DataDirectory != "" {
+			dataDirs[n.DataDirectory]++
+		}
+	}
+	dataDir, best := "/var/lib", 0
+	for d, c := range dataDirs {
+		if c > best {
+			dataDir, best = d, c
+		}
+	}
+
+	// Prometheus history (node_exporter)
+	trends := map[*HostInfo]*insights.Host{}
+	if inf.Prometheus != "" {
+		sz.Prometheus = inf.Prometheus
+		servers := map[string][2]string{}
+		for _, h := range inf.Hosts {
+			keys := []string{h.Address, h.Name, strings.Split(h.Name, ".")[0]}
+			if net.ParseIP(h.Address) == nil {
+				if ips, err := net.LookupHost(h.Address); err == nil {
+					keys = append(keys, ips...)
+				}
+			}
+			for _, k := range keys {
+				if k != "" {
+					servers[k] = [2]string{h.Address, ""}
+				}
+			}
+		}
+		pctx, cancel := context.WithTimeout(ctx, 40*time.Second)
+		p := &insights.Prometheus{BaseURL: inf.Prometheus}
+		hs, err := p.Hosts(pctx, servers, dataDir, days, horizon, time.Now())
+		cancel()
+		if err != nil {
+			sz.Error = err.Error()
+		}
+		for i := range hs {
+			t := hs[i]
+			if t.Node == "" {
+				continue
+			}
+			for _, h := range inf.Hosts {
+				if h.Address == t.Node && trends[h] == nil {
+					trends[h] = &t
+				}
+			}
+		}
+		if len(trends) > 0 {
+			sz.Source = "prometheus"
+		} else if sz.Error == "" {
+			sz.Error = "Prometheus has no node_exporter data for these machines"
+		}
+	}
+
+	ahead := time.Now().Add(time.Duration(horizon) * 24 * time.Hour)
+	for _, h := range inf.Hosts {
+		if !h.Reachable && trends[h] == nil {
+			continue
+		}
+		s := HostSizing{Address: h.Address, Name: h.label(), Roles: h.Roles, PGRole: pgRole[h], CPUPeak: -1, CPUAhead: -1,
+			MemPeak: -1, MemAhead: -1, Reasons: []string{}}
+		s.Current = Size{CPUs: h.CPUs, MemBytes: h.MemBytes}
+		bestMount := ""
+		for _, d := range h.Disks { // the disk that holds the data directory (database machines), else the root disk
+			if d.Mount == "/" && bestMount == "" || h.hasKind("postgres") && mountHolds(d.Mount, dataDir) && len(d.Mount) > len(bestMount) {
+				s.Current.DiskBytes, s.DiskUsed, bestMount = d.Size, d.Used, d.Mount
+			}
+		}
+		t := trends[h]
+		if t != nil {
+			s.Trend = t
+			if s.Current.CPUs == 0 {
+				s.Current.CPUs = int(t.Cores)
+			}
+			if s.Current.MemBytes == 0 {
+				s.Current.MemBytes = t.MemTotal
+			}
+			if t.DiskSize > 0 {
+				s.Current.DiskBytes = t.DiskSize
+			}
+			s.CPUPeak, s.MemPeak = t.CPUP95, t.MemP95
+			s.CPUAhead, s.MemAhead = s.CPUPeak, s.MemPeak
+			if t.CPUForecast.HasForecast {
+				v, _, _ := t.CPUForecast.ValueAt(ahead)
+				s.CPUAhead = math.Min(100, math.Max(0, v))
+			}
+			if t.MemForecast.HasForecast {
+				v, _, _ := t.MemForecast.ValueAt(ahead)
+				s.MemAhead = math.Min(100, math.Max(0, v))
+			}
+			if n := len(t.DiskUsed); n > 0 {
+				s.DiskUsed = t.DiskUsed[n-1].V
+			}
+			s.DiskAhead = s.DiskUsed
+			if t.DiskForecast.HasForecast {
+				v, _, _ := t.DiskForecast.ValueAt(ahead)
+				s.DiskAhead = math.Max(s.DiskUsed, v)
+			}
+		}
+		minCPU, minMem, minDisk := roleMin(h.Roles)
+
+		// CPU: keep the busiest (p95) hour under 65 %
+		rec := Size{CPUs: minCPU, MemBytes: minMem, DiskBytes: minDisk}
+		if s.CPUPeak >= 0 && s.Current.CPUs > 0 {
+			need := float64(s.Current.CPUs) * math.Max(s.CPUPeak, s.CPUAhead) / 65
+			rec.CPUs = max(rec.CPUs, roundCPU(need))
+			txt := fmt.Sprintf("CPU busy %.0f%% at peak (p95)", s.CPUPeak)
+			if s.CPUAhead > s.CPUPeak+1 {
+				txt += fmt.Sprintf(", about %.0f%% expected in %d days", s.CPUAhead, horizon)
+			}
+			s.Reasons = append(s.Reasons, txt+"; sized to stay under 65%.")
+		} else if s.Current.CPUs > 0 {
+			rec.CPUs = max(rec.CPUs, s.Current.CPUs)
+		}
+		// memory: used at peak, with 20 % head-room
+		if s.MemPeak >= 0 && s.Current.MemBytes > 0 {
+			used := s.Current.MemBytes * math.Max(s.MemPeak, s.MemAhead) / 100
+			rec.MemBytes = math.Max(rec.MemBytes, roundMem(used/0.8))
+			s.Reasons = append(s.Reasons, fmt.Sprintf("Memory used %.0f%% at peak (%s of %s); sized for 20%% head-room.",
+				math.Max(s.MemPeak, s.MemAhead), bytesText(used), bytesText(s.Current.MemBytes)))
+		} else if s.Current.MemBytes > 0 {
+			rec.MemBytes = math.Max(rec.MemBytes, roundMem(s.Current.MemBytes*0.98))
+		}
+		if db := dbBytes[h]; db > 0 && h.hasKind("postgres") {
+			if want := math.Min(db/4, 256*gib); want > rec.MemBytes {
+				s.Reasons = append(s.Reasons, fmt.Sprintf("The databases hold %s; about %s of RAM would keep a quarter of it cached.",
+					bytesText(db), bytesText(roundMem(want))))
+			}
+		}
+		// disk: the expected use in <horizon> days at 75 % full
+		if s.DiskAhead > 0 {
+			rec.DiskBytes = math.Max(rec.DiskBytes, math.Ceil(s.DiskAhead/0.75/(10*gib))*10*gib)
+			if t != nil && t.DiskForecast.HasForecast {
+				s.Reasons = append(s.Reasons, fmt.Sprintf("Disk: %s used now, about %s in %d days; sized to stay under 75%% full.",
+					bytesText(s.DiskUsed), bytesText(s.DiskAhead), horizon))
+			} else {
+				s.Reasons = append(s.Reasons, fmt.Sprintf("Disk: %s used now (no trend); sized to stay under 75%% full.", bytesText(s.DiskUsed)))
+			}
+		} else if s.DiskUsed > 0 {
+			rec.DiskBytes = math.Max(rec.DiskBytes, math.Ceil(s.DiskUsed/0.75/(10*gib))*10*gib)
+		}
+		s.Recommended = rec
+		s.Status = "unknown"
+		if s.Current.CPUs > 0 && s.Current.MemBytes > 0 {
+			under := rec.CPUs > s.Current.CPUs || rec.MemBytes > s.Current.MemBytes*1.05 ||
+				(s.Current.DiskBytes > 0 && rec.DiskBytes > s.Current.DiskBytes*1.02)
+			over := s.CPUPeak >= 0 && rec.CPUs*2 <= s.Current.CPUs && rec.MemBytes*2 <= s.Current.MemBytes
+			switch {
+			case under:
+				s.Status = "under"
+			case over:
+				s.Status = "over"
+			default:
+				s.Status = "right"
+			}
+		}
+		if s.CPUPeak < 0 {
+			s.Reasons = append(s.Reasons, "No usage history: based on what the machine has now and its role.")
+		}
+		sz.Hosts = append(sz.Hosts, s)
+	}
+
+	// PostgreSQL settings for each reachable node, for the hardware it has (or the recommended one)
+	for _, n := range res.Nodes {
+		if n.External || !n.Reachable {
+			continue
+		}
+		var hs *HostSizing
+		if h := ix.find(n.Host); h != nil {
+			for i := range sz.Hosts {
+				if sz.Hosts[i].Address == h.Address {
+					hs = &sz.Hosts[i]
+				}
+			}
+		}
+		for_ := Size{}
+		if hs != nil {
+			for_ = hs.Current
+			if for_.MemBytes == 0 {
+				for_.MemBytes = hs.Recommended.MemBytes
+			}
+			if for_.CPUs == 0 {
+				for_.CPUs = hs.Recommended.CPUs
+			}
+		}
+		if for_.MemBytes == 0 {
+			continue // without SSH or Prometheus the memory size is unknown
+		}
+		sz.Tuning = append(sz.Tuning, tune(n, for_))
+	}
+	if len(sz.Tuning) == 0 && len(res.Nodes) > 0 {
+		sz.Notes = append(sz.Notes, "PostgreSQL settings need the memory size of the servers: give SSH access or a Prometheus with node_exporter.")
+	}
+	if sz.Source != "prometheus" {
+		sz.Notes = append(sz.Notes, "Without a usage history the advice follows the current hardware and roles; connect Prometheus for advice from real load.")
+	}
+	sort.SliceStable(sz.Hosts, func(i, j int) bool {
+		return layerIndex(firstRole(sz.Hosts[i].Roles)) < layerIndex(firstRole(sz.Hosts[j].Roles))
+	})
+	return sz
+}
+
+func firstRole(r []string) string {
+	for _, x := range r {
+		if x == "database" {
+			return x
+		}
+	}
+	if len(r) > 0 {
+		return r[0]
+	}
+	return "zzz"
+}
+
+func mountHolds(mount, dir string) bool {
+	return mount == "/" || dir == mount || strings.HasPrefix(dir, strings.TrimRight(mount, "/")+"/")
+}
+
+/* ------------------------------------------------------------ settings ------------------------------------------------------------ */
+
+// settingBytes: a memory setting in bytes (pg_settings value * unit)
+func settingBytes(val, unit string) (float64, bool) {
+	v, err := strconv.ParseFloat(val, 64)
+	if err != nil {
+		return 0, false
+	}
+	if v < 0 {
+		return v, true
+	}
+	mult := map[string]float64{"B": 1, "kB": 1024, "8kB": 8192, "16kB": 16384, "MB": 1 << 20, "GB": 1 << 30, "TB": 1 << 40}[unit]
+	if mult == 0 {
+		return 0, false
+	}
+	return v * mult, true
+}
+
+func memText(b float64) string { // in postgresql.conf units
+	switch {
+	case b >= gib && math.Mod(b, gib) == 0:
+		return fmt.Sprintf("%.0fGB", b/gib)
+	case b >= 1<<20:
+		return fmt.Sprintf("%.0fMB", math.Round(b/(1<<20)))
+	default:
+		return fmt.Sprintf("%.0fkB", math.Round(b/1024))
+	}
+}
+
+func tune(n *Node, hw Size) NodeTuning {
+	t := NodeTuning{Node: n.ID, Host: n.Host, Role: n.Role, For: hw, Changes: []PGChange{}}
+	units := map[string]string{}
+	for _, s := range n.Settings {
+		units[s.Name] = s.Unit
+	}
+	ram := hw.MemBytes
+	cpus := max(hw.CPUs, 1)
+	conns := max(n.MaxConnections, 20)
+
+	sb := math.Min(ram*0.25, 64*gib)
+	sb = math.Floor(sb/(1<<20)) * (1 << 20)
+	wm := math.Max(4<<20, math.Min(256<<20, (ram-sb)/float64(conns*3)))
+	mwm := math.Min(2*gib, math.Max(64<<20, ram/16))
+	type want struct {
+		name, value string
+		bytes       float64 // memory settings: compared within 10 %
+		restart     bool
+		reason      string
+	}
+	ws := []want{
+		{"shared_buffers", memText(sb), sb, true, "25% of RAM"},
+		{"effective_cache_size", memText(ram * 0.75), ram * 0.75, false, "75% of RAM (what the OS cache can hold)"},
+		{"maintenance_work_mem", memText(mwm), mwm, false, "RAM/16, at most 2GB (faster VACUUM and index builds)"},
+		{"work_mem", memText(wm), wm, false, fmt.Sprintf("(RAM - shared_buffers) / (%d connections x 3)", conns)},
+		{"wal_buffers", "16MB", 16 << 20, true, "16MB once shared_buffers is 512MB or more"},
+		{"min_wal_size", "1GB", gib, false, "fewer WAL file recycles"},
+		{"max_wal_size", "4GB", 4 * gib, false, "fewer forced checkpoints under write load"},
+		{"checkpoint_completion_target", "0.9", 0, false, "spread checkpoint writes"},
+		{"random_page_cost", "1.1", 0, false, "SSD / cloud disks (use 4 for spinning disks)"},
+		{"effective_io_concurrency", "200", 0, false, "SSD / cloud disks"},
+		{"max_worker_processes", strconv.Itoa(max(8, cpus)), 0, true, "at least one per CPU"},
+		{"max_parallel_workers", strconv.Itoa(cpus), 0, false, "one per CPU"},
+		{"max_parallel_workers_per_gather", strconv.Itoa(max(1, min(4, cpus/2))), 0, false, "half the CPUs, at most 4"},
+		{"max_parallel_maintenance_workers", strconv.Itoa(max(1, min(4, cpus/2))), 0, false, "half the CPUs, at most 4"},
+		{"wal_compression", "on", 0, false, "less WAL to write and replicate"},
+	}
+	if sb < 512<<20 {
+		ws = append(ws[:4], ws[5:]...) // wal_buffers: the default (-1, 1/32 of shared_buffers) is fine
+	}
+	if ram >= 32*gib {
+		ws = append(ws, want{"huge_pages", "try", 0, true, "large shared memory; set vm.nr_hugepages on the machine"})
+	}
+	var script []string
+	for _, w := range ws {
+		c, ok := n.settingsByName[w.name]
+		if !ok {
+			continue // this login could not read it, or the version does not have it
+		}
+		same := false
+		curText := c
+		if w.bytes > 0 {
+			if b, ok := settingBytes(c, units[w.name]); ok {
+				curText = memText(b)
+				if b < 0 {
+					curText = "default (" + c + ")"
+				}
+				same = b > 0 && math.Abs(b-w.bytes)/w.bytes < 0.1
+			}
+		} else {
+			cf, e1 := strconv.ParseFloat(c, 64)
+			wf, e2 := strconv.ParseFloat(w.value, 64)
+			same = c == w.value || e1 == nil && e2 == nil && math.Abs(cf-wf) < 1e-9 ||
+				w.name == "wal_compression" && c != "off" && c != "" || w.name == "huge_pages" && c == "on"
+			if w.name == "max_worker_processes" || w.name == "max_parallel_workers" {
+				same = same || e1 == nil && e2 == nil && cf >= wf // more is fine
+			}
+		}
+		if same {
+			continue
+		}
+		t.Changes = append(t.Changes, PGChange{Name: w.name, Current: curText, Recommended: w.value, Restart: w.restart, Reason: w.reason})
+		script = append(script, fmt.Sprintf("ALTER SYSTEM SET %s = '%s';", w.name, w.value))
+	}
+	if len(script) > 0 {
+		head := fmt.Sprintf("-- %s (%s): for %d vCPU, %s RAM\n", n.Name, n.Role, cpus, bytesText(ram))
+		if n.Patroni != nil {
+			head += "-- this node is managed by Patroni: put these in the Patroni DCS config (patronictl edit-config) instead\n"
+		}
+		restart := false
+		for _, c := range t.Changes {
+			restart = restart || c.Restart
+		}
+		tail := "SELECT pg_reload_conf();"
+		if restart {
+			tail += "\n-- some settings need a restart to take effect"
+		}
+		t.Script = head + strings.Join(script, "\n") + "\n" + tail + "\n"
+	}
+	return t
+}

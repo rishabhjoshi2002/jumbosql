@@ -210,23 +210,39 @@ Also on the page:
 **Discover** in the side menu (`discover.run`, given to Administrators) looks at PostgreSQL servers that pg_genin did
 not build - any client, any layout - as long as the console can reach them. Give it:
 
-- the **inventory**: one server per line, `host`, `host:port` or `host port`;
+- the **inventory**: one server per line (`host`, `host:port` or `host port`), or a whole **Ansible inventory**
+  (INI or YAML, e.g. the one a CPA / Autobase cluster was deployed from) - its groups (`master`, `replica`,
+  `balancers`, `etcd_cluster`, ...) say what each machine is meant to be, and `ansible_host`, `ansible_port`,
+  `hostname` and `postgresql_port` are used;
 - one **database login** for all of them (a superuser shows everything; a role with `pg_monitor` and
   `pg_read_all_settings` shows almost everything). The servers' `pg_hba.conf` must allow the console's IP.
 
-It connects to every server at once (read-only: catalog views and settings, then it disconnects) and works out:
+- optionally, an **SSH login** (password or private key) and a **Prometheus** address (else one found on the
+  machines is used).
+
+It looks at every machine at once and only reads: open ports and the HTTP endpoints that say what and which
+version they are (Prometheus, Alertmanager, Grafana, etcd, Consul, Patroni, HAProxy stats, exporters, nginx /
+HAProxy `Server` headers); with SSH, the installed packages, running services, listening programs, Docker
+containers and extracts of the HAProxy, nginx, keepalived, Patroni, PgBouncer, etcd, pgBackRest and Prometheus
+configs (passwords filtered out; the SSH secret is used for this run only and never saved); then the database
+logins (catalog views and settings). It works out:
 
 | | |
 |---|---|
+| **Machines** | what runs where - virtual IP (keepalived, vip-manager), load balancer (HAProxy, nginx, Pgpool-II - so a cluster whose HAProxy was replaced by nginx shows nginx), pooler (PgBouncer, Odyssey), PostgreSQL, HA (Patroni, repmgr, pg_auto_failover), HA store (etcd, Consul, ZooKeeper), backup (pgBackRest, Barman, WAL-G), monitoring (Prometheus, Grafana, Alertmanager, exporters), Docker / Podman - each with version, package name, ports and how it was found; OS, CPUs, RAM, disks; balancer routes (port → servers) and VIPs |
 | **Roles** | primary, streaming standby (and cascading), logical replica, standalone; servers that could not be reached and why (refused, wrong password, pg_hba) |
 | **Links** | who streams from whom (sync/async, slot, lag), who subscribes to which publication, upstreams and clients that are not in the inventory |
 | **HA and tools** | Patroni (its REST API on 8008/8009), repmgr, pg_auto_failover, Citus, pglogical, BDR/PGD, pgBackRest / WAL-G / Barman archiving |
 | **Per server** | version, uptime, system identifier, timeline, connections, key settings, databases (size, tables, extensions, publications), replication slots, subscriptions, users and roles |
 | **Findings** | unreachable servers, standbys not streaming, unused slots keeping WAL, lag, split brain (two writable copies of one cluster), old versions, disabled subscriptions, no failover manager |
 
-The result has three views:
+The result has five views:
 
-- **Architecture**: a diagram (one frame per physical cluster, solid arrows for streaming, dashed for logical
+- **Architecture**: the machines in lanes, in the order a connection travels (VIP → load balancer → pooler →
+  PostgreSQL, then HA store, backup, monitoring) with arrows along the balancer routes; a machines table, a
+  components / versions / packages table (CSV), each machine's packages, listening ports and disks, the balancer
+  routes and the Prometheus targets.
+- **PostgreSQL**: a diagram (one frame per physical cluster, solid arrows for streaming, dashed for logical
   replication), a plain-words summary, findings, and the details of each server.
 - **Databases & migration**: a readiness table of every database on the writable servers, and a database explorer
   with everything inside each database - tables (rows, data / index / TOAST size, primary key, replica identity,
@@ -241,8 +257,17 @@ The result has three views:
   `VALUES`), one at a time, inside a `READ ONLY` transaction with a 30-second limit; functions that act on the
   server (`pg_terminate_backend`, `pg_reload_conf`, replication slot functions, `dblink`, file access, ...) are
   refused, and every query is written to the audit log. For extra safety use a login with only `pg_monitor` and
-  `pg_read_all_data`. Results can be saved (the password never is), opened again,
-downloaded as JSON or printed. To try it, build the demo setup with `tools/pg-demo-cluster.sh` (above).
+  `pg_read_all_data`.
+- **Sizing & cost**: from the node_exporter history in Prometheus (7 to 90 days), each machine's CPU, memory and
+  disk peaks (95th percentile) and forecast, and what it should have for the next 90 / 180 / 365 days: vCPUs so
+  the busiest hour stays under 65 %, RAM with 20 % head-room, disk under 75 % full, with minimums per role; the
+  status (right size, too small, too big), the trend charts, and the monthly / yearly cost now and recommended at
+  prices you type in (per vCPU, GB of RAM and GB of disk). Without Prometheus it works from the current hardware.
+  Then PostgreSQL settings that fit each server's memory and CPUs (shared_buffers, effective_cache_size, work_mem,
+  maintenance_work_mem, WAL, checkpoints, planner costs, parallel workers, huge pages, WAL compression) compared
+  with what it runs now, and a ready `ALTER SYSTEM` script (servers under Patroni: `patronictl edit-config`).
+
+Results can be saved (passwords never are), opened again, downloaded as JSON or printed. To try it, build the demo setup with `tools/pg-demo-cluster.sh` (above).
 
 ## PostgreSQL logs
 

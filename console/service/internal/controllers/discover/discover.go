@@ -43,19 +43,40 @@ func (h *runHandler) Handle(param ops.PostDiscoverParams) middleware.Responder {
 	if b == nil || b.Inventory == nil || b.Username == nil || strings.TrimSpace(*b.Username) == "" {
 		return fail(errors.New("inventory and username are required"))
 	}
-	targets, err := disc.ParseInventory(*b.Inventory)
+	pgPort := int(b.PgPort)
+	if pgPort < 0 || pgPort > 65535 {
+		return fail(errors.New("bad PostgreSQL port"))
+	}
+	hosts, err := disc.ParseHosts(*b.Inventory, pgPort)
 	if err != nil {
 		return fail(err)
+	}
+	if b.PrometheusURL != "" && !strings.HasPrefix(b.PrometheusURL, "http://") && !strings.HasPrefix(b.PrometheusURL, "https://") {
+		return fail(errors.New("the Prometheus address must start with http:// or https://"))
 	}
 	switch b.Sslmode {
 	case "", "disable", "allow", "prefer", "require":
 	default:
 		return fail(errors.New("sslmode must be disable, allow, prefer or require"))
 	}
-	ctx, cancel := context.WithTimeout(context.WithoutCancel(param.HTTPRequest.Context()), 90*time.Second)
+	req := disc.Request{Hosts: hosts, User: strings.TrimSpace(*b.Username), Password: b.Password,
+		Database: strings.TrimSpace(b.Database), SSLMode: b.Sslmode, PromURL: strings.TrimSpace(b.PrometheusURL),
+		Days: int(b.Days), Horizon: int(b.Horizon)}
+	if u := strings.TrimSpace(b.SSHUser); u != "" {
+		if strings.ContainsAny(u, " '\"\\@;|&$`") || strings.HasPrefix(u, "-") {
+			return fail(errors.New("bad SSH user name"))
+		}
+		req.SSH = &disc.SSHAuth{User: u, Port: int(b.SSHPort), Password: b.SSHPassword, Key: b.SSHKey}
+	}
+	// the SSH secrets live in a temporary folder for this run only
+	cleanup, err := disc.PrepareSSH(&req)
+	defer cleanup()
+	if err != nil {
+		return fail(err)
+	}
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(param.HTTPRequest.Context()), 170*time.Second)
 	defer cancel()
-	res := disc.Run(ctx, disc.Request{Targets: targets, User: strings.TrimSpace(*b.Username), Password: b.Password,
-		Database: strings.TrimSpace(b.Database), SSLMode: b.Sslmode})
+	res := disc.Run(ctx, req)
 
 	out := &saved{Name: strings.TrimSpace(b.Name), CreatedAt: res.At, Inventory: *b.Inventory, Username: *b.Username, Result: res}
 	if out.Name == "" {

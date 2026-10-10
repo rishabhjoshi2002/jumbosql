@@ -96,6 +96,7 @@ export type InsightsHost = {
   mem_total_bytes: number;
   mem: TPoint[] | null;
   mem_p95: number;
+  mem_forecast: Forecast;
   mount?: string;
   disk_size_bytes: number;
   disk_used: TPoint[] | null;
