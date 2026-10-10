@@ -1,6 +1,6 @@
 package storage
 
-// pg_genin: saved Discover results.
+// pg_genie: saved Discover results.
 
 import (
 	"context"

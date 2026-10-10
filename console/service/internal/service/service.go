@@ -67,7 +67,7 @@ func NewService(
 	srv.WriteTimeout = cfg.Http.WriteTimeout
 	restapi.Token = cfg.Authorization.Token
 
-	// pg_genin: username/password sign-in (local users today; LDAP/SSO providers can be added to the list)
+	// pg_genie: username/password sign-in (local users today; LDAP/SSO providers can be added to the list)
 	authSvc := auth.NewService(db, cfg.Auth.SessionTTL, auth.NewLocalProvider(db))
 	adminPassword := cfg.Auth.AdminPassword
 	if adminPassword == "" {
@@ -86,7 +86,7 @@ func NewService(
 		return &localmid.Principal{UserID: u.ID, Username: u.Username, Role: u.Role, Attributes: u.Attributes}
 	}
 
-	// pg_genin: attribute-based access policies decide every request; the audit log records what happened
+	// pg_genie: attribute-based access policies decide every request; the audit log records what happened
 	accessSvc := access.NewService(db, log.Logger, cfg.Audit.Retention)
 	restapi.Authz = accessSvc
 	authctl.Permissions = func(r *http.Request) any {
@@ -160,7 +160,7 @@ func NewService(
 	api.ClusterDeleteServersIDHandler = cluster.NewDeleteServerHandler(db, log.Logger)
 	api.ClusterPostClustersIDRefreshHandler = cluster.NewPostClusterRefreshHandler(db, log.Logger, clusterWatcher)
 
-	// pg_genin: sign-in and users
+	// pg_genie: sign-in and users
 	api.AuthPostAuthLoginHandler = authctl.NewPostAuthLoginHandler(authSvc, log.Logger)
 	api.AuthPostAuthLogoutHandler = authctl.NewPostAuthLogoutHandler(authSvc)
 	api.AuthGetAuthMeHandler = authctl.NewGetAuthMeHandler(db)
@@ -171,7 +171,7 @@ func NewService(
 	api.UserPatchUsersIDHandler = user.NewPatchUserHandler(db, accessSvc)
 	api.UserDeleteUsersIDHandler = user.NewDeleteUserHandler(db, accessSvc)
 
-	// pg_genin: access policies and audit log
+	// pg_genie: access policies and audit log
 	accessCtl := accessctl.New(db, accessSvc)
 	api.AccessGetPoliciesHandler = accessCtl.GetPolicies()
 	api.AccessPostPoliciesHandler = accessCtl.PostPolicies()
@@ -181,7 +181,7 @@ func NewService(
 	api.AccessPostPoliciesSimulateHandler = accessCtl.Simulate()
 	api.AccessGetAuditHandler = accessCtl.GetAudit()
 
-	// pg_genin: Patroni panel (switchover / restart / reinitialize)
+	// pg_genie: Patroni panel (switchover / restart / reinitialize)
 	patroniActions := patroni.NewActions(patroni.ActionsConfig{
 		Port:     cfg.Patroni.Port,
 		Username: cfg.Patroni.Username,
@@ -193,7 +193,7 @@ func NewService(
 	api.ClusterPostServersIDReinitializeHandler = cluster.NewPostServerReinitializeHandler(db, log.Logger, patroniActions, clusterWatcher)
 	api.ClusterPostClustersIDPatroniHandler = cluster.NewPostClusterPatroniHandler(db, log.Logger, patroniActions, clusterWatcher, accessSvc)
 
-	// pg_genin: PostgreSQL logs viewer
+	// pg_genie: PostgreSQL logs viewer
 	logsList, logsRead := cluster.NewLogsHandlers(db, patroniActions, cfg.DbDesk.SSLMode)
 	insightsSvc := insights.NewService(db, log.Logger, insights.OptionsFromConfig(cfg))
 	api.ClusterGetClustersIDInsightsHandler = cluster.NewInsightsHandler(insightsSvc, db)
@@ -207,7 +207,7 @@ func NewService(
 	api.ClusterGetClustersIDLogsHandler = logsList
 	api.ClusterGetClustersIDLogsFileHandler = logsRead
 
-	// pg_genin: SQL editor (runs scripts through HAProxy's read-write port, returns every result set)
+	// pg_genie: SQL editor (runs scripts through HAProxy's read-write port, returns every result set)
 	// data scope enforced inside PostgreSQL through console-managed roles (passwords encrypted with the encryption key)
 	sqlRoles := sqlroles.NewManager(sqlRoleStore{db: db, key: cfg.EncryptionKey})
 	sqlRun, sqlCancel, sqlAccess := cluster.NewSQLHandlers(db, log.Logger, cfg.DbDesk.SSLMode, accessSvc, sqlRoles)

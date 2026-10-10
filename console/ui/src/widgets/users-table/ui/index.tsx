@@ -100,7 +100,7 @@ const AttributeRows: FC<{
 const formatDate = (v?: string | null) => (v ? new Date(v).toLocaleString() : '—');
 
 /**
- * pg_genin: Settings > Users (admins only). Local users today; users from LDAP / SSO will show up here with
+ * pg_genie: Settings > Users (admins only). Local users today; users from LDAP / SSO will show up here with
  * their provider and can't have their password changed from the console.
  */
 const UsersTable: FC = () => {

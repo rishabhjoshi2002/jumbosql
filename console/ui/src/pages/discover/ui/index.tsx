@@ -75,7 +75,7 @@ const countHosts = (s: string): number | null => {
 };
 const isAnsible = (s: string) => /^\s*\[[^\]]+\]\s*$/m.test(s) || /^\s*all:\s*$/m.test(s);
 
-/** pg_genin Discover: point at any PostgreSQL servers, get the architecture and every detail. */
+/** pg_genie Discover: point at any PostgreSQL servers, get the architecture and every detail. */
 const Discover: FC = () => {
   const { t } = useTranslation('discover');
   const colors = useRoleColors();
@@ -205,7 +205,7 @@ const Discover: FC = () => {
         }}>
         {/* left: what to look at */}
         <Stack gap={2} data-print-hide>
-          <Card title={t('newTitle')} subtitle={t('newHelp')}>
+          <Card title={t('newTitle')}>
             <Stack gap={1.5}>
               <TextField
                 label={t('inventory')}
@@ -567,12 +567,12 @@ const Discover: FC = () => {
 
               {view === 'architecture' ? (
                 <>
-                  <Card title={t('diagramTitle')} subtitle={t('diagramHelp')}>
+                  <Card title={t('diagramTitle')}>
                     <Topology result={res} selected={node?.id} onSelect={setSelected} />
                   </Card>
 
                   {res.findings.length ? (
-                    <Card title={t('findingsTitle')} subtitle={t('findingsHelp')}>
+                    <Card title={t('findingsTitle')}>
                       <Stack divider={<Box sx={{ borderTop: 1, borderColor: 'divider' }} />}>
                         {res.findings.map((f, i) => (
                           <Stack
@@ -665,7 +665,7 @@ const Discover: FC = () => {
 
               {view === 'databases' ? (
                 <>
-                  <Card title={t('readinessTitle')} subtitle={t('readinessHelp')}>
+                  <Card title={t('readinessTitle')}>
                     <TableContainer>
                       <Table size="small">
                         <TableHead>
@@ -746,7 +746,6 @@ const Discover: FC = () => {
                   {dbNode ? (
                     <Card
                       title={t('explorerTitle', { server: dbNode.name })}
-                      subtitle={t('explorerHelp')}
                       action={
                         <TextField
                           select
@@ -774,7 +773,7 @@ const Discover: FC = () => {
               ) : null}
 
               {view === 'query' ? (
-                <Card title={t('queryTitle')} subtitle={t('queryHelp')}>
+                <Card title={t('queryTitle')}>
                   <QueryRunner
                     result={res}
                     username={current.username}

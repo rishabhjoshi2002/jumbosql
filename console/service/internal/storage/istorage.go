@@ -8,7 +8,7 @@ import (
 )
 
 type IStorage interface {
-	// pg_genin: access policies, audit log, SQL editor roles
+	// pg_genie: access policies, audit log, SQL editor roles
 	GetPolicies(ctx context.Context) ([]PolicyRow, error)
 	GetPolicy(ctx context.Context, id int64) (*PolicyRow, error)
 	CreatePolicy(ctx context.Context, p *policy.Policy, by string) (*PolicyRow, error)
@@ -23,7 +23,7 @@ type IStorage interface {
 	GetSQLRole(ctx context.Context, clusterID int64, role, key string) (*SQLRoleRow, error)
 	SaveSQLRole(ctx context.Context, r *SQLRoleRow, key string) error
 
-	// pg_genin: Insights
+	// pg_genie: Insights
 	InsightClusterIDs(ctx context.Context) ([]int64, error)
 	AddMetricSamples(ctx context.Context, clusterID int64, samples []MetricSample) error
 	GetMetricSamples(ctx context.Context, clusterID int64, metrics []string, from time.Time) ([]MetricSample, error)
@@ -38,7 +38,7 @@ type IStorage interface {
 	GetUserPreferences(ctx context.Context, userID int64) ([]byte, error)
 	SaveUserPreferences(ctx context.Context, userID int64, prefs []byte) error
 
-	// pg_genin: users and login sessions
+	// pg_genie: users and login sessions
 	CountUsers(ctx context.Context) (int64, error)
 	CountAdmins(ctx context.Context) (int64, error)
 	GetUserByName(ctx context.Context, username, provider string) (*User, error)

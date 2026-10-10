@@ -307,22 +307,22 @@ const Infrastructure: FC<{ result: DResult }> = ({ result }) => {
         ) : null}
       </Card>
 
-      <Card title={t('infraTitle')} subtitle={t('infraHelp')}>
+      <Card title={t('infraTitle')}>
         <InfraDiagram infra={inf} nodes={result.nodes} selected={selected} onSelect={setSelected} />
       </Card>
 
-      <Card title={t('machinesTitle')} subtitle={t('machinesHelp')}>
+      <Card title={t('machinesTitle')}>
         <DataTable rows={inf.hosts} cols={hostCols} name="machines" empty={t('none')} />
       </Card>
 
       {host ? <HostDetails key={host.address} host={host} /> : null}
 
-      <Card title={t('componentsTitle')} subtitle={t('componentsHelp')}>
+      <Card title={t('componentsTitle')}>
         <DataTable rows={comps} cols={compCols} name="components" empty={t('none')} initialSort={{ key: 'layer' }} />
       </Card>
 
       {inf.routes.length || inf.vips.length ? (
-        <Card title={t('routesTitle')} subtitle={t('routesHelp')}>
+        <Card title={t('routesTitle')}>
           {inf.vips.length ? (
             <Typography variant="body2" mb={1}>
               {t('vipsAre', { vips: inf.vips.join(', ') })}

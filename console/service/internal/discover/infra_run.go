@@ -81,12 +81,67 @@ func pgTargets(req Request, inf *Infra) []Target {
 			for _, p := range ports {
 				add(h.Address, p)
 			}
+		case h.SSH == "ok" && listenerOf(h, ih.PGPort) != "":
+			// the port is open but a load balancer or pooler holds it, not PostgreSQL
 		case has(h.OpenPorts, ih.PGPort):
 			add(h.Address, ih.PGPort)
 		case h.declaredDB || len(ih.Groups) == 0 && (h.SSH != "ok"):
 			add(h.Address, ih.PGPort) // a plain list names database servers
 		}
 	}
+	return out
+}
+
+// listenerOf: the program (other than postgres) listening on a port, from SSH
+func listenerOf(h *HostInfo, port int) string {
+	for _, l := range h.Listening {
+		anyAddr := l.Addr == "" || l.Addr == "*" || l.Addr == "0.0.0.0" || l.Addr == "::" || l.Addr == h.Address
+		if l.Port == port && anyAddr && l.Process != "" && l.Process != "postgres" && l.Process != "postmaster" {
+			return l.Process
+		}
+	}
+	return ""
+}
+
+// Proxy is a PostgreSQL port that turned out to be a load balancer or pooler in front of another server:
+// the login worked, but inet_server_addr() is another server of the inventory with the same system identifier.
+type Proxy struct {
+	Via string `json:"via"` // host:port we connected to
+	To  string `json:"to"`  // the node behind it
+}
+
+func hostIPs(host string) map[string]bool {
+	out := map[string]bool{strings.ToLower(host): true}
+	if net.ParseIP(host) == nil {
+		if ips, err := net.LookupHost(host); err == nil {
+			for _, ip := range ips {
+				out[ip] = true
+			}
+		}
+	}
+	return out
+}
+
+// dropProxies removes the nodes reached through a balancer / pooler (they would show the primary twice).
+func dropProxies(res *Result) []Proxy {
+	var out []Proxy
+	var keep []*Node
+	for _, n := range res.Nodes {
+		if n.Reachable && n.ServerAddr != "" && !hostIPs(n.Host)[n.ServerAddr] {
+			var behind *Node
+			for _, m := range res.Nodes {
+				if m != n && m.Reachable && m.SystemID == n.SystemID && hostIPs(m.Host)[n.ServerAddr] {
+					behind = m
+				}
+			}
+			if behind != nil {
+				out = append(out, Proxy{Via: n.ID, To: behind.ID})
+				continue
+			}
+		}
+		keep = append(keep, n)
+	}
+	res.Nodes = keep
 	return out
 }
 
@@ -188,6 +243,38 @@ func finishInfra(ctx context.Context, res *Result, inf *Infra, req Request) {
 		}
 	}
 
+	// 1b. ports that only forward to a server (seen through the login): routes, unless the config already says so
+	for _, p := range res.proxies {
+		host, portS, _ := net.SplitHostPort(p.Via)
+		port, _ := strconv.Atoi(portS)
+		h := ix.find(host)
+		to := nodeByID(res, p.To)
+		if h == nil || to == nil {
+			continue
+		}
+		kind := listenerOf(h, port)
+		for _, k := range []string{"haproxy", "nginx", "pgpool", "pgbouncer", "odyssey"} {
+			if kind == "" && h.hasKind(k) {
+				kind = k
+			}
+		}
+		if kind == "" {
+			kind = "proxy"
+		}
+		res.Findings = append(res.Findings, Finding{Severity: "info", Node: h.Address,
+			Text: fmt.Sprintf("%s port %d is not a PostgreSQL server: %s forwards it to %s (%s).", h.label(), port, kind, to.Name, to.Role)})
+		h.proxyPorts = append(h.proxyPorts, port)
+		for i, c := range h.Components { // a guess from the open port: it is not PostgreSQL
+			if c.Kind == "postgres" && len(c.Sources) == 1 && c.Sources[0] == "port" {
+				h.Components = append(h.Components[:i], h.Components[i+1:]...)
+				break
+			}
+		}
+		h.comp(kind).port(port)
+		res.proxyRoutes = append(res.proxyRoutes, Route{Host: h.Address, Kind: kind, Name: "→ " + to.Role, Port: port,
+			Mode: "seen through the login", Targets: []string{to.ID}})
+	}
+
 	// 2. balancer routes, with targets resolved to machines
 	for _, h := range inf.Hosts {
 		for _, r := range parseRoutes(h) {
@@ -205,6 +292,21 @@ func finishInfra(ctx context.Context, res *Result, inf *Infra, req Request) {
 		}
 		for _, v := range h.VIPs {
 			inf.VIPs = appendOnce(inf.VIPs, v)
+		}
+	}
+	for _, r := range res.proxyRoutes {
+		known := false
+		for _, x := range inf.Routes {
+			known = known || x.Host == r.Host && x.Port == r.Port
+		}
+		if !known {
+			r.TargetOf = []string{}
+			for _, t := range r.Targets {
+				if th := ix.find(t); th != nil {
+					r.TargetOf = appendOnce(r.TargetOf, th.Address)
+				}
+			}
+			inf.Routes = append(inf.Routes, r)
 		}
 	}
 
@@ -336,7 +438,7 @@ func infraSummary(inf *Infra, res *Result) []string {
 	if inf.SSHUsed {
 		s += fmt.Sprintf(", SSH worked on %d", ssh)
 	} else {
-		s += " (no SSH given: components are guessed from open ports and HTTP answers)"
+		s += " (no SSH: found from open ports only)"
 	}
 	out = append(out, s+".")
 	if len(inf.VIPs) > 0 {

@@ -1,4 +1,4 @@
-// pg_genin: sign-in and user management endpoints (see console/service/api/swagger.yaml).
+// pg_genie: sign-in and user management endpoints (see console/service/api/swagger.yaml).
 import { baseApi as api } from '../baseApi.ts';
 
 export type ApiUser = {
@@ -17,7 +17,7 @@ export type ApiUser = {
   preferences?: UserPreferences;
 };
 
-/** pg_genin: personal home page settings, saved per user on the server */
+/** pg_genie: personal home page settings, saved per user on the server */
 export type UserPreferences = {
   home?: { cards?: string[]; start_page?: string };
   notes?: string;
@@ -62,7 +62,7 @@ const injectedRtkApi = api.enhanceEndpoints({ addTagTypes: ['Users'] }).injectEn
         attributes?: Record<string, string>;
         password?: string;
         display_name?: string;
-        /** pg_genin: the user's home page, set by an admin */
+        /** pg_genie: the user's home page, set by an admin */
         home?: { cards: string[]; start_page: string };
       }
     >({

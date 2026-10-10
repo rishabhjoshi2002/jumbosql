@@ -165,7 +165,7 @@ export const getLocalMachineEnvs = (values: ClusterFormValues, secretId?: number
         SSH_PRIVATE_KEY_CONTENT: values[SECRET_MODAL_CONTENT_FORM_FIELD_NAMES.SSH_PRIVATE_KEY],
       }
     : {}),
-  // pg_genin: the inventory is the HA layout built from the VM roles (see shared/lib/haInventory.ts)
+  // pg_genie: the inventory is the HA layout built from the VM roles (see shared/lib/haInventory.ts)
   ANSIBLE_INVENTORY_JSON: (() => {
     const inventory = buildHaInventory(
       formServersToHaServers(values[DATABASE_SERVERS_FIELD_NAMES.DATABASE_SERVERS]),

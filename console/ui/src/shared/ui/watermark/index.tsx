@@ -1,9 +1,9 @@
 import { FC } from 'react';
 import { Box, Typography, useTheme } from '@mui/material';
-import logo from '@shared/assets/pgGeninIcon.png';
+import logo from '@shared/assets/pgGenieIcon.png';
 
 /**
- * pg_genin: faint brand watermark on every page - logo, product name and the managing company.
+ * pg_genie: faint brand watermark on every page - logo, product name and the managing company.
  * It never takes clicks (pointer-events: none) and sits below the page content.
  *   fixed    - centred in the viewport (main layout)
  *   absolute - inside the parent (login panel); align='bottom' keeps it clear of the sign-in form
@@ -58,7 +58,7 @@ const Watermark: FC<{ variant?: 'fixed' | 'absolute'; align?: 'center' | 'bottom
           opacity: align === 'bottom' ? 0.18 : isLight ? 0.07 : 0.08,
           lineHeight: 1,
         }}>
-        pg_genin
+        pg_genie
       </Typography>
       <Typography
         sx={{

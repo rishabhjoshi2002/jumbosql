@@ -63,7 +63,7 @@ func (h *getClustersHandler) Handle(param cluster.GetClustersParams) middleware.
 		}(),
 		CreatedAtFrom: (*time.Time)(param.CreatedAtFrom),
 		CreatedAtTo:   (*time.Time)(param.CreatedAtTo),
-		OnlyIDs: func() []int64 { // pg_genin access policies: only the clusters this user may see
+		OnlyIDs: func() []int64 { // pg_genie access policies: only the clusters this user may see
 			if h.access == nil {
 				return nil
 			}

@@ -196,7 +196,7 @@ type GetClustersReq struct {
 	EnvironmentID   *int64
 	CreatedAtFrom   *time.Time
 	CreatedAtTo     *time.Time
-	OnlyIDs         []int64 // pg_genin access policies: nil = all clusters, else only these
+	OnlyIDs         []int64 // pg_genie access policies: nil = all clusters, else only these
 
 	Limit  *int64
 	Offset *int64
@@ -271,7 +271,7 @@ type GetOperationsReq struct {
 	Status       *string
 	Environment  *string
 	SortBy       *string
-	OnlyClusters []string // pg_genin access policies: nil = all clusters, else only operations of these clusters
+	OnlyClusters []string // pg_genie access policies: nil = all clusters, else only operations of these clusters
 
 	Limit  *int64
 	Offset *int64

@@ -1,6 +1,6 @@
 -- +goose Up
 
--- pg_genin: Discover - what was found on servers the console can reach (any PostgreSQL, built by pg_genin or
+-- pg_genie: Discover - what was found on servers the console can reach (any PostgreSQL, built by pg_genie or
 -- not). The inventory and the result are kept; the password used is never stored.
 create table if not exists public.discoveries (
   discovery_id bigserial   primary key,

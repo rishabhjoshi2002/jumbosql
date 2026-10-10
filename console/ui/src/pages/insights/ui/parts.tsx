@@ -31,7 +31,7 @@ import { toast } from 'react-toastify';
 import { InsightsReport, InsightsTable, Recommendation } from '@shared/api/api/insights.ts';
 import { bytes, compact, pct, scoreColor, signed } from '../lib/format.ts';
 
-/** pg_genin Insights: building blocks shared by the tabs (cards, tiles, recommendations, tables). */
+/** pg_genie Insights: building blocks shared by the tabs (cards, tiles, recommendations, tables). */
 
 export const Card: FC<{ title: string; subtitle?: ReactNode; children: ReactNode; action?: ReactNode }> = ({
   title,

@@ -34,5 +34,5 @@ const allSettingsTabs = [
   },
 ];
 
-// pg_genin: tabs follow the access policies (the API enforces them as well)
+// pg_genie: tabs follow the access policies (the API enforces them as well)
 export const getSettingsTabs = () => allSettingsTabs.filter((tab) => canAny(tab.perms));

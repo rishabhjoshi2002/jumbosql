@@ -15,7 +15,7 @@ import HomeIcon from '@mui/icons-material/HomeOutlined';
 import DiscoverIcon from '@mui/icons-material/TravelExploreOutlined';
 import { canAny, getSessionUser, SessionUser } from '@shared/lib/session.ts';
 
-// pg_genin: menu items follow the user's access policies (perms: any one of them)
+// pg_genie: menu items follow the user's access policies (perms: any one of them)
 export const sidebarData = (t: TFunction, user: SessionUser | null = getSessionUser()) => {
   const all = [
     {

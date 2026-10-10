@@ -104,7 +104,7 @@ func RunQuery(ctx context.Context, req QueryRequest) (*QueryResult, error) {
 		db = "postgres"
 	}
 	c, err := sqlrun.Connect(ctx, sqlrun.Target{Host: req.Target.Host, Port: req.Target.Port, User: req.User,
-		Password: req.Password, Database: db, SSLMode: req.SSLMode, AppName: "pg_genin discover"})
+		Password: req.Password, Database: db, SSLMode: req.SSLMode, AppName: "pg_genie discover"})
 	if err != nil {
 		res.Error = friendlyErr(err)
 		return res, nil

@@ -1,4 +1,4 @@
-// pg_genin: live monitoring of a cluster from its Prometheus (GET /clusters/{id}/monitoring).
+// pg_genie: live monitoring of a cluster from its Prometheus (GET /clusters/{id}/monitoring).
 import { baseApi as api } from '../baseApi.ts';
 import { TPoint } from './insights.ts';
 

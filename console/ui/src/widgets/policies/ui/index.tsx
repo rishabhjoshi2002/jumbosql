@@ -55,7 +55,7 @@ const Line: FC<{ label: string; text: string }> = ({ label, text }) =>
     </Stack>
   ) : null;
 
-/** pg_genin: Settings > Access policies (ABAC). */
+/** pg_genie: Settings > Access policies (ABAC). */
 const PoliciesPage: FC = () => {
   const { t } = useTranslation(['settings', 'shared']);
   const projectId = useAppSelector(selectCurrentProject);

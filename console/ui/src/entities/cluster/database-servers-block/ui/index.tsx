@@ -32,7 +32,7 @@ import {
 import { formServersToHaServers } from '@entities/cluster/database-servers-block/lib/functions.ts';
 
 /**
- * pg_genin: the "Inventory" step. Each card is one VM; its role checkboxes decide which HA inventory
+ * pg_genie: the "Inventory" step. Each card is one VM; its role checkboxes decide which HA inventory
  * groups it lands in. The live preview below is the exact inventory the deployment will use.
  */
 const DatabaseServersBlock: FC = () => {

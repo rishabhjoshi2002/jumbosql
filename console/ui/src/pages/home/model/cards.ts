@@ -1,7 +1,7 @@
 import { canAny, SessionUser } from '@shared/lib/session.ts';
 import { UserPreferences } from '@shared/api/api/auth.ts';
 
-/** pg_genin home page: the cards a user can put on it. A card shows only with one of its permissions. */
+/** pg_genie home page: the cards a user can put on it. A card shows only with one of its permissions. */
 export type HomeCardId =
   'fleet' | 'risks' | 'growth' | 'clusters' | 'recentQueries' | 'operations' | 'shortcuts' | 'notes';
 

@@ -1,4 +1,4 @@
-// pg_genin: Discover - map any PostgreSQL servers the console can reach (POST /discover, saved results).
+// pg_genie: Discover - map any PostgreSQL servers the console can reach (POST /discover, saved results).
 import { baseApi as api } from '../baseApi.ts';
 import type { InsightsHost } from './insights.ts';
 
@@ -290,6 +290,7 @@ export type DHostSizing = {
   disk_ahead_bytes: number;
   status: 'right' | 'under' | 'over' | 'unknown';
   reasons: string[];
+  lines?: { resource: string; has: string; peak: string; ahead: string; need: string; how: string }[];
   trend?: InsightsHost;
 };
 export type DTuning = {

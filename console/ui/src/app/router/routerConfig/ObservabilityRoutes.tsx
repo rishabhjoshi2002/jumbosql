@@ -4,7 +4,7 @@ import RouterPaths from '@app/router/routerPathsConfig';
 
 const Observability = lazy(() => import('@pages/observability'));
 
-// pg_genin: Grafana, Prometheus and Alertmanager for every cluster
+// pg_genie: Grafana, Prometheus and Alertmanager for every cluster
 const ObservabilityRoutes = () => (
   <Route
     path={RouterPaths.observability.absolutePath}

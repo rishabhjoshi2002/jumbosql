@@ -1,6 +1,6 @@
 package user
 
-// pg_genin: user management - GET/POST /users, PATCH/DELETE /users/{id} (users.manage).
+// pg_genie: user management - GET/POST /users, PATCH/DELETE /users/{id} (users.manage).
 //
 // What a user may do is decided by access policies matching the user's name or attributes (group, team, ...).
 // "role" in requests is accepted as a shortcut for the attribute "group" (admin / operator / viewer match the
@@ -112,7 +112,7 @@ func (h *getUsersHandler) Handle(param userops.GetUsersParams) middleware.Respon
 	for i := range users {
 		u := &users[i]
 		m := authctl.ToModel(u)
-		// pg_genin: what the user may see (the home page editor offers only those cards) and their home page
+		// pg_genie: what the user may see (the home page editor offers only those cards) and their home page
 		if h.acc != nil {
 			m.Permissions = h.acc.Permissions(ctx, acc.Subject(&localmid.Principal{UserID: u.ID, Username: u.Username, Attributes: u.Attributes}), pctx)
 		}
@@ -220,7 +220,7 @@ func (h *patchUserHandler) Handle(param userops.PatchUsersIDParams) middleware.R
 		}
 		req.PasswordHash = &hash
 	}
-	if hp := param.Body.Home; hp != nil { // pg_genin: the admin sets this user's home page; the user's notes stay
+	if hp := param.Body.Home; hp != nil { // pg_genie: the admin sets this user's home page; the user's notes stay
 		prefs := map[string]any{}
 		if b, err := h.db.GetUserPreferences(ctx, u.ID); err == nil && len(b) > 0 {
 			_ = json.Unmarshal(b, &prefs)

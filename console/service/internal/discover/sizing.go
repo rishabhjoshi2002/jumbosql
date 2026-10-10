@@ -38,7 +38,18 @@ type HostSizing struct {
 	DiskAhead   float64        `json:"disk_ahead_bytes"`
 	Status      string         `json:"status"` // right | under | over | unknown
 	Reasons     []string       `json:"reasons"`
+	Lines       []SizeLine     `json:"lines"` // CPU, RAM, disk: has, used, needs, and the sum behind it
 	Trend       *insights.Host `json:"trend,omitempty"`
+}
+
+// SizeLine explains one resource of one machine in plain numbers.
+type SizeLine struct {
+	Resource string `json:"resource"` // cpu | ram | disk
+	Has      string `json:"has"`
+	Peak     string `json:"peak"`  // used at peak now (p95)
+	Ahead    string `json:"ahead"` // expected at the horizon
+	Need     string `json:"need"`
+	How      string `json:"how"` // the sum
 }
 
 type PGChange struct {
@@ -144,47 +155,62 @@ func sizing(ctx context.Context, res *Result, inf *Infra, req Request) *Sizing {
 		}
 	}
 
-	// Prometheus history (node_exporter)
+	// Prometheus history (node_exporter): the given one, then any other found on the machines
 	trends := map[*HostInfo]*insights.Host{}
+	var proms []string
 	if inf.Prometheus != "" {
-		sz.Prometheus = inf.Prometheus
-		servers := map[string][2]string{}
-		for _, h := range inf.Hosts {
-			keys := []string{h.Address, h.Name, strings.Split(h.Name, ".")[0]}
-			if net.ParseIP(h.Address) == nil {
-				if ips, err := net.LookupHost(h.Address); err == nil {
-					keys = append(keys, ips...)
-				}
-			}
-			for _, k := range keys {
-				if k != "" {
-					servers[k] = [2]string{h.Address, ""}
+		proms = append(proms, inf.Prometheus)
+	}
+	for _, h := range inf.Hosts {
+		for _, c := range h.Components {
+			if c.Kind == "prometheus" && c.Running && has(c.Ports, 9090) {
+				if u := "http://" + net.JoinHostPort(h.Address, "9090"); u != inf.Prometheus {
+					proms = append(proms, u)
 				}
 			}
 		}
+	}
+	servers := map[string][2]string{}
+	for _, h := range inf.Hosts {
+		keys := []string{h.Address, h.Name, strings.Split(h.Name, ".")[0]}
+		if net.ParseIP(h.Address) == nil {
+			if ips, err := net.LookupHost(h.Address); err == nil {
+				keys = append(keys, ips...)
+			}
+		}
+		for _, k := range keys {
+			if k != "" {
+				servers[k] = [2]string{h.Address, ""}
+			}
+		}
+	}
+	var errs []string
+	for _, url := range proms {
 		pctx, cancel := context.WithTimeout(ctx, 40*time.Second)
-		p := &insights.Prometheus{BaseURL: inf.Prometheus}
+		p := &insights.Prometheus{BaseURL: url}
 		hs, err := p.Hosts(pctx, servers, dataDir, days, horizon, time.Now())
 		cancel()
 		if err != nil {
-			sz.Error = err.Error()
+			errs = append(errs, url+": "+err.Error())
 		}
 		for i := range hs {
 			t := hs[i]
-			if t.Node == "" {
-				continue
-			}
 			for _, h := range inf.Hosts {
-				if h.Address == t.Node && trends[h] == nil {
+				if t.Node != "" && h.Address == t.Node && trends[h] == nil {
 					trends[h] = &t
 				}
 			}
 		}
 		if len(trends) > 0 {
-			sz.Source = "prometheus"
-		} else if sz.Error == "" {
-			sz.Error = "Prometheus has no node_exporter data for these machines"
+			sz.Source, sz.Prometheus = "prometheus", url
+			break
 		}
+		if err == nil {
+			errs = append(errs, url+": no node_exporter data for these machines")
+		}
+	}
+	if len(trends) == 0 && len(errs) > 0 {
+		sz.Error = strings.Join(errs, "; ")
 	}
 
 	ahead := time.Now().Add(time.Duration(horizon) * 24 * time.Hour)
@@ -233,53 +259,100 @@ func sizing(ctx context.Context, res *Result, inf *Infra, req Request) *Sizing {
 			}
 		}
 		minCPU, minMem, minDisk := roleMin(h.Roles)
-
-		// CPU: keep the busiest (p95) hour under 65 %
-		rec := Size{CPUs: minCPU, MemBytes: minMem, DiskBytes: minDisk}
-		if s.CPUPeak >= 0 && s.Current.CPUs > 0 {
-			need := float64(s.Current.CPUs) * math.Max(s.CPUPeak, s.CPUAhead) / 65
-			rec.CPUs = max(rec.CPUs, roundCPU(need))
-			txt := fmt.Sprintf("CPU busy %.0f%% at peak (p95)", s.CPUPeak)
-			if s.CPUAhead > s.CPUPeak+1 {
-				txt += fmt.Sprintf(", about %.0f%% expected in %d days", s.CPUAhead, horizon)
+		hasData := s.CPUPeak >= 0
+		dash := "—"
+		pctOf := func(p float64, total string) string {
+			if p < 0 {
+				return dash
 			}
-			s.Reasons = append(s.Reasons, txt+"; sized to stay under 65%.")
-		} else if s.Current.CPUs > 0 {
-			rec.CPUs = max(rec.CPUs, s.Current.CPUs)
+			return fmt.Sprintf("%.0f%% %s", p, total)
 		}
-		// memory: used at peak, with 20 % head-room
-		if s.MemPeak >= 0 && s.Current.MemBytes > 0 {
-			used := s.Current.MemBytes * math.Max(s.MemPeak, s.MemAhead) / 100
-			rec.MemBytes = math.Max(rec.MemBytes, roundMem(used/0.8))
-			s.Reasons = append(s.Reasons, fmt.Sprintf("Memory used %.0f%% at peak (%s of %s); sized for 20%% head-room.",
-				math.Max(s.MemPeak, s.MemAhead), bytesText(used), bytesText(s.Current.MemBytes)))
-		} else if s.Current.MemBytes > 0 {
-			rec.MemBytes = math.Max(rec.MemBytes, roundMem(s.Current.MemBytes*0.98))
+		roleNote := func(min string) string { return "minimum for this role: " + min }
+		rec := Size{}
+
+		// CPU: the busy cores at peak (p95, or the forecast if higher) at most 65 % of the machine
+		cpu := SizeLine{Resource: "cpu", Has: dash, Peak: dash, Ahead: dash}
+		if s.Current.CPUs > 0 {
+			cpu.Has = fmt.Sprintf("%d vCPU", s.Current.CPUs)
 		}
+		if hasData && s.Current.CPUs > 0 {
+			busy := float64(s.Current.CPUs) * s.CPUPeak / 100
+			busyAhead := float64(s.Current.CPUs) * math.Max(s.CPUPeak, s.CPUAhead) / 100
+			cpu.Peak = pctOf(s.CPUPeak, fmt.Sprintf("(%.1f vCPU busy)", busy))
+			cpu.Ahead = pctOf(math.Max(s.CPUPeak, s.CPUAhead), fmt.Sprintf("(%.1f vCPU)", busyAhead))
+			rec.CPUs = roundCPU(busyAhead / 0.65)
+			cpu.How = fmt.Sprintf("%.1f vCPU busy ÷ 65%% target = %.1f → %d vCPU", busyAhead, busyAhead/0.65, rec.CPUs)
+		} else {
+			rec.CPUs = s.Current.CPUs
+			cpu.How = "no usage data: kept as now"
+		}
+		if rec.CPUs < minCPU {
+			rec.CPUs = minCPU
+			cpu.How += "; " + roleNote(fmt.Sprintf("%d vCPU", minCPU))
+		}
+		cpu.Need = fmt.Sprintf("%d vCPU", rec.CPUs)
+
+		// RAM: memory used at peak (without the OS cache) with 20 % head-room
+		mem := SizeLine{Resource: "ram", Has: dash, Peak: dash, Ahead: dash}
+		if s.Current.MemBytes > 0 {
+			mem.Has = bytesText(s.Current.MemBytes)
+		}
+		if hasData && s.Current.MemBytes > 0 {
+			used := s.Current.MemBytes * s.MemPeak / 100
+			usedAhead := s.Current.MemBytes * math.Max(s.MemPeak, s.MemAhead) / 100
+			mem.Peak = pctOf(s.MemPeak, "("+bytesText(used)+")")
+			mem.Ahead = pctOf(math.Max(s.MemPeak, s.MemAhead), "("+bytesText(usedAhead)+")")
+			rec.MemBytes = roundMem(usedAhead / 0.8)
+			mem.How = fmt.Sprintf("%s used ÷ 80%% target = %s → %s", bytesText(usedAhead), bytesText(usedAhead/0.8), bytesText(rec.MemBytes))
+		} else {
+			rec.MemBytes = roundMem(s.Current.MemBytes * 0.98)
+			mem.How = "no usage data: kept as now"
+		}
+		if rec.MemBytes < minMem {
+			rec.MemBytes = minMem
+			mem.How += "; " + roleNote(bytesText(minMem))
+		}
+		mem.Need = bytesText(rec.MemBytes)
+
+		// disk: what will be used in <horizon> days at most 75 % full
+		disk := SizeLine{Resource: "disk", Has: dash, Peak: dash, Ahead: dash}
+		if s.Current.DiskBytes > 0 {
+			disk.Has = bytesText(s.Current.DiskBytes)
+		}
+		if s.DiskUsed > 0 {
+			disk.Peak = bytesText(s.DiskUsed)
+			ahead := math.Max(s.DiskUsed, s.DiskAhead)
+			if t != nil && t.DiskForecast.HasForecast {
+				disk.Ahead = bytesText(ahead)
+			}
+			rec.DiskBytes = math.Ceil(ahead/0.75/(10*gib)) * 10 * gib
+			disk.How = fmt.Sprintf("%s ÷ 75%% target = %s → %s", bytesText(ahead), bytesText(ahead/0.75), bytesText(rec.DiskBytes))
+			if disk.Ahead == dash {
+				disk.How += " (no growth trend)"
+			}
+		} else {
+			rec.DiskBytes = s.Current.DiskBytes
+			disk.How = "no usage data: kept as now"
+		}
+		if rec.DiskBytes < minDisk {
+			rec.DiskBytes = minDisk
+			disk.How += "; " + roleNote(bytesText(minDisk))
+		}
+		disk.Need = bytesText(rec.DiskBytes)
+		s.Lines = []SizeLine{cpu, mem, disk}
 		if db := dbBytes[h]; db > 0 && h.hasKind("postgres") {
 			if want := math.Min(db/4, 256*gib); want > rec.MemBytes {
-				s.Reasons = append(s.Reasons, fmt.Sprintf("The databases hold %s; about %s of RAM would keep a quarter of it cached.",
+				s.Reasons = append(s.Reasons, fmt.Sprintf("Databases hold %s: %s RAM would cache a quarter of it.",
 					bytesText(db), bytesText(roundMem(want))))
 			}
 		}
-		// disk: the expected use in <horizon> days at 75 % full
-		if s.DiskAhead > 0 {
-			rec.DiskBytes = math.Max(rec.DiskBytes, math.Ceil(s.DiskAhead/0.75/(10*gib))*10*gib)
-			if t != nil && t.DiskForecast.HasForecast {
-				s.Reasons = append(s.Reasons, fmt.Sprintf("Disk: %s used now, about %s in %d days; sized to stay under 75%% full.",
-					bytesText(s.DiskUsed), bytesText(s.DiskAhead), horizon))
-			} else {
-				s.Reasons = append(s.Reasons, fmt.Sprintf("Disk: %s used now (no trend); sized to stay under 75%% full.", bytesText(s.DiskUsed)))
-			}
-		} else if s.DiskUsed > 0 {
-			rec.DiskBytes = math.Max(rec.DiskBytes, math.Ceil(s.DiskUsed/0.75/(10*gib))*10*gib)
-		}
+
 		s.Recommended = rec
 		s.Status = "unknown"
-		if s.Current.CPUs > 0 && s.Current.MemBytes > 0 {
+		if hasData && s.Current.CPUs > 0 && s.Current.MemBytes > 0 {
 			under := rec.CPUs > s.Current.CPUs || rec.MemBytes > s.Current.MemBytes*1.05 ||
 				(s.Current.DiskBytes > 0 && rec.DiskBytes > s.Current.DiskBytes*1.02)
-			over := s.CPUPeak >= 0 && rec.CPUs*2 <= s.Current.CPUs && rec.MemBytes*2 <= s.Current.MemBytes
+			over := rec.CPUs*2 <= s.Current.CPUs && rec.MemBytes*2 <= s.Current.MemBytes
 			switch {
 			case under:
 				s.Status = "under"
@@ -288,9 +361,6 @@ func sizing(ctx context.Context, res *Result, inf *Infra, req Request) *Sizing {
 			default:
 				s.Status = "right"
 			}
-		}
-		if s.CPUPeak < 0 {
-			s.Reasons = append(s.Reasons, "No usage history: based on what the machine has now and its role.")
 		}
 		sz.Hosts = append(sz.Hosts, s)
 	}
@@ -324,10 +394,10 @@ func sizing(ctx context.Context, res *Result, inf *Infra, req Request) *Sizing {
 		sz.Tuning = append(sz.Tuning, tune(n, for_))
 	}
 	if len(sz.Tuning) == 0 && len(res.Nodes) > 0 {
-		sz.Notes = append(sz.Notes, "PostgreSQL settings need the memory size of the servers: give SSH access or a Prometheus with node_exporter.")
+		sz.Notes = append(sz.Notes, "PostgreSQL settings need the RAM size: add SSH or Prometheus.")
 	}
 	if sz.Source != "prometheus" {
-		sz.Notes = append(sz.Notes, "Without a usage history the advice follows the current hardware and roles; connect Prometheus for advice from real load.")
+		sz.Notes = append(sz.Notes, "No usage history: sizes kept as now.")
 	}
 	sort.SliceStable(sz.Hosts, func(i, j int) bool {
 		return layerIndex(firstRole(sz.Hosts[i].Roles)) < layerIndex(firstRole(sz.Hosts[j].Roles))

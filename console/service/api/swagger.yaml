@@ -436,7 +436,7 @@ paths:
 
   /clusters/{id}/switchover:
     post:
-      summary: "pg_genin: Patroni switchover (leader moves to the candidate, or to the healthiest replica)"
+      summary: "pg_genie: Patroni switchover (leader moves to the candidate, or to the healthiest replica)"
       tags:
         - cluster
       parameters:
@@ -461,7 +461,7 @@ paths:
 
   /servers/{id}/restart:
     post:
-      summary: "pg_genin: restart PostgreSQL on this node through Patroni"
+      summary: "pg_genie: restart PostgreSQL on this node through Patroni"
       tags:
         - cluster
       parameters:
@@ -481,7 +481,7 @@ paths:
 
   /servers/{id}/reinitialize:
     post:
-      summary: "pg_genin: reinitialize this replica from the leader through Patroni"
+      summary: "pg_genie: reinitialize this replica from the leader through Patroni"
       tags:
         - cluster
       parameters:
@@ -501,7 +501,7 @@ paths:
 
   /auth/login:
     post:
-      summary: "pg_genin: sign in with username and password"
+      summary: "pg_genie: sign in with username and password"
       tags:
         - auth
       parameters:
@@ -522,7 +522,7 @@ paths:
 
   /auth/logout:
     post:
-      summary: "pg_genin: end the current session"
+      summary: "pg_genie: end the current session"
       tags:
         - auth
       responses:
@@ -531,7 +531,7 @@ paths:
 
   /auth/me:
     get:
-      summary: "pg_genin: the signed-in user"
+      summary: "pg_genie: the signed-in user"
       tags:
         - auth
       responses:
@@ -542,7 +542,7 @@ paths:
 
   /auth/me/preferences:
     put:
-      summary: "pg_genin: save the signed-in user's home page choices"
+      summary: "pg_genie: save the signed-in user's home page choices"
       tags:
         - auth
       parameters:
@@ -563,7 +563,7 @@ paths:
 
   /auth/password:
     post:
-      summary: "pg_genin: change your own password"
+      summary: "pg_genie: change your own password"
       tags:
         - auth
       parameters:
@@ -582,7 +582,7 @@ paths:
 
   /users:
     get:
-      summary: "pg_genin: list console users (admin)"
+      summary: "pg_genie: list console users (admin)"
       tags:
         - user
       responses:
@@ -593,7 +593,7 @@ paths:
             items:
               $ref: "#/definitions/User"
     post:
-      summary: "pg_genin: add a local user (admin)"
+      summary: "pg_genie: add a local user (admin)"
       tags:
         - user
       parameters:
@@ -614,7 +614,7 @@ paths:
 
   /users/{id}:
     patch:
-      summary: "pg_genin: change a user's role, display name or password (admin)"
+      summary: "pg_genie: change a user's role, display name or password (admin)"
       tags:
         - user
       parameters:
@@ -637,7 +637,7 @@ paths:
           schema:
             $ref: "#/definitions/Response.Error"
     delete:
-      summary: "pg_genin: remove a user (admin)"
+      summary: "pg_genie: remove a user (admin)"
       tags:
         - user
       parameters:
@@ -655,7 +655,7 @@ paths:
 
   /clusters/{id}/patroni:
     post:
-      summary: "pg_genin: run a patronictl-equivalent command through the Patroni REST API"
+      summary: "pg_genie: run a patronictl-equivalent command through the Patroni REST API"
       tags:
         - cluster
       parameters:
@@ -680,7 +680,7 @@ paths:
 
   /clusters/{id}/sql:
     post:
-      summary: "pg_genin: run a SQL script on the cluster (through HAProxy's read-write port) and return every result set"
+      summary: "pg_genie: run a SQL script on the cluster (through HAProxy's read-write port) and return every result set"
       tags:
         - cluster
       parameters:
@@ -705,7 +705,7 @@ paths:
 
   /clusters/{id}/sql/cancel:
     post:
-      summary: "pg_genin: cancel a running SQL editor script"
+      summary: "pg_genie: cancel a running SQL editor script"
       tags:
         - cluster
       parameters:
@@ -730,7 +730,7 @@ paths:
 
   /policies:
     get:
-      summary: "pg_genin: list access policies"
+      summary: "pg_genie: list access policies"
       tags: [access]
       responses:
         '200':
@@ -740,7 +740,7 @@ paths:
             items:
               $ref: "#/definitions/Policy"
     post:
-      summary: "pg_genin: create an access policy"
+      summary: "pg_genie: create an access policy"
       tags: [access]
       parameters:
         - name: body
@@ -760,7 +760,7 @@ paths:
 
   /policies/{id}:
     patch:
-      summary: "pg_genin: replace an access policy"
+      summary: "pg_genie: replace an access policy"
       tags: [access]
       parameters:
         - name: id
@@ -782,7 +782,7 @@ paths:
           schema:
             $ref: "#/definitions/Response.Error"
     delete:
-      summary: "pg_genin: delete an access policy"
+      summary: "pg_genie: delete an access policy"
       tags: [access]
       parameters:
         - name: id
@@ -799,7 +799,7 @@ paths:
 
   /policies/permissions:
     get:
-      summary: "pg_genin: the permissions policies can grant"
+      summary: "pg_genie: the permissions policies can grant"
       tags: [access]
       responses:
         '200':
@@ -811,7 +811,7 @@ paths:
 
   /policies/simulate:
     post:
-      summary: "pg_genin: what a user may do (optionally on one cluster and database), and which policies apply"
+      summary: "pg_genie: what a user may do (optionally on one cluster and database), and which policies apply"
       tags: [access]
       parameters:
         - name: body
@@ -831,7 +831,7 @@ paths:
 
   /audit:
     get:
-      summary: "pg_genin: audit log"
+      summary: "pg_genie: audit log"
       tags: [access]
       parameters:
         - {name: username, in: query, type: string}
@@ -855,7 +855,7 @@ paths:
 
   /clusters/{id}/sql/access:
     get:
-      summary: "pg_genin: what the signed-in user may do in the SQL editor on this cluster"
+      summary: "pg_genie: what the signed-in user may do in the SQL editor on this cluster"
       tags: [cluster]
       parameters:
         - {name: id, in: path, required: true, type: integer}
@@ -872,7 +872,7 @@ paths:
 
   /insights/summary:
     get:
-      summary: "pg_genin: health, warnings and outlook of every cluster of a project (the clusters the user may see)"
+      summary: "pg_genie: health, warnings and outlook of every cluster of a project (the clusters the user may see)"
       tags: [cluster]
       parameters:
         - {name: project_id, in: query, required: true, type: integer}
@@ -889,7 +889,7 @@ paths:
 
   /discover:
     post:
-      summary: "pg_genin: look at any PostgreSQL servers the console can reach and work out their architecture (read-only)"
+      summary: "pg_genie: look at any PostgreSQL servers the console can reach and work out their architecture (read-only)"
       tags: [discover]
       parameters:
         - name: body
@@ -909,7 +909,7 @@ paths:
 
   /discover/query:
     post:
-      summary: "pg_genin: run one read-only query (SELECT / WITH / SHOW / EXPLAIN) on a server found by Discover"
+      summary: "pg_genie: run one read-only query (SELECT / WITH / SHOW / EXPLAIN) on a server found by Discover"
       tags: [discover]
       parameters:
         - name: body
@@ -929,7 +929,7 @@ paths:
 
   /discoveries:
     get:
-      summary: "pg_genin: saved discoveries (newest first)"
+      summary: "pg_genie: saved discoveries (newest first)"
       tags: [discover]
       responses:
         '200':
@@ -945,7 +945,7 @@ paths:
 
   /discoveries/{id}:
     get:
-      summary: "pg_genin: one saved discovery"
+      summary: "pg_genie: one saved discovery"
       tags: [discover]
       parameters:
         - {name: id, in: path, required: true, type: integer}
@@ -959,7 +959,7 @@ paths:
           schema:
             $ref: "#/definitions/Response.Error"
     delete:
-      summary: "pg_genin: delete a saved discovery"
+      summary: "pg_genie: delete a saved discovery"
       tags: [discover]
       parameters:
         - {name: id, in: path, required: true, type: integer}
@@ -973,7 +973,7 @@ paths:
 
   /clusters/{id}/monitoring:
     get:
-      summary: "pg_genin: live monitoring of a cluster from its Prometheus (services, alerts, graphs)"
+      summary: "pg_genie: live monitoring of a cluster from its Prometheus (services, alerts, graphs)"
       tags: [cluster]
       parameters:
         - {name: id, in: path, required: true, type: integer}
@@ -990,7 +990,7 @@ paths:
 
   /clusters/{id}/insights:
     get:
-      summary: "pg_genin: trends, forecasts and recommendations for a cluster (Insights page)"
+      summary: "pg_genie: trends, forecasts and recommendations for a cluster (Insights page)"
       tags: [cluster]
       parameters:
         - {name: id, in: path, required: true, type: integer}
@@ -1009,7 +1009,7 @@ paths:
 
   /clusters/{id}/logs:
     get:
-      summary: "pg_genin: PostgreSQL log files of a cluster node"
+      summary: "pg_genie: PostgreSQL log files of a cluster node"
       tags: [cluster]
       parameters:
         - {name: id, in: path, required: true, type: integer}
@@ -1026,7 +1026,7 @@ paths:
 
   /clusters/{id}/logs/{file}:
     get:
-      summary: "pg_genin: read (the end of) a PostgreSQL log file of a cluster node"
+      summary: "pg_genie: read (the end of) a PostgreSQL log file of a cluster node"
       tags: [cluster]
       parameters:
         - {name: id, in: path, required: true, type: integer}
@@ -1452,7 +1452,7 @@ definitions:
           type: string
       home:
         type: object
-        description: "pg_genin: the user's home page, set by an admin (cards in order, start page)"
+        description: "pg_genie: the user's home page, set by an admin (cards in order, start page)"
         properties:
           cards:
             type: array

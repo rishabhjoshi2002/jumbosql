@@ -155,7 +155,8 @@ func TestPkgMatches(t *testing.T) {
 			t.Errorf("%s: want %s, got %s", name, kind, found)
 		}
 	}
-	for _, name := range []string{"postgresql17-libs", "postgresql-client-17", "libpq5"} {
+	for _, name := range []string{"postgresql17-libs", "postgresql-client-17", "libpq5", "postgresql17", "pgbouncer_fdw_17",
+		"pgbouncer_fdw", "etcd-client", "postgresql17-contrib"} {
 		for _, d := range catalog {
 			if pkgMatches(name, d) {
 				t.Errorf("%s should not match %s", name, d.kind)
@@ -189,5 +190,22 @@ func TestParseProbe(t *testing.T) {
 	}
 	if strings.Join(h.Roles, ",") != "entry,balancer" {
 		t.Errorf("roles %v", h.Roles)
+	}
+}
+
+func TestDropProxies(t *testing.T) {
+	mk := func(host, addr, sys, role string) *Node {
+		n := newNode(host, 5432)
+		n.Reachable, n.ServerAddr, n.SystemID, n.Role = true, addr, sys, role
+		return n
+	}
+	res := &Result{Nodes: []*Node{
+		mk("10.0.0.24", "10.0.0.24", "S1", "primary"),
+		mk("10.0.0.25", "10.0.0.25", "S1", "standby"),
+		mk("10.0.0.27", "10.0.0.24", "S1", "primary"), // HAProxy on .27 port 5432 -> .24
+	}}
+	px := dropProxies(res)
+	if len(res.Nodes) != 2 || len(px) != 1 || px[0].Via != "10.0.0.27:5432" || px[0].To != "10.0.0.24:5432" {
+		t.Fatalf("%d nodes, %+v", len(res.Nodes), px)
 	}
 }

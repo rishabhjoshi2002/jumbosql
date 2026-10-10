@@ -1,5 +1,5 @@
 /**
- * pg_genin Discover: places the servers on a canvas.
+ * pg_genie Discover: places the servers on a canvas.
  *  - a physical cluster (primary + its streaming standbys) is one frame; the primary on top, standbys below
  *    their upstream (cascading standbys one level lower);
  *  - clusters that receive data by logical replication sit to the right of the ones that send it.

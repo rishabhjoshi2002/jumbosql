@@ -22,6 +22,7 @@ import { toast } from 'react-toastify';
 import { DHostSizing, DResult, DSize } from '@shared/api/api/discover.ts';
 import { bytes, pct } from '@pages/insights/lib/format.ts';
 import TrendChart from '@pages/insights/ui/TrendChart.tsx';
+import type { BandPoint } from '@shared/api/api/insights.ts';
 import Card from './Card.tsx';
 
 const GB = 1024 ** 3;
@@ -30,7 +31,7 @@ const mono = { fontFamily: '"JetBrains Mono", monospace', fontSize: 12.5 };
 type Rates = { currency: string; cpu: number; ram: number; disk: number };
 // rough public-cloud list prices per month (editable)
 const DEFAULT_RATES: Rates = { currency: 'USD', cpu: 20, ram: 3.75, disk: 0.08 };
-const RATES_KEY = 'pg_genin.discover.rates';
+const RATES_KEY = 'pg_genie.discover.rates';
 
 const loadRates = (): Rates => {
   try {
@@ -42,6 +43,10 @@ const loadRates = (): Rates => {
 };
 
 const cost = (s: DSize, r: Rates) => s.cpus * r.cpu + (s.mem_bytes / GB) * r.ram + (s.disk_bytes / GB) * r.disk;
+
+// percentages never go above 100 (the forecast line can)
+const capPct = (b?: BandPoint[] | null) =>
+  b?.map((p) => ({ ...p, v: Math.min(100, p.v), low: Math.min(100, p.low), high: Math.min(100, p.high) })) ?? null;
 
 const STATUS_COLOR = { under: 'error', over: 'warning', right: 'success', unknown: 'default' } as const;
 
@@ -107,24 +112,15 @@ const Sizing: FC<{ result: DResult }> = ({ result }) => {
   return (
     <Stack gap={2}>
       {sz.source === 'prometheus' ? (
-        <Alert severity="success">
-          {t('sizingFromProm', { url: sz.prometheus, days: sz.days, horizon: sz.horizon })}
-        </Alert>
+        <Alert severity="success">{t('sizingFromProm', { url: sz.prometheus, days: sz.days })}</Alert>
       ) : (
-        <Alert severity="info">
-          {sz.error ? `${t('promNotUsed')}: ${sz.error}. ` : ''}
+        <Alert severity="info" title={sz.error}>
           {t('sizingNoProm')}
+          {sz.error ? ` (${sz.error})` : ''}
         </Alert>
       )}
-      {sz.notes
-        .filter((n) => !n.startsWith('Without a usage history'))
-        .map((n) => (
-          <Alert key={n} severity="warning">
-            {n}
-          </Alert>
-        ))}
 
-      <Card title={t('costTitle')} subtitle={t('costHelp')}>
+      <Card title={t('costTitle')}>
         <Stack direction="row" gap={1.5} flexWrap="wrap" mb={2}>
           <TextField
             select
@@ -190,10 +186,8 @@ const Sizing: FC<{ result: DResult }> = ({ result }) => {
             <TableHead>
               <TableRow sx={{ '& th': { whiteSpace: 'nowrap' } }}>
                 <TableCell>{t('c_machine')}</TableCell>
-                <TableCell>{t('c_runs')}</TableCell>
                 <TableCell>{t('c_hwNow')}</TableCell>
                 <TableCell align="right">{t('c_peak')}</TableCell>
-                <TableCell align="right">{t('c_diskAhead', { days: sz.horizon })}</TableCell>
                 <TableCell>{t('c_hwRec')}</TableCell>
                 <TableCell>{t('c_status')}</TableCell>
                 <TableCell align="right">{t('c_cost')}</TableCell>
@@ -208,7 +202,7 @@ const Sizing: FC<{ result: DResult }> = ({ result }) => {
                     hover
                     selected={h.address === sel}
                     onClick={() => setSel(h.address)}
-                    sx={{ cursor: 'pointer', '& td': { whiteSpace: 'nowrap' } }}>
+                    sx={{ cursor: 'pointer' }}>
                     <TableCell>
                       <Typography variant="body2" fontWeight={700}>
                         {h.name}
@@ -216,16 +210,17 @@ const Sizing: FC<{ result: DResult }> = ({ result }) => {
                       <Typography variant="caption" color="text.secondary" sx={mono}>
                         {h.address}
                       </Typography>
-                    </TableCell>
-                    <TableCell sx={{ whiteSpace: 'normal !important', minWidth: 160, maxWidth: 240 }}>
-                      {(h.roles ?? []).map((r) => t(`lane_${r === 'ha' ? 'database' : r}`)).join(', ')}
-                      {h.pg_role ? ` (${t(`role_${h.pg_role}`)})` : ''}
+                      {h.pg_role ? (
+                        <Typography variant="caption" color="text.secondary">
+                          {' '}
+                          · {t(`role_${h.pg_role}`)}
+                        </Typography>
+                      ) : null}
                     </TableCell>
                     <TableCell>{hasNow ? sizeText(h.current) : t('unknownHw')}</TableCell>
                     <TableCell align="right">
                       {h.cpu_peak_pct >= 0 ? `${pct(h.cpu_peak_pct)} / ${pct(h.mem_peak_pct)}` : '—'}
                     </TableCell>
-                    <TableCell align="right">{h.disk_ahead_bytes > 0 ? bytes(h.disk_ahead_bytes) : '—'}</TableCell>
                     <TableCell sx={{ fontWeight: 700 }}>{sizeText(h.recommended)}</TableCell>
                     <TableCell>
                       <Chip
@@ -245,22 +240,69 @@ const Sizing: FC<{ result: DResult }> = ({ result }) => {
             </TableBody>
           </Table>
         </TableContainer>
-        <Typography variant="caption" color="text.secondary" component="div" mt={1}>
-          {t('sizingRules')}
-        </Typography>
       </Card>
 
       {host ? (
         <Card
-          title={t('trendTitle', { host: host.name })}
-          subtitle={t('trendHelp', { days: sz.days, horizon: sz.horizon })}>
-          <Stack component="ul" gap={0.25} sx={{ m: 0, mb: 1.5, pl: 2.5 }}>
-            {host.reasons.map((r) => (
-              <Typography component="li" variant="body2" key={r}>
-                {r}
-              </Typography>
-            ))}
-          </Stack>
+          title={t('whyTitle', { host: host.name })}
+          action={
+            <Chip
+              size="small"
+              color={STATUS_COLOR[host.status]}
+              label={t(`st_${host.status}`)}
+              sx={{ fontWeight: 700 }}
+            />
+          }>
+          <TableContainer sx={{ mb: 2 }}>
+            <Table size="small">
+              <TableHead>
+                <TableRow sx={{ '& th': { whiteSpace: 'nowrap' } }}>
+                  <TableCell />
+                  <TableCell>{t('w_has')}</TableCell>
+                  <TableCell>{t('w_peak')}</TableCell>
+                  <TableCell>{t('w_ahead', { days: sz.horizon })}</TableCell>
+                  <TableCell>{t('w_need')}</TableCell>
+                  <TableCell>{t('w_how')}</TableCell>
+                  <TableCell align="right">{t('w_cost')}</TableCell>
+                </TableRow>
+              </TableHead>
+              <TableBody>
+                {(host.lines ?? []).map((l) => {
+                  const key = l.resource as 'cpu' | 'ram' | 'disk';
+                  const unit = { cpu: rates.cpu, ram: rates.ram, disk: rates.disk }[key];
+                  const has = {
+                    cpu: host.current.cpus,
+                    ram: host.current.mem_bytes / GB,
+                    disk: host.current.disk_bytes / GB,
+                  }[key];
+                  const need = {
+                    cpu: host.recommended.cpus,
+                    ram: host.recommended.mem_bytes / GB,
+                    disk: host.recommended.disk_bytes / GB,
+                  }[key];
+                  return (
+                    <TableRow key={l.resource} sx={{ '& td': { whiteSpace: 'nowrap' } }}>
+                      <TableCell sx={{ fontWeight: 700 }}>{t(`r_${l.resource}`)}</TableCell>
+                      <TableCell>{l.has}</TableCell>
+                      <TableCell>{l.peak}</TableCell>
+                      <TableCell>{l.ahead}</TableCell>
+                      <TableCell sx={{ fontWeight: 700 }}>{l.need}</TableCell>
+                      <TableCell sx={{ ...mono, whiteSpace: 'normal !important' }}>{l.how}</TableCell>
+                      <TableCell align="right">
+                        {has ? `${money(has * unit)} → ` : ''}
+                        <b>{money(need * unit)}</b>
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
+              </TableBody>
+            </Table>
+          </TableContainer>
+          {host.reasons.map((r) => (
+            <Typography variant="body2" color="text.secondary" key={r} mb={1}>
+              {r}
+            </Typography>
+          ))}
           {host.trend ? (
             <Box sx={{ display: 'grid', gap: 2, gridTemplateColumns: { xs: '1fr', xl: 'repeat(3, 1fr)' } }}>
               <Box>
@@ -273,7 +315,7 @@ const Sizing: FC<{ result: DResult }> = ({ result }) => {
                       name: 'CPU',
                       points: host.trend.cpu ?? [],
                       slot: 0,
-                      band: host.trend.cpu_forecast.band,
+                      band: capPct(host.trend.cpu_forecast.band),
                       area: true,
                     },
                   ]}
@@ -293,7 +335,7 @@ const Sizing: FC<{ result: DResult }> = ({ result }) => {
                       name: 'RAM',
                       points: host.trend.mem ?? [],
                       slot: 1,
-                      band: host.trend.mem_forecast.band,
+                      band: capPct(host.trend.mem_forecast.band),
                       area: true,
                     },
                   ]}
@@ -333,7 +375,7 @@ const Sizing: FC<{ result: DResult }> = ({ result }) => {
         </Card>
       ) : null}
 
-      <Card title={t('tuneTitle')} subtitle={t('tuneHelp')}>
+      <Card title={t('tuneTitle')}>
         <Stack gap={2}>
           {sz.tuning.map((tu) => {
             const node = result.nodes.find((n) => n.id === tu.node);

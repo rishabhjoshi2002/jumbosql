@@ -1,4 +1,4 @@
-// Package discover looks at any PostgreSQL servers the console can reach - built by pg_genin or not - with
+// Package discover looks at any PostgreSQL servers the console can reach - built by pg_genie or not - with
 // one database login, and works out the architecture: which node is a primary, which are streaming
 // standbys (and of whom), which take data through logical replication, what manages failover, and the
 // details of every node. It only reads; it never changes anything on the servers.
@@ -209,8 +209,11 @@ type Result struct {
 	Edges        []Edge    `json:"edges"`
 	Groups       []Group   `json:"groups"`
 	Findings     []Finding `json:"findings"`
-	Infra        *Infra    `json:"infra,omitempty"`  // machines and everything around PostgreSQL
-	Sizing       *Sizing   `json:"sizing,omitempty"` // hardware and settings advice
+	Infra        *Infra    `json:"infra,omitempty"`   // machines and everything around PostgreSQL
+	Sizing       *Sizing   `json:"sizing,omitempty"`  // hardware and settings advice
+	Proxies      []Proxy   `json:"proxies,omitempty"` // ports that forward to another server
+	proxies      []Proxy
+	proxyRoutes  []Route
 	Counts       struct {
 		Nodes       int     `json:"nodes"`
 		Reachable   int     `json:"reachable"`
@@ -292,6 +295,8 @@ func Run(ctx context.Context, req Request) *Result {
 	}
 	wg.Wait()
 	res.Nodes = nodes
+	res.proxies = dropProxies(res)
+	res.Proxies = res.proxies
 	link(res)
 	describe(res)
 	if infra != nil {
@@ -364,7 +369,7 @@ func tb(s string) bool { return s == "t" || s == "true" || s == "on" }
 
 func target(req Request, host string, port int, db string) sqlrun.Target {
 	return sqlrun.Target{Host: host, Port: port, User: req.User, Password: req.Password, Database: db,
-		SSLMode: req.SSLMode, AppName: "pg_genin discover"}
+		SSLMode: req.SSLMode, AppName: "pg_genie discover"}
 }
 
 // settings shown for every node (the ones that describe its role and capacity)

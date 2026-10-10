@@ -1,6 +1,6 @@
 package storage
 
-// pg_genin: Insights - samples of cluster metrics, kept for trends and forecasts.
+// pg_genie: Insights - samples of cluster metrics, kept for trends and forecasts.
 
 import (
 	"context"

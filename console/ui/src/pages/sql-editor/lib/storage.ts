@@ -1,5 +1,5 @@
 /**
- * pg_genin SQL editor: per-user browser storage for query tabs and run history. This is a convenience only
+ * pg_genie SQL editor: per-user browser storage for query tabs and run history. This is a convenience only
  * (it stays in this browser); every access is guarded so the editor works without storage.
  */
 import { getSessionUser } from '@shared/lib/session.ts';

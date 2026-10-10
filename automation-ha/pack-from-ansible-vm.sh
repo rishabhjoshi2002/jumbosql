@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 # pack-from-ansible-vm.sh - run on the Ansible VM (.10) as root.
 #
-# Collects everything the pg_genin HA automation image needs into /root/ha-bundle.tar.gz:
+# Collects everything the pg_genie HA automation image needs into /root/ha-bundle.tar.gz:
 #   collections/  the HA Ansible collection (2.2.0) + its pinned dependencies (wherever ansible-galaxy finds them)
 #   project/      your HA playbook directory (group_vars, files/, vault.yml, ...), with the playbook copied
-#                 as keen-ha.playbook.yml - the only name pg_genin uses
+#                 as keen-ha.playbook.yml - the only name pg_genie uses
 #
 # The vault password is NOT packed: you give it to the console when you start it (./build.sh run asks), and
 # the console hands it to each deployment.
@@ -12,7 +12,7 @@
 # Usage: ./pack-from-ansible-vm.sh [PLAYBOOK_DIR]
 #
 # The defaults below are where the vendor's installer put the collection on your Ansible VM; this script is
-# the only place in pg_genin that refers to those vendor file names.
+# the only place in pg_genie that refers to those vendor file names.
 set -euo pipefail
 
 VENDOR_PLAYBOOK_DIR=/root/crunchydata-pg-2.2/playbooks/crunchy-ha-postgresql

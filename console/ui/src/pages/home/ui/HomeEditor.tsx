@@ -23,7 +23,7 @@ import { sidebarData } from '@widgets/sidebar/model/constants.ts';
 import { availableCards, chosenCards, defaultCards, HomeCardId, safeStartPage } from '../model/cards.ts';
 
 /**
- * pg_genin: an admin sets a user's home page (Settings -> Users): which cards, their order and the start page.
+ * pg_genie: an admin sets a user's home page (Settings -> Users): which cards, their order and the start page.
  * Only cards and pages that user's own access allows are offered.
  */
 const HomeEditor: FC<{ user: ApiUser | null; onClose: () => void }> = ({ user, onClose }) => {

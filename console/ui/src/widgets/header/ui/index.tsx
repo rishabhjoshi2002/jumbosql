@@ -6,7 +6,7 @@ import Stack from '@mui/material/Stack';
 import TextField from '@mui/material/TextField';
 import Toolbar from '@mui/material/Toolbar';
 import Typography from '@mui/material/Typography';
-import logoIcon from '@shared/assets/pgGeninIcon.png';
+import logoIcon from '@shared/assets/pgGenieIcon.png';
 import UserMenu from '@features/user-menu';
 import { BRAND } from '@shared/theme/theme.ts';
 import ThemeToggle from '@features/theme-toggle';
@@ -55,11 +55,11 @@ const Header: FC = () => {
                   placeItems: 'center',
                   flexShrink: 0,
                 }}>
-                <img src={logoIcon} alt="pg_genin" style={{ width: '32px', height: '32px' }} data-logo="true" />
+                <img src={logoIcon} alt="pg_genie" style={{ width: '32px', height: '32px' }} data-logo="true" />
               </Box>
               <Box sx={{ lineHeight: 1 }}>
                 <Typography sx={{ color: BRAND.chromeText, fontWeight: 800, fontSize: '1.05rem', lineHeight: 1.15 }}>
-                  pg_genin
+                  pg_genie
                 </Typography>
                 <Typography sx={{ color: BRAND.sky, fontSize: '0.74rem', fontWeight: 600, lineHeight: 1.2 }}>
                   {t('productLine')}

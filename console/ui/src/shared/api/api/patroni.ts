@@ -1,4 +1,4 @@
-// pg_genin: Patroni panel endpoints (see console/service/api/swagger.yaml).
+// pg_genie: Patroni panel endpoints (see console/service/api/swagger.yaml).
 import { baseApi as api } from '../baseApi.ts';
 
 const injectedRtkApi = api.injectEndpoints({

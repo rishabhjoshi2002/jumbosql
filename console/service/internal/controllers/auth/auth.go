@@ -1,6 +1,6 @@
 package auth
 
-// pg_genin: /auth/login, /auth/logout, /auth/me, /auth/password
+// pg_genie: /auth/login, /auth/logout, /auth/me, /auth/password
 
 import (
 	"encoding/json"
@@ -64,7 +64,7 @@ func NewPostAuthLoginHandler(svc *auth.Service, log zerolog.Logger) authops.Post
 	return &loginHandler{svc: svc, log: log.With().Str("module", "auth").Logger()}
 }
 
-// Hooks set by the service wiring (pg_genin access policies): audit sign-ins, and the effective permissions
+// Hooks set by the service wiring (pg_genie access policies): audit sign-ins, and the effective permissions
 // returned by /auth/me.
 var (
 	AuditLogin  func(r *http.Request, username string, user *storage.User, ok bool, reason string)
@@ -146,7 +146,7 @@ func (h *meHandler) Handle(param authops.GetAuthMeParams) middleware.Responder {
 	return authops.NewGetAuthMeOK().WithPayload(m)
 }
 
-// pg_genin: PUT /auth/me/preferences - the user's own home page choices (cards, their order, start page).
+// pg_genie: PUT /auth/me/preferences - the user's own home page choices (cards, their order, start page).
 type preferencesHandler struct{ db storage.IStorage }
 
 func NewPutAuthMePreferencesHandler(db storage.IStorage) authops.PutAuthMePreferencesHandler {
@@ -167,7 +167,7 @@ func (h *preferencesHandler) Handle(param authops.PutAuthMePreferencesParams) mi
 	if !ok {
 		return bad("preferences must be a JSON object")
 	}
-	// pg_genin: the home page (cards, start page) is set by an admin in Settings -> Users; a user keeps the
+	// pg_genie: the home page (cards, start page) is set by an admin in Settings -> Users; a user keeps the
 	// rest (e.g. notes) but cannot change "home"
 	ctx := param.HTTPRequest.Context()
 	cur := map[string]any{}

@@ -8,7 +8,7 @@ import (
 	"strings"
 )
 
-// pg_genin: requests are accepted with either the static API token (PG_CONSOLE_AUTHORIZATION_TOKEN, for
+// pg_genie: requests are accepted with either the static API token (PG_CONSOLE_AUTHORIZATION_TOKEN, for
 // scripts and automation; it may do everything) or a session token from POST /auth/login. What a signed-in
 // user may do is decided by the access policies (internal/access, internal/policy) through the Authorizer.
 

@@ -1,6 +1,6 @@
 package storage
 
-// pg_genin: console users and login sessions (tables from migration 20261005150000_jumbosql_users.sql).
+// pg_genie: console users and login sessions (tables from migration 20261005150000_jumbosql_users.sql).
 
 import (
 	"context"
@@ -21,7 +21,7 @@ type User struct {
 	CreatedAt    time.Time
 	UpdatedAt    *time.Time
 	LastLoginAt  *time.Time
-	Attributes   map[string]string // pg_genin ABAC: e.g. group=operator, team=payments
+	Attributes   map[string]string // pg_genie ABAC: e.g. group=operator, team=payments
 }
 
 type CreateUserReq struct {

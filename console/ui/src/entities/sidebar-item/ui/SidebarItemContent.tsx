@@ -4,7 +4,7 @@ import { ListItemButton, ListItemIcon, ListItemText } from '@mui/material';
 import { SidebarItemProps } from '@entities/sidebar-item/model/types.ts';
 import { BRAND } from '@shared/theme/theme.ts';
 
-// pg_genin: sidebar items sit on the dark navy chrome; the active page is a blue pill.
+// pg_genie: sidebar items sit on the dark navy chrome; the active page is a blue pill.
 const SidebarItemContent: FC<SidebarItemProps> = ({
   path,
   label,

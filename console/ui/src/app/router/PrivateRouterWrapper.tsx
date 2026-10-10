@@ -9,7 +9,7 @@ const PrivateRouteWrapper: FC = () => {
   const location = useLocation();
   const token = localStorage.getItem('token');
 
-  // pg_genin: effective permissions come from the access policies; refresh them on load and every minute so
+  // pg_genie: effective permissions come from the access policies; refresh them on load and every minute so
   // policy changes show up without signing in again
   const me = useGetAuthMeQuery(undefined, { skip: !token, pollingInterval: 60_000, refetchOnFocus: true });
   useEffect(() => {

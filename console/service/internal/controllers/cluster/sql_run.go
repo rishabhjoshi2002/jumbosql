@@ -1,6 +1,6 @@
 package cluster
 
-// pg_genin: SQL editor endpoints.
+// pg_genie: SQL editor endpoints.
 //
 //   GET  /clusters/{id}/sql/access  what the signed-in user may do in the SQL editor here (level, databases, scope)
 //   POST /clusters/{id}/sql         run a script on the cluster and return every result set
@@ -134,7 +134,7 @@ func (h *sqlAccessHandler) listDatabases(ctx context.Context, clusterID int64) (
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 	conn, err := sqlrun.Connect(ctx, sqlrun.Target{Host: host, Port: port, User: dbUser, Password: password, Database: "postgres",
-		SSLMode: h.sslMode, AppName: "pg_genin console"})
+		SSLMode: h.sslMode, AppName: "pg_genie console"})
 	if err != nil {
 		return nil, err
 	}
@@ -214,7 +214,7 @@ func (h *sqlRunHandler) Handle(param cluster.PostClustersIDSQLParams) middleware
 		return fail("error", fmt.Errorf("the cluster has no usable connection info yet (%v); it is written when the deployment finishes", err), nil)
 	}
 	admin := sqlrun.Target{Host: host, Port: port, User: dbUser, Password: password, Database: database, SSLMode: h.sslMode,
-		AppName: "pg_genin SQL editor (" + user + ")"}
+		AppName: "pg_genie SQL editor (" + user + ")"}
 	target, role, err := h.roles.Target(ctx, param.ID, admin, prof, database)
 	if err != nil {
 		return fail("error", fmt.Errorf("could not prepare your database role: %w", err), map[string]any{"level": prof.Level})
@@ -242,7 +242,7 @@ func (h *sqlRunHandler) Handle(param cluster.PostClustersIDSQLParams) middleware
 	}
 	if res.Error != nil && res.Error.SQLState == "28P01" || res.Error != nil && res.Error.SQLState == "28000" {
 		res.Error.Hint = strings.TrimSpace(res.Error.Hint + " The cluster's pg_hba.conf must allow role " + role +
-			" (password authentication) from the HAProxy node; it is the database role pg_genin created for your access policy.")
+			" (password authentication) from the HAProxy node; it is the database role pg_genie created for your access policy.")
 	}
 
 	if res.Error != nil && res.Error.SQLState == "42501" && prof.Restricted() {

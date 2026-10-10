@@ -1,6 +1,6 @@
 package cluster
 
-// pg_genin: Patroni panel actions - switchover, restart and reinitialize, sent to the Patroni REST API
+// pg_genie: Patroni panel actions - switchover, restart and reinitialize, sent to the Patroni REST API
 // of the cluster's database nodes. After each action the cluster watcher refreshes the console's view.
 
 import (

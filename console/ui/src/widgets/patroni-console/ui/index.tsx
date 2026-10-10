@@ -50,7 +50,7 @@ const Group: FC<{ title: string; children: ReactNode }> = ({ title, children }) 
 );
 
 /**
- * pg_genin: patronictl in the browser. Each button runs the matching Patroni REST call through the console
+ * pg_genie: patronictl in the browser. Each button runs the matching Patroni REST call through the console
  * API and prints the equivalent patronictl command and its result, so operators see exactly what happened.
  */
 const PatroniConsole: FC<{ clusterId: number; onChanged?: () => void }> = ({ clusterId, onChanged }) => {

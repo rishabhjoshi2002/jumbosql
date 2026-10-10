@@ -268,7 +268,7 @@ const NotesCard: FC<{ prefs: UserPreferences; save: (p: UserPreferences) => Prom
 
 /* ------------------------------------------------------------ page ------------------------------------------------------------ */
 
-/** pg_genin: each user's own home page - the cards an admin chose for them (Settings -> Users), limited to what they may see. */
+/** pg_genie: each user's own home page - the cards an admin chose for them (Settings -> Users), limited to what they may see. */
 const Home: FC = () => {
   const { t } = useTranslation('shared');
   const user = useSessionUser();

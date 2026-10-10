@@ -132,7 +132,7 @@ func AdminTarget(cl *storage.Cluster, db, sslMode string) (sqlrun.Target, error)
 		return sqlrun.Target{}, fmt.Errorf("the cluster has no usable connection info yet: %w", err)
 	}
 	return sqlrun.Target{Host: host, Port: port, User: user, Password: password, Database: db, SSLMode: sslMode,
-		AppName: "pg_genin insights"}, nil
+		AppName: "pg_genie insights"}, nil
 }
 
 func connect(ctx context.Context, cl *storage.Cluster, db, sslMode string) (*pgconn.PgConn, error) {

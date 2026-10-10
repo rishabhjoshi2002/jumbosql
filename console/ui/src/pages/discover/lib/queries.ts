@@ -1,5 +1,5 @@
 /**
- * pg_genin Discover: ready-made read-only queries for a migration review. Each runs in a READ ONLY
+ * pg_genie Discover: ready-made read-only queries for a migration review. Each runs in a READ ONLY
  * transaction on the server and database picked in the query panel.
  */
 export type SuggestedQuery = { group: string; title: string; sql: string; help?: string };

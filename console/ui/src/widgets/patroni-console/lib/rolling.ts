@@ -1,7 +1,7 @@
 import { PatroniMember } from '@shared/api/api/patroni.ts';
 
 /**
- * pg_genin: rolling restart plan - the order patronictl users follow by hand:
+ * pg_genie: rolling restart plan - the order patronictl users follow by hand:
  *   1. restart every replica, one at a time, waiting until it is streaming again
  *   2. switch the leader over to a healthy replica
  *   3. restart the old leader (now a replica)

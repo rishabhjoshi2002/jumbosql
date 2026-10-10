@@ -526,7 +526,7 @@ const Nodes: FC<{ rep: InsightsReport }> = ({ rep }) => {
 
 /* ------------------------------------------------------------ page ------------------------------------------------------------ */
 
-/** pg_genin: Insights - health, what grows, what will be needed and when, and what to fix; for one cluster or all. */
+/** pg_genie: Insights - health, what grows, what will be needed and when, and what to fix; for one cluster or all. */
 const Insights: FC = () => {
   const { t } = useTranslation('insights');
   const user = useSessionUser();

@@ -1,5 +1,5 @@
 /**
- * pg_genin Discover: the machines as lanes, top to bottom in the order a connection travels -
+ * pg_genie Discover: the machines as lanes, top to bottom in the order a connection travels -
  * virtual IP, load balancer, pooler, PostgreSQL - then the HA store, backups and monitoring.
  * One box per machine and lane; arrows follow the balancer routes and pooler targets.
  */

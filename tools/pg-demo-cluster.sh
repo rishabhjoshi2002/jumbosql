@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
-# pg-demo-cluster.sh - a small, ordinary PostgreSQL 17 setup on 3 KVM VMs, to try pg_genin's Discover panel
-#                      on something pg_genin did NOT build (no Patroni, no etcd, no HAProxy):
+# pg-demo-cluster.sh - a small, ordinary PostgreSQL 17 setup on 3 KVM VMs, to try pg_genie's Discover panel
+#                      on something pg_genie did NOT build (no Patroni, no etcd, no HAProxy):
 #
 #       <set>-primary  ── streaming (physical) replication ──►  <set>-standby   read-only hot standby
 #             │
@@ -38,7 +38,7 @@
 #
 # The cross layout makes smaller VMs (RAM_MB=2048, DISK=20G unless set) so both demos fit on one host.
 #
-# Passwords (env, else generated): DBA_PASSWORD (user dba, superuser - for pg_genin Discover),
+# Passwords (env, else generated): DBA_PASSWORD (user dba, superuser - for pg_genie Discover),
 # REPL_PASSWORD (user replicator). They are printed at the end and saved to /root/pg-demo-<set>.txt (root only).
 # Re-running on the same VMs is safe: each step checks what is already there.
 
@@ -187,7 +187,7 @@ cluster_name = '\$(hostname -s)'
 CONF
 grep -q "^include_dir = 'conf.d'" $PGDATA/postgresql.conf || echo "include_dir = 'conf.d'" >>$PGDATA/postgresql.conf
 grep -q 'pg-demo-cluster' $PGDATA/pg_hba.conf || cat >>$PGDATA/pg_hba.conf <<'HBA'
-# pg-demo-cluster.sh: the demo network (other nodes and the pg_genin console)
+# pg-demo-cluster.sh: the demo network (other nodes and the pg_genie console)
 host    all             all             $SUBNET_CIDR          scram-sha-256
 host    replication     replicator      $SUBNET_CIDR          scram-sha-256
 HBA
@@ -387,7 +387,7 @@ SELECT count(*) FROM orders;" | tr -d ' \n')
 summary() {
   step "Done: demo set $SET_NAME"
   local inv=/root/pg-demo-$SET_NAME-inventory.txt
-  { echo "# pg_genin Discover inventory (host port), demo set $SET_NAME"
+  { echo "# pg_genie Discover inventory (host port), demo set $SET_NAME"
     printf '%s 5432\n' "$P_IP" "$S_IP" "$L_IP"; } >"$inv"
   cat <<EOF
 
@@ -395,7 +395,7 @@ summary() {
     $S_NAME   $S_IP   standby      streaming replica of the primary (read-only)
     $L_NAME   $L_IP   logical      subscriber of shop_pub + its own table daily_sales
 
-    For pg_genin -> Discover:
+    For pg_genie -> Discover:
       inventory   $(tr '\n' ' ' < <(grep -v '^#' "$inv" | awk '{print $1":"$2}'))   ($inv)
       username    dba
       password    $DBA_PASSWORD
@@ -483,7 +483,7 @@ verify_cross() {
 summary_cross() {
   step "Done: demo set $SET_NAME (two clusters linked by logical replication)"
   local inv=/root/pg-demo-$SET_NAME-inventory.txt
-  { echo "# pg_genin Discover inventory (host port), demo set $SET_NAME"
+  { echo "# pg_genie Discover inventory (host port), demo set $SET_NAME"
     printf '%s 5432\n' "$A1_IP" "$A2_IP" "$B1_IP" "$B2_IP"; } >"$inv"
   cat <<SUMMARY
 
@@ -492,7 +492,7 @@ summary_cross() {
     Cluster B   $B1_NAME   $B1_IP   primary     subscribes shop_pub; publishes dw_pub (daily_sales)
                 $B2_NAME   $B2_IP   standby     asynchronous streaming replica of $B1_NAME
 
-    For pg_genin -> Discover:
+    For pg_genie -> Discover:
       inventory   $(tr '\n' ' ' < <(grep -v '^#' "$inv" | awk '{print $1":"$2}'))   ($inv)
       username    dba
       password    $DBA_PASSWORD

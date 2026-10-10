@@ -20,7 +20,7 @@ type dockerManager struct {
 	cli      *client.Client
 	log      zerolog.Logger
 	image    string
-	extraEnv []string // pg_genin: added to every deployment container (e.g. the vault password); never logged
+	extraEnv []string // pg_genie: added to every deployment container (e.g. the vault password); never logged
 }
 
 func NewDockerManager(host string, image string, extraEnv ...string) (IManager, error) {

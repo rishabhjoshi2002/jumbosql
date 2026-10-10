@@ -109,6 +109,7 @@ type HostInfo struct {
 	VIPs       []string     `json:"vips,omitempty"`
 	pgPort     int
 	declaredDB bool
+	proxyPorts []int             // ports that looked like PostgreSQL but forward to another server
 	raw        map[string]string // SSH sections (configs), not returned
 }
 
@@ -509,7 +510,7 @@ func prepareSSH(auth *SSHAuth) (dir, keyFile, askpass string, err error) {
 	if auth == nil || auth.User == "" {
 		return "", "", "", nil
 	}
-	dir, err = os.MkdirTemp("", "pggenin-ssh-")
+	dir, err = os.MkdirTemp("", "pggenie-ssh-")
 	if err != nil {
 		return "", "", "", err
 	}
@@ -523,7 +524,7 @@ func prepareSSH(auth *SSHAuth) (dir, keyFile, askpass string, err error) {
 	if auth.Password != "" {
 		askpass = filepath.Join(dir, "askpass")
 		// the password reaches ssh through the environment, never the command line
-		if err = os.WriteFile(askpass, []byte("#!/bin/sh\nprintf '%s\\n' \"$PGGENIN_SSH_SECRET\"\n"), 0o700); err != nil {
+		if err = os.WriteFile(askpass, []byte("#!/bin/sh\nprintf '%s\\n' \"$PGGENIE_SSH_SECRET\"\n"), 0o700); err != nil {
 			return dir, "", "", err
 		}
 	}
@@ -554,7 +555,7 @@ func runSSH(ctx context.Context, host string, port int, auth *SSHAuth, keyFile, 
 	cmd.Stdin = strings.NewReader(probeScript)
 	cmd.Env = append(os.Environ(), "LC_ALL=C")
 	if askpass != "" {
-		cmd.Env = append(cmd.Env, "SSH_ASKPASS="+askpass, "SSH_ASKPASS_REQUIRE=force", "DISPLAY=none", "PGGENIN_SSH_SECRET="+auth.Password)
+		cmd.Env = append(cmd.Env, "SSH_ASKPASS="+askpass, "SSH_ASKPASS_REQUIRE=force", "DISPLAY=none", "PGGENIE_SSH_SECRET="+auth.Password)
 	}
 	var out, errb strings.Builder
 	cmd.Stdout, cmd.Stderr = &out, &errb
@@ -644,7 +645,7 @@ func parseProbe(h *HostInfo, out string) {
 		}
 		dup := false
 		for _, x := range h.Listening {
-			if x.Port == li.Port && x.Process == li.Process {
+			if x.Port == li.Port && x.Process == li.Process && x.Addr == li.Addr {
 				dup = true
 			}
 		}
@@ -770,18 +771,27 @@ func matchPkg(name string) *compDef {
 	return nil
 }
 
+// PostgreSQL server packages only (not the client: postgresql17 on RHEL, postgresql-client-17 on Debian)
+var pgServerPkg = regexp.MustCompile(`^postgresql-\d+$|^postgresql\d+-server$|^postgresql-server$|^postgres(ql)?-?\d+(\.\d+)?-server$`)
+
+// other packages: the name itself, with a version number (haproxy28, prometheus2) or a known suffix -
+// not extensions or helpers that only share the prefix (pgbouncer_fdw, haproxy-exporter, etcd-client)
+var pkgSuffixes = []string{"-server", "-ce", "-bin", "-enterprise", "-daemon", "-etcd", "-consul", "-raft"}
+var digitsRe = regexp.MustCompile(`^\d+$`)
+
 func pkgMatches(name string, d compDef) bool {
 	n := strings.ToLower(name)
+	if d.kind == "postgres" {
+		return pgServerPkg.MatchString(n)
+	}
 	for _, p := range d.pkgs {
-		if n == p || strings.HasPrefix(n, p) && d.kind == "postgres" && regexp.MustCompile(`^postgresql-?\d+(-server)?$|^postgresql\d+-server$|^postgresql-server$|^postgresql$`).MatchString(n) {
+		if n == p || strings.HasPrefix(n, p) && digitsRe.MatchString(n[len(p):]) {
 			return true
 		}
-		if d.kind != "postgres" && (n == p || strings.HasPrefix(n, p+"-") || strings.HasPrefix(n, p+"_") || strings.HasPrefix(n, p+"2")) {
-			// e.g. haproxy28, pgbouncer, etcd, prometheus2; skip libraries and docs
-			if strings.HasSuffix(n, "-doc") || strings.HasSuffix(n, "-docs") || strings.HasSuffix(n, "-devel") || strings.HasPrefix(n, "lib") {
-				return false
+		for _, suf := range pkgSuffixes {
+			if n == p+suf {
+				return true
 			}
-			return true
 		}
 	}
 	return false
@@ -1098,7 +1108,7 @@ func finish(h *HostInfo) {
 			}
 			c.detail("note", "ports 5000/5001 are open; give SSH access to see which program it is")
 		}
-		if has(h.OpenPorts, h.pgPort) {
+		if has(h.OpenPorts, h.pgPort) && !has(h.proxyPorts, h.pgPort) {
 			c := h.comp("postgres")
 			c.source("port")
 			c.port(h.pgPort)

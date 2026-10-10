@@ -22,7 +22,7 @@ import { can } from '@shared/lib/session.ts';
 const isLeaderRole = (role?: string) => role === 'leader' || role === 'standby_leader';
 
 /**
- * Server row actions on the cluster page. pg_genin adds the Patroni actions: make this node the leader
+ * Server row actions on the cluster page. pg_genie adds the Patroni actions: make this node the leader
  * (switchover), restart PostgreSQL, and reinitialize a replica from the leader.
  */
 const ClustersOverviewTableRowActions: FC<TableRowActionsProps> = ({ closeMenu, row }) => {

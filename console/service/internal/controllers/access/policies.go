@@ -1,4 +1,4 @@
-// Package access - pg_genin access policy, simulation and audit endpoints.
+// Package access - pg_genie access policy, simulation and audit endpoints.
 package access
 
 import (

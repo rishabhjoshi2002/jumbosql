@@ -1,4 +1,4 @@
-// Package policy is pg_genin's attribute-based access control (policies only).
+// Package policy is pg_genie's attribute-based access control (policies only).
 //
 // A Policy matches a request when all of these hold:
 //   - subject:    the user is listed by name, or has every listed attribute with one of the listed values,
