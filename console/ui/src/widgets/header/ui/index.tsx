@@ -52,17 +52,8 @@ const Header: FC = () => {
               width={OPEN_SIDEBAR_WIDTH}
               boxSizing="border-box"
               paddingLeft="16px">
-              <Box
-                sx={{
-                  width: 38,
-                  height: 38,
-                  borderRadius: '10px',
-                  backgroundColor: '#fff',
-                  display: 'grid',
-                  placeItems: 'center',
-                  flexShrink: 0,
-                }}>
-                <img src={logoIcon} alt="pg_mantra" style={{ width: '32px', height: '32px' }} data-logo="true" />
+              <Box sx={{ width: 56, height: 40, flexShrink: 0, display: 'flex' }}>
+                <img src={logoIcon} alt="pg_mantra" style={{ width: '56px', height: '40px' }} data-logo="true" />
               </Box>
               <Box sx={{ lineHeight: 1 }}>
                 <Typography sx={{ color: BRAND.chromeText, fontWeight: 800, fontSize: '1.05rem', lineHeight: 1.15 }}>

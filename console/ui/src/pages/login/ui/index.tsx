@@ -77,16 +77,8 @@ const Login: FC = () => {
               linear-gradient(160deg, ${BRAND.navy900} 0%, ${BRAND.navy800} 55%, ${BRAND.navy700} 100%)`,
           }}>
           <Stack direction="row" alignItems="center" gap="12px">
-            <Box
-              sx={{
-                width: 44,
-                height: 44,
-                borderRadius: '12px',
-                backgroundColor: '#fff',
-                display: 'grid',
-                placeItems: 'center',
-              }}>
-              <img src={logoIcon} alt="" style={{ width: 36, height: 36 }} data-logo="true" />
+            <Box sx={{ width: 62, height: 44, display: 'flex' }}>
+              <img src={logoIcon} alt="" style={{ width: 62, height: 44 }} data-logo="true" />
             </Box>
             <Typography sx={{ fontWeight: 800, fontSize: '1.25rem', letterSpacing: '-0.01em' }}>pg_mantra</Typography>
           </Stack>
@@ -129,7 +121,7 @@ const Login: FC = () => {
           sx={{ width: '100%', maxWidth: '380px', position: 'relative', zIndex: 1 }}>
           <Stack gap="20px">
             <Box textAlign="center">
-              <img src={logo} alt="pg_mantra" style={{ width: 300, height: 200 }} data-logo="true" />
+              <img src={logo} alt="pg_mantra" style={{ width: 310, height: 221 }} data-logo="true" />
             </Box>
             <Box>
               <Typography variant="h5">{t('signIn')}</Typography>

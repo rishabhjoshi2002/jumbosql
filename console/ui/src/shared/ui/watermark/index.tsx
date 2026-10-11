@@ -1,9 +1,9 @@
 import { FC } from 'react';
 import { Box, Typography, useTheme } from '@mui/material';
-import logo from '@shared/assets/pgMantraIcon.png';
+import logo from '@shared/assets/pgMantraLogo.png';
 
 /**
- * pg_mantra: faint brand watermark on every page - logo, product name and the managing company.
+ * pg_mantra: faint brand watermark on every page - the pg_mantra logo (picture and name, no background) and the managing company.
  * It never takes clicks (pointer-events: none) and sits below the page content.
  *   fixed    - centred in the viewport (main layout)
  *   absolute - inside the parent (login panel); align='bottom' keeps it clear of the sign-in form
@@ -43,23 +43,12 @@ const Watermark: FC<{ variant?: 'fixed' | 'absolute'; align?: 'center' | 'bottom
         alt=""
         data-logo="true"
         sx={{
-          width: align === 'bottom' ? { xs: 72, md: 88 } : { xs: 220, md: 320 },
+          width: align === 'bottom' ? { xs: 130, md: 150 } : { xs: 300, md: 440 },
           height: 'auto',
-          opacity: align === 'bottom' ? (isLight ? 0.18 : 0.2) : isLight ? 0.06 : 0.07,
+          opacity: align === 'bottom' ? (isLight ? 0.2 : 0.22) : isLight ? 0.07 : 0.08,
           filter: isLight ? 'grayscale(15%)' : 'grayscale(30%) brightness(1.4)',
         }}
       />
-      <Typography
-        sx={{
-          fontWeight: 800,
-          fontSize: align === 'bottom' ? '1.4rem' : { xs: '2rem', md: '3rem' },
-          letterSpacing: '-0.03em',
-          color: 'text.primary',
-          opacity: align === 'bottom' ? 0.18 : isLight ? 0.07 : 0.08,
-          lineHeight: 1,
-        }}>
-        pg_mantra
-      </Typography>
       <Typography
         sx={{
           fontWeight: 600,
