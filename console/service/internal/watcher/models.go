@@ -4,6 +4,8 @@ type LogEntity struct {
 	Task    string      `json:"task"`
 	Host    string      `json:"host,omitempty"`
 	Failed  bool        `json:"failed"`
+	Changed bool        `json:"changed,omitempty"`
+	Stderr  string      `json:"stderr,omitempty"`
 	Msg     interface{} `json:"msg"`
 	Summary interface{} `json:"summary,omitempty"`
 	Status  string      `json:"status"`

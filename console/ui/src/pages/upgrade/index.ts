@@ -1,3 +1,3 @@
-import UpgradePage from './ui';
+import UpgradesPage from './ui/Page.tsx';
 
-export default UpgradePage;
+export default UpgradesPage;

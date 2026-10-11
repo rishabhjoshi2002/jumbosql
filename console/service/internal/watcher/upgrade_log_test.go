@@ -19,3 +19,17 @@ func TestReadUpgradeLog(t *testing.T) {
 		t.Errorf("missing file: %s", st)
 	}
 }
+
+func TestReadPlaybookLog(t *testing.T) {
+	st, res := ReadPlaybookLog("testdata/playbook-1.json")
+	if st != "failed" || len(res) != 2 {
+		t.Fatalf("%s %v", st, res)
+	}
+	a, b := res[0].(map[string]any), res[1].(map[string]any)
+	if a["host"] != "10.0.0.31" || a["status"] != "success" || len(a["changed"].([]string)) != 1 || a["error"] != nil {
+		t.Errorf("%v", a)
+	}
+	if b["status"] != "failed" || b["task"] != "Install pgbouncer" {
+		t.Errorf("%v", b)
+	}
+}

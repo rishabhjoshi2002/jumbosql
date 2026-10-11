@@ -43,6 +43,13 @@ type IStorage interface {
 	GetUpgrade(ctx context.Context, id int64) (*Upgrade, error)
 	ListUpgrades(ctx context.Context, clusterID, discoveryID int64, limit int) ([]Upgrade, error)
 	ListRunningUpgrades(ctx context.Context) ([]Upgrade, error)
+	ListPlaybookRuns(ctx context.Context, playbookID int64, limit int) ([]Upgrade, error)
+
+	// pg_mantra: custom upgrade playbooks
+	ListPlaybooks(ctx context.Context) ([]Playbook, error)
+	GetPlaybook(ctx context.Context, id int64, withFiles bool) (*Playbook, error)
+	SavePlaybook(ctx context.Context, p *Playbook, keepFiles bool) (*Playbook, error)
+	DeletePlaybook(ctx context.Context, id int64) error
 	GetInsightSummaries(ctx context.Context, clusterIDs []int64) (map[int64][]byte, error)
 	GetUserPreferences(ctx context.Context, userID int64) ([]byte, error)
 	SaveUserPreferences(ctx context.Context, userID int64, prefs []byte) error

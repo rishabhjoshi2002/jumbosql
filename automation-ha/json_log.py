@@ -63,6 +63,11 @@ class CallbackModule(CallbackBase):
                 'failed': result._result.get('failed', False),
                 'msg': result._result.get('msg', '')
             }
+            if basic_result['failed']:
+                # why it failed (a command's own output), kept short
+                out = result._result.get('stderr') or result._result.get('stdout') or ''
+                if isinstance(out, str) and out.strip():
+                    basic_result['stderr'] = out.strip()[-1500:]
             self._write_result_to_file({**base_result, **basic_result})
 
     def _write_result_to_file(self, result):
@@ -81,6 +86,7 @@ class CallbackModule(CallbackBase):
 
     def v2_runner_item_on_failed(self, result):
         # Records the result of a failed task item.
+        result._result.setdefault('failed', True)
         self._record_task_result(result)
 
     def v2_runner_item_on_skipped(self, result):
@@ -92,7 +98,8 @@ class CallbackModule(CallbackBase):
         self._record_task_result(result)
 
     def v2_runner_on_failed(self, result, ignore_errors=False):
-        # Records the result of a failed task.
+        # Records the result of a failed task (some modules do not set 'failed' themselves).
+        result._result.setdefault('failed', True)
         self._record_task_result(result)
 
     def v2_runner_on_unreachable(self, result):

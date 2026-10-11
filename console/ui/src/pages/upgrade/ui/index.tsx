@@ -60,7 +60,7 @@ const isHost = (r: unknown): r is UHostResult => !!r && typeof r === 'object' &&
 
 /** pg_mantra Upgrades: one component of a setup (found by Discover, or a console cluster) - dry run, upgrade
  * (old version kept), rollback. */
-const UpgradePage: FC = () => {
+const BuiltInUpgrades: FC = () => {
   const { t } = useTranslation('upgrade');
   const user = useSessionUser();
   const [params] = useSearchParams();
@@ -185,13 +185,7 @@ const UpgradePage: FC = () => {
   );
 
   return (
-    <Stack gap={2} p={2}>
-      <Box>
-        <Typography variant="h6">{t('title')}</Typography>
-        <Typography variant="body2" color="text.secondary">
-          {t('help')}
-        </Typography>
-      </Box>
+    <Stack gap={2}>
       <Box
         sx={{
           display: 'grid',
@@ -607,7 +601,7 @@ const UpgradePage: FC = () => {
                 </Stack>
               ) : null}
 
-              {current.operation_id ? (
+              {current.status !== 'running' || log.data.log ? (
                 <Box mt={2}>
                   <Typography variant="body2" fontWeight={700} mb={0.5}>
                     {t('log')}
@@ -664,4 +658,4 @@ const UpgradePage: FC = () => {
   );
 };
 
-export default UpgradePage;
+export default BuiltInUpgrades;

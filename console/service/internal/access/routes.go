@@ -88,6 +88,12 @@ var routes = []Route{
 	r("POST", `/clusters/(\d+)/upgrades`, scopeCluster, "upgrade.start", policy.UpgradeRun),
 	r("GET", `/discoveries/\d+/upgrades(/\d+)?`, scopeNone, "upgrade.read", policy.UpgradeRun),
 	r("POST", `/discoveries/\d+/upgrades`, scopeNone, "upgrade.start", policy.UpgradeRun),
+	r("GET", `/custom-playbooks(/\d+)?`, scopeNone, "playbook.read", policy.UpgradeRun),
+	r("POST", `/custom-playbooks`, scopeNone, "playbook.add", policy.UpgradeRun),
+	r("PUT", `/custom-playbooks/\d+`, scopeNone, "playbook.change", policy.UpgradeRun),
+	r("DELETE", `/custom-playbooks/\d+`, scopeNone, "playbook.remove", policy.UpgradeRun),
+	r("GET", `/custom-playbooks/\d+/runs(/\d+)?`, scopeNone, "playbook.runs", policy.UpgradeRun),
+	r("POST", `/custom-playbooks/\d+/runs`, scopeNone, "playbook.start", policy.UpgradeRun),
 
 	r("GET", `/operations`, scopeNone, "operations.list", policy.ClustersView),
 	r("GET", `/operations/(\d+)/log`, scopeOperation, "operations.log", policy.ClustersView),

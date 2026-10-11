@@ -1030,6 +1030,143 @@ paths:
           schema:
             $ref: "#/definitions/Response.Error"
 
+  /custom-playbooks:
+    get:
+      summary: "pg_mantra: your upgrade playbooks"
+      tags: [playbook]
+      responses:
+        '200':
+          description: OK
+          schema:
+            type: array
+            items:
+              type: object
+        '400':
+          description: Error
+          schema:
+            $ref: "#/definitions/Response.Error"
+    post:
+      summary: "pg_mantra: add an upgrade playbook"
+      tags: [playbook]
+      parameters:
+        - name: body
+          in: body
+          required: true
+          schema:
+            $ref: "#/definitions/Request.Playbook"
+      responses:
+        '200':
+          description: OK
+          schema:
+            type: object
+        '400':
+          description: Error
+          schema:
+            $ref: "#/definitions/Response.Error"
+
+  /custom-playbooks/{id}:
+    get:
+      summary: "pg_mantra: one upgrade playbook"
+      tags: [playbook]
+      parameters:
+        - {name: id, in: path, required: true, type: integer}
+      responses:
+        '200':
+          description: OK
+          schema:
+            type: object
+        '400':
+          description: Error
+          schema:
+            $ref: "#/definitions/Response.Error"
+    put:
+      summary: "pg_mantra: change an upgrade playbook"
+      tags: [playbook]
+      parameters:
+        - {name: id, in: path, required: true, type: integer}
+        - name: body
+          in: body
+          required: true
+          schema:
+            $ref: "#/definitions/Request.Playbook"
+      responses:
+        '200':
+          description: OK
+          schema:
+            type: object
+        '400':
+          description: Error
+          schema:
+            $ref: "#/definitions/Response.Error"
+    delete:
+      summary: "pg_mantra: remove an upgrade playbook and its runs"
+      tags: [playbook]
+      parameters:
+        - {name: id, in: path, required: true, type: integer}
+      responses:
+        '200':
+          description: OK
+          schema:
+            type: object
+        '400':
+          description: Error
+          schema:
+            $ref: "#/definitions/Response.Error"
+
+  /custom-playbooks/{id}/runs:
+    get:
+      summary: "pg_mantra: runs of a playbook, newest first"
+      tags: [playbook]
+      parameters:
+        - {name: id, in: path, required: true, type: integer}
+      responses:
+        '200':
+          description: OK
+          schema:
+            type: array
+            items:
+              type: object
+        '400':
+          description: Error
+          schema:
+            $ref: "#/definitions/Response.Error"
+    post:
+      summary: "pg_mantra: start a dry run (--check), the upgrade (after a dry run) or the rollback (after an upgrade)"
+      tags: [playbook]
+      parameters:
+        - {name: id, in: path, required: true, type: integer}
+        - name: body
+          in: body
+          required: true
+          schema:
+            $ref: "#/definitions/Request.PlaybookRun"
+      responses:
+        '200':
+          description: OK
+          schema:
+            type: object
+        '400':
+          description: Error
+          schema:
+            $ref: "#/definitions/Response.Error"
+
+  /custom-playbooks/{id}/runs/{uid}:
+    get:
+      summary: "pg_mantra: one run with its log and what each host reported"
+      tags: [playbook]
+      parameters:
+        - {name: id, in: path, required: true, type: integer}
+        - {name: uid, in: path, required: true, type: integer}
+      responses:
+        '200':
+          description: OK
+          schema:
+            type: object
+        '400':
+          description: Error
+          schema:
+            $ref: "#/definitions/Response.Error"
+
   /discoveries/{id}/upgrades/{uid}:
     get:
       summary: "pg_mantra: one upgrade of a discovered setup, with its log"
@@ -1692,6 +1829,95 @@ definitions:
         type: boolean
       repo_gpgkey:
         type: string
+
+  Request.Playbook:
+    type: object
+    required: [name]
+    properties:
+      name:
+        type: string
+      description:
+        type: string
+      playbook:
+        type: string
+        description: "the upgrade playbook (YAML); or playbook_path inside the archive"
+      playbook_path:
+        type: string
+      rollback:
+        type: string
+        description: "the rollback playbook (YAML); or rollback_path inside the archive (empty: no rollback)"
+      rollback_path:
+        type: string
+      requirements:
+        type: string
+        description: "requirements.yml: collections / roles installed before each run"
+      variables:
+        type: array
+        description: "inputs asked at each run: {name, label, type (text|password|number|boolean|select|textarea), required, default, options, help}"
+        items:
+          type: object
+      groups:
+        type: array
+        description: "inventory groups the playbook uses: {group, from} (from: a component found by Discover, e.g. postgres)"
+        items:
+          type: object
+      files_base64:
+        type: string
+        description: ".tar.gz / .tgz / .zip with roles, files, templates, group_vars ... (base64)"
+      files_name:
+        type: string
+      files_keep:
+        type: boolean
+        description: "change: keep the stored archive"
+
+  Request.PlaybookRun:
+    type: object
+    required: [action]
+    properties:
+      action:
+        type: string
+        description: "plan (dry run: --check --diff) | run | rollback"
+      parent_id:
+        type: integer
+        description: "run: the dry run it follows; rollback: the run to undo"
+      discovery_id:
+        type: integer
+        description: "the machines: a saved Discover result ..."
+      cluster_id:
+        type: integer
+        description: "... or a cluster of the console ..."
+      inventory:
+        type: string
+        description: "... or your own inventory (INI or YAML)"
+      hosts:
+        type: array
+        description: "only these hosts (--limit)"
+        items:
+          type: string
+      vars:
+        type: object
+        description: "values of the playbook's inputs"
+      extra_vars:
+        type: string
+        description: "more variables (YAML or JSON)"
+      ssh_user:
+        type: string
+      ssh_password:
+        type: string
+        description: "used for this run only, never stored"
+      ssh_key:
+        type: string
+        description: "used for this run only, never stored"
+      ssh_port:
+        type: integer
+      become_password:
+        type: string
+        description: "sudo password if not the SSH password (never stored)"
+      vault_password:
+        type: string
+        description: "Ansible Vault password (never stored)"
+      verbose:
+        type: boolean
 
   Request.DiscoverQuery:
     type: object

@@ -14,6 +14,7 @@ type Upgrade struct {
 	ID          int64      `json:"id"`
 	ClusterID   *int64     `json:"cluster_id,omitempty"`
 	DiscoveryID *int64     `json:"discovery_id,omitempty"`
+	PlaybookID  *int64     `json:"playbook_id,omitempty"`
 	Component   string     `json:"component"`
 	Action      string     `json:"action"`
 	Status      string     `json:"status"`
@@ -28,12 +29,12 @@ type Upgrade struct {
 	FinishedAt  *time.Time `json:"finished_at,omitempty"`
 }
 
-const upgradeCols = `upgrade_id, cluster_id, discovery_id, component, action, status, parent_id, operation_id, docker_id,
+const upgradeCols = `upgrade_id, cluster_id, discovery_id, playbook_id, component, action, status, parent_id, operation_id, docker_id,
 	options, result, created_by, created_at, finished_at`
 
 func scanUpgrade(row pgx.Row) (*Upgrade, error) {
 	var u Upgrade
-	err := row.Scan(&u.ID, &u.ClusterID, &u.DiscoveryID, &u.Component, &u.Action, &u.Status, &u.ParentID, &u.OperationID,
+	err := row.Scan(&u.ID, &u.ClusterID, &u.DiscoveryID, &u.PlaybookID, &u.Component, &u.Action, &u.Status, &u.ParentID, &u.OperationID,
 		&u.DockerID, &u.Options, &u.Result, &u.CreatedBy, &u.CreatedAt, &u.FinishedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, nil
@@ -45,9 +46,9 @@ func scanUpgrade(row pgx.Row) (*Upgrade, error) {
 }
 
 func (s *dbStorage) CreateUpgrade(ctx context.Context, u *Upgrade) (*Upgrade, error) {
-	return scanUpgrade(s.db.QueryRow(ctx, `insert into upgrades (cluster_id, discovery_id, component, action, parent_id, options, created_by)
-		values ($1, $2, $3, $4, $5, $6, $7) returning `+upgradeCols, u.ClusterID, u.DiscoveryID, u.Component, u.Action, u.ParentID,
-		u.Options, u.CreatedBy))
+	return scanUpgrade(s.db.QueryRow(ctx, `insert into upgrades (cluster_id, discovery_id, playbook_id, component, action, parent_id, options, created_by)
+		values ($1, $2, $3, $4, $5, $6, $7, $8) returning `+upgradeCols, u.ClusterID, u.DiscoveryID, u.PlaybookID, u.Component, u.Action,
+		u.ParentID, u.Options, u.CreatedBy))
 }
 
 func (s *dbStorage) SetUpgradeDocker(ctx context.Context, id int64, dockerID string) error {
@@ -81,7 +82,12 @@ func (s *dbStorage) GetUpgrade(ctx context.Context, id int64) (*Upgrade, error) 
 
 // ListUpgrades: the upgrades of a cluster (clusterID) or of a discovered setup (discoveryID), newest first.
 func (s *dbStorage) ListUpgrades(ctx context.Context, clusterID, discoveryID int64, limit int) ([]Upgrade, error) {
-	return s.listUpgrades(ctx, `where (cluster_id = $1 or discovery_id = $2) order by created_at desc limit $3`, clusterID, discoveryID, limit)
+	return s.listUpgrades(ctx, `where (cluster_id = $1 or discovery_id = $2) and playbook_id is null order by created_at desc limit $3`, clusterID, discoveryID, limit)
+}
+
+// ListPlaybookRuns: the runs of a custom playbook, newest first.
+func (s *dbStorage) ListPlaybookRuns(ctx context.Context, playbookID int64, limit int) ([]Upgrade, error) {
+	return s.listUpgrades(ctx, `where playbook_id = $1 order by created_at desc limit $2`, playbookID, limit)
 }
 
 // ListRunningUpgrades: those whose runner container is (or was) running - for the watcher.

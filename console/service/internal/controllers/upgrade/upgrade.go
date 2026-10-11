@@ -235,8 +235,14 @@ func (h *Handlers) discoveryTarget(ctx context.Context, id int64) (*target, erro
 	return &target{discoveryID: id, inventory: inv}, nil
 }
 
-// InventoryFromDiscovery turns a Discover result into an Ansible inventory (JSON).
+// InventoryFromDiscovery turns a Discover result into an Ansible inventory (JSON), with the components the built-in
+// upgrades know.
 func InventoryFromDiscovery(result []byte) ([]byte, error) {
+	return inventoryFromDiscovery(result, false)
+}
+
+// inventoryFromDiscovery: every component (anyKind) or only those the built-in upgrades know; every machine is in all.
+func inventoryFromDiscovery(result []byte, anyKind bool) ([]byte, error) {
 	var r struct {
 		Infra *struct {
 			Hosts []struct {
@@ -256,9 +262,11 @@ func InventoryFromDiscovery(result []byte) ([]byte, error) {
 		return nil, errors.New("this discovery has no machines: run Discover again (with SSH) and save it")
 	}
 	children := map[string]map[string]any{}
+	all := map[string]any{}
 	for _, h := range r.Infra.Hosts {
+		all[h.Address] = map[string]any{}
 		for _, c := range h.Components {
-			if c.Kind == "docker" || c.Kind == "podman" || component(c.Kind) == nil {
+			if c.Kind == "docker" || c.Kind == "podman" || (!anyKind && component(c.Kind) == nil) {
 				continue
 			}
 			g := "pgm_" + strings.ReplaceAll(c.Kind, "-", "_")
@@ -272,10 +280,14 @@ func InventoryFromDiscovery(result []byte) ([]byte, error) {
 			children[g]["hosts"].(map[string]any)[h.Address] = hv
 		}
 	}
-	if len(children) == 0 {
+	if len(children) == 0 && !anyKind {
 		return nil, errors.New("Discover found no upgradable component in this setup")
 	}
-	return json.Marshal(map[string]any{"all": map[string]any{"children": children}})
+	inv := map[string]any{"children": children}
+	if anyKind {
+		inv["hosts"] = all
+	}
+	return json.Marshal(map[string]any{"all": inv})
 }
 
 /* ------------------------------------------------------------ start */

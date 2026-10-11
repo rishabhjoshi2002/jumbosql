@@ -314,6 +314,37 @@ means the repositories the nodes already have.
 
 The runner's log is shown live, and each node's result (before / after versions, what was kept) is stored.
 
+### Custom playbooks (your own upgrade playbook)
+
+**Upgrades > Custom playbooks** runs **your** Ansible playbooks in the same runner container.
+
+**Add a playbook** (saved in the console):
+- the **upgrade playbook** and, optionally, the **rollback playbook**: paste the YAML, or upload an archive
+  (`.tar.gz` / `.tgz` / `.zip` with roles, templates, files, group_vars...) and give the playbooks' paths in it;
+- the **inputs** pg_mantra asks before each run (target version, repository, a password...). Each input becomes
+  an Ansible variable. Types: text, password (never saved), number, yes/no, choice, long text;
+- the **groups** your plays use (`hosts:`), filled with the machines where Discover found a component (e.g.
+  `pgbouncer_nodes` = the machines with PgBouncer);
+- optionally a `requirements.yml`. `ansible.posix`, `community.general` and `community.postgresql` are already in
+  the image.
+
+**Run it**:
+1. Choose the machines: a saved discovery, a console cluster, or your own inventory (INI or YAML). You can limit
+   the run to some hosts.
+2. Fill the inputs and the SSH login (used for that run only, never saved). Under *More options*: sudo password,
+   Ansible Vault password, extra variables, `-vv`.
+3. **Dry run** = `ansible-playbook --check --diff`: nothing is changed. It shows, per host, what would change.
+4. **Upgrade** (after a dry run) runs the upgrade playbook on the same machines with the same inputs.
+5. **Roll back** (after an upgrade, even a failed one) runs the rollback playbook.
+
+The playbooks also get `pgm.action` (`plan` / `run` / `rollback`), `pgm.run_id` and `ansible_check_mode`.
+`pgm.run_id` is the id of the upgrade that a rollback undoes, so an upgrade can keep its backups under it
+(e.g. `/var/lib/pg_mantra/custom/{{ pgm.run_id }}/`) and the rollback can find them. *Fill with an example* in the
+editor shows such a pair: PgBouncer, one node at a time.
+
+The live log, the per-host results (changed tasks, counts, the first error) and the history are kept for each
+playbook.
+
 ## PostgreSQL logs
 
 **PostgreSQL logs** in the side menu (`logs.view`) reads each node's log directory over SQL (`pg_ls_logdir`,
