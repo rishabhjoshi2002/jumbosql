@@ -1,4 +1,4 @@
-// pg_genie: Insights - trends, forecasts and recommendations of a cluster (GET /clusters/{id}/insights).
+// pg_mantra: Insights - trends, forecasts and recommendations of a cluster (GET /clusters/{id}/insights).
 import { baseApi as api } from '../baseApi.ts';
 
 export type TPoint = { t: string; v: number };

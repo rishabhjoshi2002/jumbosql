@@ -1,5 +1,5 @@
 /**
- * pg_genie Discover: the machines as lanes, top to bottom in the order a connection travels -
+ * pg_mantra Discover: the machines as lanes, top to bottom in the order a connection travels -
  * virtual IP, load balancer, pooler, PostgreSQL - then the HA store, backups and monitoring.
  * One box per machine and lane; arrows follow the balancer routes and pooler targets.
  */
@@ -26,11 +26,13 @@ export type IBox = {
   h: number;
 };
 export type IEdge = { from: string; to: string; label: string; d: string; lx: number; ly: number; kind: string };
+export type ILink = { from: string; to: string; kind: string; port?: number; d: string; hosts: [string, string] };
 export type ILayout = {
   width: number;
   height: number;
   boxes: IBox[];
   edges: IEdge[];
+  links: ILink[];
   lanes: { lane: Lane; y: number; h: number }[];
 };
 
@@ -206,5 +208,63 @@ export const infraLayout = (inf: DInfra, nodes: DNode[]): ILayout => {
     list.forEach((th) => link(p, box(`database/${th.address}`), '', 'pooler'));
   });
 
-  return { width: LABEL_W + innerW, height: Math.max(0, y - GAP_Y), boxes, edges, lanes };
+  // connections seen live, in configs or APIs (etcd, Patroni checks, scrapes, replication, ...)
+  const links: ILink[] = [];
+  const linkSeen = new Set<string>();
+  const hostBox = (addr: string, prefer: Lane[]) => {
+    const own = boxes.filter((b) => b.host?.address === addr);
+    for (const l of prefer) {
+      const b = own.find((x) => x.lane === l);
+      if (b) return b;
+    }
+    return own[0];
+  };
+  (inf.links ?? []).forEach((l) => {
+    const [fromLanes, toLanes] = LINK_LANES[l.kind] ?? [[], []];
+    const a = hostBox(l.from, fromLanes);
+    const b = hostBox(l.to, toLanes);
+    if (!a || !b || a === b || seen.has(`${a.id}>${b.id}`) || seen.has(`${b.id}>${a.id}`)) return;
+    const key = `${a.id}>${b.id}>${l.kind}`;
+    if (linkSeen.has(key)) return;
+    linkSeen.add(key);
+    let d: string;
+    if (Math.abs(a.y - b.y) < 1) {
+      // same lane: an arc over the boxes
+      const x1 = a.x + IBOX.w / 2;
+      const x2 = b.x + IBOX.w / 2;
+      const top = a.y - 18 - Math.min(40, Math.abs(x2 - x1) / 8);
+      d = `M${x1},${a.y} C${x1},${top} ${x2},${top} ${x2},${b.y}`;
+    } else {
+      const down = b.y > a.y;
+      const x1 = a.x + IBOX.w / 2 + (down ? 18 : -18);
+      const x2 = b.x + IBOX.w / 2 + (down ? 18 : -18);
+      const y1 = down ? a.y + a.h : a.y;
+      const y2 = down ? b.y : b.y + b.h;
+      const my = (y1 + y2) / 2;
+      d = `M${x1},${y1} C${x1},${my} ${x2},${my} ${x2},${y2}`;
+    }
+    links.push({ from: a.id, to: b.id, kind: l.kind, port: l.port, d, hosts: [l.from, l.to] });
+  });
+
+  return { width: LABEL_W + innerW, height: Math.max(0, y - GAP_Y), boxes, edges, links, lanes };
+};
+
+/** which box of each machine a link starts and ends at */
+const LINK_LANES: Record<string, [Lane[], Lane[]]> = {
+  etcd: [['database', 'dcs'], ['dcs']],
+  patroni: [['balancer', 'database'], ['database']],
+  metrics: [['monitoring'], ['database', 'pooler', 'balancer', 'dcs', 'backup', 'entry']],
+  prometheus: [['monitoring'], ['monitoring']],
+  postgres: [['pooler', 'balancer', 'database'], ['database']],
+  pgbouncer: [['pooler'], ['database']],
+  balancer: [['balancer'], ['pooler', 'database']],
+  replication: [['database'], ['database']],
+  backup: [
+    ['backup', 'database'],
+    ['database', 'backup'],
+  ],
+  vip: [
+    ['entry', 'balancer'],
+    ['balancer', 'entry'],
+  ],
 };

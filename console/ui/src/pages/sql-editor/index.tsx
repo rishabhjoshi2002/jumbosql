@@ -82,7 +82,7 @@ const titleOf = (sql: string, fallback: string) => {
 };
 
 /**
- * pg_genie SQL editor (pgAdmin-style query tool). Scripts run through the API on the cluster's HAProxy read-write
+ * pg_mantra SQL editor (pgAdmin-style query tool). Scripts run through the API on the cluster's HAProxy read-write
  * port, so on the current Patroni leader; every statement's result set, the messages and errors come back.
  */
 const SqlEditor: FC = () => {

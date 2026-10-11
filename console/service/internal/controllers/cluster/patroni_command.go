@@ -1,6 +1,6 @@
 package cluster
 
-// pg_genie: POST /clusters/{id}/patroni - patronictl-equivalent commands through the Patroni REST API.
+// pg_mantra: POST /clusters/{id}/patroni - patronictl-equivalent commands through the Patroni REST API.
 //
 //   list         patronictl list                 GET   /cluster
 //   history      patronictl history              GET   /history

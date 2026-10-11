@@ -1,0 +1,114 @@
+# pg_mantra upgrades: what each component is, where it runs (inventory groups of the HA layout) and how it is
+# checked. {major} is replaced by the PostgreSQL major version installed on the node.
+pgm_components:
+  postgres:
+    label: PostgreSQL (minor version)
+    groups: [patroni_cluster]
+    packages_rpm: ["postgresql{major}", "postgresql{major}-server", "postgresql{major}-contrib", "postgresql{major}-libs", "postgresql{major}-llvmjit"]
+    packages_deb: ["postgresql-{major}", "postgresql-client-{major}"]
+    services: []
+    ports: [5432]
+    configs: [/etc/patroni]
+    order: replicas_first      # standbys one by one, then a switchover, then the old primary
+  patroni:
+    label: Patroni
+    groups: [patroni_cluster]
+    packages_rpm: [patroni, patroni-etcd, patroni-consul]
+    packages_deb: [patroni]
+    pip: {name: patroni, binary: patroni}
+    services: [patroni]
+    ports: [8008]
+    configs: [/etc/patroni]
+    order: replicas_first
+    pause: true                # Patroni paused while it restarts, so no failover happens
+  etcd:
+    label: etcd
+    groups: [etcd_cluster]
+    packages_rpm: [etcd]
+    packages_deb: [etcd, etcd-server]
+    binary:
+      paths: [/usr/local/bin/etcd, /usr/local/bin/etcdctl, /usr/local/bin/etcdutl]
+      url: "https://github.com/etcd-io/etcd/releases/download/v{version}/etcd-v{version}-linux-amd64.tar.gz"
+    services: [etcd]
+    ports: [2379]
+    configs: [/etc/etcd, /etc/default/etcd]
+  haproxy:
+    label: HAProxy
+    groups: [haproxy_cluster]
+    packages_rpm: [haproxy]
+    packages_deb: [haproxy]
+    services: [haproxy]
+    ports: []
+    configs: [/etc/haproxy]
+  keepalived:
+    label: keepalived
+    groups: [haproxy_cluster]
+    packages_rpm: [keepalived]
+    packages_deb: [keepalived]
+    services: [keepalived]
+    ports: []
+    configs: [/etc/keepalived]
+  pgbouncer:
+    label: PgBouncer
+    groups: [pgbouncer_cluster]
+    packages_rpm: [pgbouncer]
+    packages_deb: [pgbouncer]
+    services: [pgbouncer]
+    ports: [6432]
+    configs: [/etc/pgbouncer]
+  pgbackrest:
+    label: pgBackRest
+    groups: [backrest_cluster, patroni_cluster]
+    packages_rpm: [pgbackrest]
+    packages_deb: [pgbackrest]
+    services: []
+    ports: []
+    configs: [/etc/pgbackrest.conf, /etc/pgbackrest]
+  vip-manager:
+    label: vip-manager
+    groups: [patroni_cluster]
+    packages_rpm: [vip-manager]
+    packages_deb: [vip-manager]
+    services: [vip-manager]
+    ports: []
+    configs: [/etc/patroni/vip-manager.yml, /etc/default/vip-manager.yml]
+  node_exporter:
+    label: node_exporter
+    groups: [all]
+    packages_rpm: [node_exporter, golang-github-prometheus-node-exporter]
+    packages_deb: [prometheus-node-exporter]
+    services: [node_exporter, prometheus-node-exporter]
+    ports: [9100]
+    configs: []
+  postgres_exporter:
+    label: postgres_exporter
+    groups: [patroni_cluster]
+    packages_rpm: [postgres_exporter, prometheus-postgres-exporter]
+    packages_deb: [prometheus-postgres-exporter]
+    services: [postgres_exporter, prometheus-postgres-exporter]
+    ports: [9187]
+    configs: []
+  prometheus:
+    label: Prometheus
+    groups: [prometheus_cluster]
+    packages_rpm: [prometheus, prometheus2, golang-github-prometheus]
+    packages_deb: [prometheus]
+    services: [prometheus]
+    ports: [9090]
+    configs: [/etc/prometheus]
+  alertmanager:
+    label: Alertmanager
+    groups: [alertmanager_cluster]
+    packages_rpm: [alertmanager, prometheus-alertmanager]
+    packages_deb: [prometheus-alertmanager]
+    services: [alertmanager, prometheus-alertmanager]
+    ports: [9093]
+    configs: [/etc/alertmanager, /etc/prometheus/alertmanager.yml]
+  grafana:
+    label: Grafana
+    groups: [grafana_cluster]
+    packages_rpm: [grafana, grafana-enterprise]
+    packages_deb: [grafana, grafana-enterprise]
+    services: [grafana-server, grafana]
+    ports: [3000]
+    configs: [/etc/grafana]

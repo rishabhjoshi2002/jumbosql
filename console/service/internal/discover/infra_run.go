@@ -7,50 +7,17 @@ import (
 	"context"
 	"fmt"
 	"net"
-	"os"
+	"net/url"
 	"sort"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 )
-
-// PrepareSSH writes the temporary key / askpass files for this run; call the returned cleanup when done.
-func PrepareSSH(req *Request) (cleanup func(), err error) {
-	dir, key, askpass, err := prepareSSH(req.SSH)
-	cleanup = func() {
-		if dir != "" {
-			os.RemoveAll(dir)
-		}
-	}
-	req.KeyFile, req.Askpass = key, askpass
-	return cleanup, err
-}
-
-func probeInfra(ctx context.Context, req Request) *Infra {
-	inf := &Infra{Hosts: make([]*HostInfo, len(req.Hosts)), Routes: []Route{}, VIPs: []string{}, Summary: []string{},
-		SSHUsed: req.SSH != nil && req.SSH.User != ""}
-	var wg sync.WaitGroup
-	sem := make(chan struct{}, 12)
-	for i, h := range req.Hosts {
-		wg.Add(1)
-		go func(i int, h InvHost) {
-			defer wg.Done()
-			sem <- struct{}{}
-			defer func() { <-sem }()
-			hctx, cancel := context.WithTimeout(ctx, 60*time.Second)
-			defer cancel()
-			inf.Hosts[i] = probeHost(hctx, h, req.SSH, req.KeyFile, req.Askpass)
-		}(i, h)
-	}
-	wg.Wait()
-	return inf
-}
 
 // pgTargets: where to log in. A machine is a database server when its PostgreSQL port answers, when SSH saw
 // postgres listening, or when the inventory says so (then a failure is worth reporting). Balancers, etcd and
 // monitoring machines are not reported as "unreachable databases".
-func pgTargets(req Request, inf *Infra) []Target {
+func pgTargets(invs []InvHost, hosts []*HostInfo) []Target {
 	var out []Target
 	seen := map[string]bool{}
 	add := func(host string, port int) {
@@ -60,8 +27,8 @@ func pgTargets(req Request, inf *Infra) []Target {
 			out = append(out, Target{Host: host, Port: port})
 		}
 	}
-	for i, h := range inf.Hosts {
-		ih := req.Hosts[i]
+	for i, h := range hosts {
+		ih := invs[i]
 		ports := []int{}
 		for _, l := range h.Listening {
 			if l.Process != "postgres" && l.Process != "postmaster" || has(ports, l.Port) {
@@ -85,7 +52,7 @@ func pgTargets(req Request, inf *Infra) []Target {
 			// the port is open but a load balancer or pooler holds it, not PostgreSQL
 		case has(h.OpenPorts, ih.PGPort):
 			add(h.Address, ih.PGPort)
-		case h.declaredDB || len(ih.Groups) == 0 && (h.SSH != "ok"):
+		case h.declaredDB || len(ih.Groups) == 0 && h.SSH != "ok" && ih.FoundVia == "":
 			add(h.Address, ih.PGPort) // a plain list names database servers
 		}
 	}
@@ -361,6 +328,40 @@ func finishInfra(ctx context.Context, res *Result, inf *Infra, req Request) {
 	for _, h := range inf.Hosts {
 		finish(h)
 	}
+
+	// links between machines of the setup (both ends known), one per pair and kind
+	for _, e := range res.Edges {
+		a, b := nodeByID(res, e.From), nodeByID(res, e.To)
+		if a != nil && b != nil {
+			inf.Links = append(inf.Links, Link{From: a.Host, To: b.Host, Kind: "replication", Source: "login"})
+		}
+	}
+	for _, t := range inf.Targets {
+		if t.Host != "" && inf.Prometheus != "" {
+			if u, err := url.Parse(inf.Prometheus); err == nil {
+				inf.Links = append(inf.Links, Link{From: u.Hostname(), To: t.Host, Kind: "metrics", Source: "api"})
+			}
+		}
+	}
+	seenLink := map[string]bool{}
+	var links []Link
+	for _, l := range inf.Links {
+		a, b := ix.find(l.From), ix.find(l.To)
+		if a == nil || b == nil || a == b {
+			continue
+		}
+		l.From, l.To = a.Address, b.Address
+		k := l.From + ">" + l.To + ">" + l.Kind
+		if seenLink[k] {
+			continue
+		}
+		seenLink[k] = true
+		links = append(links, l)
+	}
+	inf.Links = links
+	if inf.Links == nil {
+		inf.Links = []Link{}
+	}
 	inf.Stack, inf.Summary = stackName(inf, res), infraSummary(inf, res)
 	infraFindings(res, inf)
 }
@@ -441,6 +442,25 @@ func infraSummary(inf *Infra, res *Result) []string {
 		s += " (no SSH: found from open ports only)"
 	}
 	out = append(out, s+".")
+	found := 0
+	for _, h := range inf.Hosts {
+		if h.FoundVia != "" {
+			found++
+		}
+	}
+	if found > 0 {
+		out = append(out, fmt.Sprintf("%s found by following connections (not in the inventory).", plural(found, "machine", "machines")))
+	}
+	if len(inf.SSHNeeded) > 0 {
+		var names []string
+		for _, n := range inf.SSHNeeded {
+			names = append(names, n.Address)
+		}
+		out = append(out, "SSH needed on: "+strings.Join(names, ", ")+".")
+	}
+	if len(inf.Clients) > 0 {
+		out = append(out, fmt.Sprintf("%s connect as clients (applications).", plural(len(inf.Clients), "other address", "other addresses")))
+	}
 	if len(inf.VIPs) > 0 {
 		k, _ := hostsWith(inf, "keepalived")
 		if len(k) == 0 {

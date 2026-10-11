@@ -8,6 +8,7 @@ import routerLogsPathsConfig from '@app/router/routerPathsConfig/routerLogsPaths
 import routerInsightsPathsConfig from '@app/router/routerPathsConfig/routerInsightsPathsConfig.ts';
 import routerHomePathsConfig from '@app/router/routerPathsConfig/routerHomePathsConfig.ts';
 import routerDiscoverPathsConfig from '@app/router/routerPathsConfig/routerDiscoverPathsConfig.ts';
+import routerUpgradePathsConfig from '@app/router/routerPathsConfig/routerUpgradePathsConfig.ts';
 
 /*
   Combines route paths into one config
@@ -29,6 +30,7 @@ const RouterPaths = {
   logs: routerLogsPathsConfig,
   insights: routerInsightsPathsConfig,
   discover: routerDiscoverPathsConfig,
+  upgrade: routerUpgradePathsConfig,
 } as const;
 
 export default RouterPaths;

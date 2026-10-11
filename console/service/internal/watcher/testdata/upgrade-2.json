@@ -1,0 +1,243 @@
+[
+{
+    "time": "2026-10-11T06:33:40.829242",
+    "task": "Check the request",
+    "host": "localhost",
+    "changed": false,
+    "failed": false,
+    "msg": "All assertions passed"
+},
+{
+    "time": "2026-10-11T06:33:40.872456",
+    "task": "Nodes that run it",
+    "host": "localhost",
+    "changed": false,
+    "failed": false,
+    "msg": ""
+},
+{
+    "time": "2026-10-11T06:33:40.917673",
+    "task": "Group them",
+    "host": "localhost",
+    "item": "127.0.0.31",
+    "changed": false,
+    "failed": false,
+    "msg": ""
+},
+{
+    "time": "2026-10-11T06:33:40.917947",
+    "task": "Group them",
+    "host": "localhost",
+    "changed": false,
+    "failed": false,
+    "msg": "All items completed"
+},
+{
+    "time": "2026-10-11T06:33:42.019852",
+    "task": "Detect",
+    "host": "127.0.0.31",
+    "changed": false,
+    "failed": false,
+    "msg": ""
+},
+{
+    "time": "2026-10-11T06:33:42.052839",
+    "task": "Keep the spec for the next plays",
+    "host": "127.0.0.31",
+    "changed": false,
+    "failed": false,
+    "msg": ""
+},
+{
+    "time": "2026-10-11T06:33:42.078593",
+    "task": "Read it",
+    "host": "127.0.0.31",
+    "changed": false,
+    "failed": false,
+    "msg": ""
+},
+{
+    "time": "2026-10-11T06:33:42.148483",
+    "task": "Standbys first, the primary last",
+    "host": "localhost",
+    "changed": false,
+    "failed": false,
+    "msg": ""
+},
+{
+    "time": "2026-10-11T06:33:42.173000",
+    "task": "Group them in that order",
+    "host": "localhost",
+    "item": "127.0.0.31",
+    "changed": false,
+    "failed": false,
+    "msg": ""
+},
+{
+    "time": "2026-10-11T06:33:42.173223",
+    "task": "Group them in that order",
+    "host": "localhost",
+    "changed": false,
+    "failed": false,
+    "msg": "All items completed"
+},
+{
+    "time": "2026-10-11T06:33:45.369131",
+    "task": "Keep the installed version",
+    "host": "127.0.0.31",
+    "changed": true,
+    "failed": false,
+    "msg": ""
+},
+{
+    "time": "2026-10-11T06:33:48.479433",
+    "task": "Install the new version",
+    "host": "127.0.0.31",
+    "changed": true,
+    "failed": false,
+    "msg": ""
+},
+{
+    "time": "2026-10-11T06:33:48.720156",
+    "task": "Restart",
+    "host": "127.0.0.31",
+    "changed": true,
+    "failed": false,
+    "msg": ""
+},
+{
+    "time": "2026-10-11T06:33:48.936198",
+    "task": "Wait until healthy",
+    "host": "127.0.0.31",
+    "changed": true,
+    "failed": false,
+    "msg": ""
+},
+{
+    "time": "2026-10-11T06:33:49.008576",
+    "task": "pgm_result",
+    "host": "127.0.0.31",
+    "changed": false,
+    "failed": false,
+    "msg": {
+        "host": "127.0.0.31",
+        "phase": "run",
+        "status": "success",
+        "switchover": null,
+        "preserve": {
+            "ok": true,
+            "warnings": [],
+            "action": "preserve",
+            "component": "pgbouncer",
+            "host": "vm",
+            "family": "deb",
+            "pm": "apt",
+            "packages": [
+                {
+                    "name": "pgbouncer",
+                    "installed": "1.22.0-1build4",
+                    "arch": "amd64",
+                    "versions": [
+                        "1.22.0-1build4pgm1",
+                        "1.22.0-1build4"
+                    ],
+                    "candidate": "1.22.0-1build4pgm1"
+                }
+            ],
+            "method": "package",
+            "services": [],
+            "free_bytes": 25942089728,
+            "to_upgrade": [
+                "pgbouncer"
+            ],
+            "dir": "/var/lib/pg_mantra/upgrade/2/pgbouncer",
+            "saved": [
+                {
+                    "name": "pgbouncer",
+                    "version": "1.22.0-1build4",
+                    "files": [
+                        "pgbouncer_1.22.0-1build4_amd64.deb"
+                    ]
+                }
+            ],
+            "unsaved": [],
+            "configs": [
+                "/etc/pgbouncer"
+            ]
+        },
+        "change": {
+            "ok": true,
+            "warnings": [],
+            "action": "upgrade",
+            "component": "pgbouncer",
+            "host": "vm",
+            "family": "deb",
+            "pm": "apt",
+            "packages": [
+                {
+                    "name": "pgbouncer",
+                    "installed": "1.22.0-1build4",
+                    "arch": "amd64",
+                    "versions": [
+                        "1.22.0-1build4pgm1",
+                        "1.22.0-1build4"
+                    ],
+                    "candidate": "1.22.0-1build4pgm1"
+                }
+            ],
+            "method": "package",
+            "services": [],
+            "free_bytes": 25941811200,
+            "to_upgrade": [
+                "pgbouncer"
+            ],
+            "before": {
+                "pgbouncer": "1.22.0-1build4"
+            },
+            "after": {
+                "pgbouncer": "1.22.0-1build4pgm1"
+            }
+        },
+        "restart": {
+            "ok": true,
+            "warnings": [],
+            "action": "restart",
+            "component": "pgbouncer",
+            "host": "vm",
+            "restarted": []
+        },
+        "health": {
+            "ok": true,
+            "warnings": [],
+            "action": "health",
+            "component": "pgbouncer",
+            "host": "vm",
+            "healthy": true
+        }
+    }
+},
+{
+    "time": "2026-10-11T06:33:49.024666",
+    "summary": {
+        "localhost": {
+            "ok": 5,
+            "failures": 0,
+            "unreachable": 0,
+            "changed": 0,
+            "skipped": 1,
+            "rescued": 0,
+            "ignored": 0
+        },
+        "127.0.0.31": {
+            "ok": 8,
+            "failures": 0,
+            "unreachable": 0,
+            "changed": 4,
+            "skipped": 6,
+            "rescued": 0,
+            "ignored": 0
+        }
+    },
+    "status": "success"
+}
+]

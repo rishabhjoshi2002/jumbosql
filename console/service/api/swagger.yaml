@@ -436,7 +436,7 @@ paths:
 
   /clusters/{id}/switchover:
     post:
-      summary: "pg_genie: Patroni switchover (leader moves to the candidate, or to the healthiest replica)"
+      summary: "pg_mantra: Patroni switchover (leader moves to the candidate, or to the healthiest replica)"
       tags:
         - cluster
       parameters:
@@ -461,7 +461,7 @@ paths:
 
   /servers/{id}/restart:
     post:
-      summary: "pg_genie: restart PostgreSQL on this node through Patroni"
+      summary: "pg_mantra: restart PostgreSQL on this node through Patroni"
       tags:
         - cluster
       parameters:
@@ -481,7 +481,7 @@ paths:
 
   /servers/{id}/reinitialize:
     post:
-      summary: "pg_genie: reinitialize this replica from the leader through Patroni"
+      summary: "pg_mantra: reinitialize this replica from the leader through Patroni"
       tags:
         - cluster
       parameters:
@@ -501,7 +501,7 @@ paths:
 
   /auth/login:
     post:
-      summary: "pg_genie: sign in with username and password"
+      summary: "pg_mantra: sign in with username and password"
       tags:
         - auth
       parameters:
@@ -522,7 +522,7 @@ paths:
 
   /auth/logout:
     post:
-      summary: "pg_genie: end the current session"
+      summary: "pg_mantra: end the current session"
       tags:
         - auth
       responses:
@@ -531,7 +531,7 @@ paths:
 
   /auth/me:
     get:
-      summary: "pg_genie: the signed-in user"
+      summary: "pg_mantra: the signed-in user"
       tags:
         - auth
       responses:
@@ -542,7 +542,7 @@ paths:
 
   /auth/me/preferences:
     put:
-      summary: "pg_genie: save the signed-in user's home page choices"
+      summary: "pg_mantra: save the signed-in user's home page choices"
       tags:
         - auth
       parameters:
@@ -563,7 +563,7 @@ paths:
 
   /auth/password:
     post:
-      summary: "pg_genie: change your own password"
+      summary: "pg_mantra: change your own password"
       tags:
         - auth
       parameters:
@@ -582,7 +582,7 @@ paths:
 
   /users:
     get:
-      summary: "pg_genie: list console users (admin)"
+      summary: "pg_mantra: list console users (admin)"
       tags:
         - user
       responses:
@@ -593,7 +593,7 @@ paths:
             items:
               $ref: "#/definitions/User"
     post:
-      summary: "pg_genie: add a local user (admin)"
+      summary: "pg_mantra: add a local user (admin)"
       tags:
         - user
       parameters:
@@ -614,7 +614,7 @@ paths:
 
   /users/{id}:
     patch:
-      summary: "pg_genie: change a user's role, display name or password (admin)"
+      summary: "pg_mantra: change a user's role, display name or password (admin)"
       tags:
         - user
       parameters:
@@ -637,7 +637,7 @@ paths:
           schema:
             $ref: "#/definitions/Response.Error"
     delete:
-      summary: "pg_genie: remove a user (admin)"
+      summary: "pg_mantra: remove a user (admin)"
       tags:
         - user
       parameters:
@@ -655,7 +655,7 @@ paths:
 
   /clusters/{id}/patroni:
     post:
-      summary: "pg_genie: run a patronictl-equivalent command through the Patroni REST API"
+      summary: "pg_mantra: run a patronictl-equivalent command through the Patroni REST API"
       tags:
         - cluster
       parameters:
@@ -680,7 +680,7 @@ paths:
 
   /clusters/{id}/sql:
     post:
-      summary: "pg_genie: run a SQL script on the cluster (through HAProxy's read-write port) and return every result set"
+      summary: "pg_mantra: run a SQL script on the cluster (through HAProxy's read-write port) and return every result set"
       tags:
         - cluster
       parameters:
@@ -705,7 +705,7 @@ paths:
 
   /clusters/{id}/sql/cancel:
     post:
-      summary: "pg_genie: cancel a running SQL editor script"
+      summary: "pg_mantra: cancel a running SQL editor script"
       tags:
         - cluster
       parameters:
@@ -730,7 +730,7 @@ paths:
 
   /policies:
     get:
-      summary: "pg_genie: list access policies"
+      summary: "pg_mantra: list access policies"
       tags: [access]
       responses:
         '200':
@@ -740,7 +740,7 @@ paths:
             items:
               $ref: "#/definitions/Policy"
     post:
-      summary: "pg_genie: create an access policy"
+      summary: "pg_mantra: create an access policy"
       tags: [access]
       parameters:
         - name: body
@@ -760,7 +760,7 @@ paths:
 
   /policies/{id}:
     patch:
-      summary: "pg_genie: replace an access policy"
+      summary: "pg_mantra: replace an access policy"
       tags: [access]
       parameters:
         - name: id
@@ -782,7 +782,7 @@ paths:
           schema:
             $ref: "#/definitions/Response.Error"
     delete:
-      summary: "pg_genie: delete an access policy"
+      summary: "pg_mantra: delete an access policy"
       tags: [access]
       parameters:
         - name: id
@@ -799,7 +799,7 @@ paths:
 
   /policies/permissions:
     get:
-      summary: "pg_genie: the permissions policies can grant"
+      summary: "pg_mantra: the permissions policies can grant"
       tags: [access]
       responses:
         '200':
@@ -811,7 +811,7 @@ paths:
 
   /policies/simulate:
     post:
-      summary: "pg_genie: what a user may do (optionally on one cluster and database), and which policies apply"
+      summary: "pg_mantra: what a user may do (optionally on one cluster and database), and which policies apply"
       tags: [access]
       parameters:
         - name: body
@@ -831,7 +831,7 @@ paths:
 
   /audit:
     get:
-      summary: "pg_genie: audit log"
+      summary: "pg_mantra: audit log"
       tags: [access]
       parameters:
         - {name: username, in: query, type: string}
@@ -855,7 +855,7 @@ paths:
 
   /clusters/{id}/sql/access:
     get:
-      summary: "pg_genie: what the signed-in user may do in the SQL editor on this cluster"
+      summary: "pg_mantra: what the signed-in user may do in the SQL editor on this cluster"
       tags: [cluster]
       parameters:
         - {name: id, in: path, required: true, type: integer}
@@ -872,7 +872,7 @@ paths:
 
   /insights/summary:
     get:
-      summary: "pg_genie: health, warnings and outlook of every cluster of a project (the clusters the user may see)"
+      summary: "pg_mantra: health, warnings and outlook of every cluster of a project (the clusters the user may see)"
       tags: [cluster]
       parameters:
         - {name: project_id, in: query, required: true, type: integer}
@@ -889,7 +889,7 @@ paths:
 
   /discover:
     post:
-      summary: "pg_genie: look at any PostgreSQL servers the console can reach and work out their architecture (read-only)"
+      summary: "pg_mantra: look at any PostgreSQL servers the console can reach and work out their architecture (read-only)"
       tags: [discover]
       parameters:
         - name: body
@@ -909,7 +909,7 @@ paths:
 
   /discover/query:
     post:
-      summary: "pg_genie: run one read-only query (SELECT / WITH / SHOW / EXPLAIN) on a server found by Discover"
+      summary: "pg_mantra: run one read-only query (SELECT / WITH / SHOW / EXPLAIN) on a server found by Discover"
       tags: [discover]
       parameters:
         - name: body
@@ -927,9 +927,75 @@ paths:
           schema:
             $ref: "#/definitions/Response.Error"
 
+  /upgrade/components:
+    get:
+      summary: "pg_mantra: components that can be upgraded"
+      tags: [upgrade]
+      responses:
+        '200':
+          description: OK
+          schema:
+            type: array
+            items:
+              type: object
+
+  /clusters/{id}/upgrades:
+    get:
+      summary: "pg_mantra: a cluster's upgrades (plans, runs, rollbacks), newest first"
+      tags: [upgrade]
+      parameters:
+        - {name: id, in: path, required: true, type: integer}
+      responses:
+        '200':
+          description: OK
+          schema:
+            type: array
+            items:
+              type: object
+        '400':
+          description: Error
+          schema:
+            $ref: "#/definitions/Response.Error"
+    post:
+      summary: "pg_mantra: start a plan (dry run), a run (after a plan) or a rollback (after a run)"
+      tags: [upgrade]
+      parameters:
+        - {name: id, in: path, required: true, type: integer}
+        - name: body
+          in: body
+          required: true
+          schema:
+            $ref: "#/definitions/Request.Upgrade"
+      responses:
+        '200':
+          description: OK
+          schema:
+            type: object
+        '400':
+          description: Error
+          schema:
+            $ref: "#/definitions/Response.Error"
+
+  /clusters/{id}/upgrades/{uid}:
+    get:
+      summary: "pg_mantra: one upgrade with what each node reported"
+      tags: [upgrade]
+      parameters:
+        - {name: id, in: path, required: true, type: integer}
+        - {name: uid, in: path, required: true, type: integer}
+      responses:
+        '200':
+          description: OK
+          schema:
+            type: object
+        '400':
+          description: Error
+          schema:
+            $ref: "#/definitions/Response.Error"
+
   /discoveries:
     get:
-      summary: "pg_genie: saved discoveries (newest first)"
+      summary: "pg_mantra: saved discoveries (newest first)"
       tags: [discover]
       responses:
         '200':
@@ -945,7 +1011,7 @@ paths:
 
   /discoveries/{id}:
     get:
-      summary: "pg_genie: one saved discovery"
+      summary: "pg_mantra: one saved discovery"
       tags: [discover]
       parameters:
         - {name: id, in: path, required: true, type: integer}
@@ -959,7 +1025,7 @@ paths:
           schema:
             $ref: "#/definitions/Response.Error"
     delete:
-      summary: "pg_genie: delete a saved discovery"
+      summary: "pg_mantra: delete a saved discovery"
       tags: [discover]
       parameters:
         - {name: id, in: path, required: true, type: integer}
@@ -973,7 +1039,7 @@ paths:
 
   /clusters/{id}/monitoring:
     get:
-      summary: "pg_genie: live monitoring of a cluster from its Prometheus (services, alerts, graphs)"
+      summary: "pg_mantra: live monitoring of a cluster from its Prometheus (services, alerts, graphs)"
       tags: [cluster]
       parameters:
         - {name: id, in: path, required: true, type: integer}
@@ -990,7 +1056,7 @@ paths:
 
   /clusters/{id}/insights:
     get:
-      summary: "pg_genie: trends, forecasts and recommendations for a cluster (Insights page)"
+      summary: "pg_mantra: trends, forecasts and recommendations for a cluster (Insights page)"
       tags: [cluster]
       parameters:
         - {name: id, in: path, required: true, type: integer}
@@ -1009,7 +1075,7 @@ paths:
 
   /clusters/{id}/logs:
     get:
-      summary: "pg_genie: PostgreSQL log files of a cluster node"
+      summary: "pg_mantra: PostgreSQL log files of a cluster node"
       tags: [cluster]
       parameters:
         - {name: id, in: path, required: true, type: integer}
@@ -1026,7 +1092,7 @@ paths:
 
   /clusters/{id}/logs/{file}:
     get:
-      summary: "pg_genie: read (the end of) a PostgreSQL log file of a cluster node"
+      summary: "pg_mantra: read (the end of) a PostgreSQL log file of a cluster node"
       tags: [cluster]
       parameters:
         - {name: id, in: path, required: true, type: integer}
@@ -1452,7 +1518,7 @@ definitions:
           type: string
       home:
         type: object
-        description: "pg_genie: the user's home page, set by an admin (cards in order, start page)"
+        description: "pg_mantra: the user's home page, set by an admin (cards in order, start page)"
         properties:
           cards:
             type: array
@@ -1506,6 +1572,60 @@ definitions:
       horizon:
         type: integer
         description: "days ahead to size for (default 180)"
+      follow:
+        type: boolean
+        x-nullable: true
+        description: "follow connections to machines that are not in the inventory (default true)"
+      host_auth:
+        type: array
+        description: "SSH logins for single machines (used for this run only, never stored)"
+        items:
+          type: object
+          properties:
+            host:
+              type: string
+            user:
+              type: string
+            port:
+              type: integer
+            password:
+              type: string
+            key:
+              type: string
+
+  Request.Upgrade:
+    type: object
+    required: [component, action]
+    properties:
+      component:
+        type: string
+      action:
+        type: string
+        description: "plan | run | rollback"
+      parent_id:
+        type: integer
+        description: "run: the plan it follows; rollback: the run to undo"
+      target:
+        type: string
+        description: "version to upgrade to (empty: the newest in the repositories)"
+      allow_unsaved:
+        type: boolean
+      restore_config:
+        type: boolean
+      binary_url:
+        type: string
+      hosts:
+        type: array
+        items:
+          type: string
+      ssh_user:
+        type: string
+      ssh_password:
+        type: string
+        description: "used for this run only, never stored"
+      ssh_key:
+        type: string
+        description: "used for this run only, never stored"
 
   Request.DiscoverQuery:
     type: object

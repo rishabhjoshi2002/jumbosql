@@ -10,7 +10,8 @@ const (
 	OperationStatusSuccess    = "success"
 	OperationStatusFailed     = "failed"
 
-	OperationTypeDeploy = "deploy"
+	OperationTypeDeploy  = "deploy"
+	OperationTypeUpgrade = "upgrade" // pg_mantra component upgrades
 
 	ClusterStatusFailed      = "failed"
 	ClusterStatusHealthy     = "healthy"

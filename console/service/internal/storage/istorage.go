@@ -8,7 +8,7 @@ import (
 )
 
 type IStorage interface {
-	// pg_genie: access policies, audit log, SQL editor roles
+	// pg_mantra: access policies, audit log, SQL editor roles
 	GetPolicies(ctx context.Context) ([]PolicyRow, error)
 	GetPolicy(ctx context.Context, id int64) (*PolicyRow, error)
 	CreatePolicy(ctx context.Context, p *policy.Policy, by string) (*PolicyRow, error)
@@ -23,7 +23,7 @@ type IStorage interface {
 	GetSQLRole(ctx context.Context, clusterID int64, role, key string) (*SQLRoleRow, error)
 	SaveSQLRole(ctx context.Context, r *SQLRoleRow, key string) error
 
-	// pg_genie: Insights
+	// pg_mantra: Insights
 	InsightClusterIDs(ctx context.Context) ([]int64, error)
 	AddMetricSamples(ctx context.Context, clusterID int64, samples []MetricSample) error
 	GetMetricSamples(ctx context.Context, clusterID int64, metrics []string, from time.Time) ([]MetricSample, error)
@@ -34,11 +34,19 @@ type IStorage interface {
 	ListDiscoveries(ctx context.Context, limit int) ([]Discovery, []string, error)
 	GetDiscovery(ctx context.Context, id int64) (*Discovery, error)
 	DeleteDiscovery(ctx context.Context, id int64) error
+
+	// pg_mantra: component upgrades
+	CreateUpgrade(ctx context.Context, u *Upgrade) (*Upgrade, error)
+	SetUpgradeOperation(ctx context.Context, id, operationID int64) error
+	FinishUpgrade(ctx context.Context, id int64, status string, result []byte) error
+	GetUpgrade(ctx context.Context, id int64) (*Upgrade, error)
+	GetUpgradeByOperation(ctx context.Context, operationID int64) (*Upgrade, error)
+	ListUpgrades(ctx context.Context, clusterID int64, limit int) ([]Upgrade, error)
 	GetInsightSummaries(ctx context.Context, clusterIDs []int64) (map[int64][]byte, error)
 	GetUserPreferences(ctx context.Context, userID int64) ([]byte, error)
 	SaveUserPreferences(ctx context.Context, userID int64, prefs []byte) error
 
-	// pg_genie: users and login sessions
+	// pg_mantra: users and login sessions
 	CountUsers(ctx context.Context) (int64, error)
 	CountAdmins(ctx context.Context) (int64, error)
 	GetUserByName(ctx context.Context, username, provider string) (*User, error)

@@ -1,4 +1,4 @@
-// pg_genie: Discover - map any PostgreSQL servers the console can reach (POST /discover, saved results).
+// pg_mantra: Discover - map any PostgreSQL servers the console can reach (POST /discover, saved results).
 import { baseApi as api } from '../baseApi.ts';
 import type { InsightsHost } from './insights.ts';
 
@@ -143,6 +143,7 @@ export type DRole = {
   valid_until?: string;
 };
 export type DNode = {
+  clients?: { addr: string; count: number; apps?: string; users?: string }[] | null;
   id: string;
   host: string;
   port: number;
@@ -253,6 +254,8 @@ export type DHost = {
   components: DComponent[];
   roles: string[];
   vips?: string[] | null;
+  ips?: string[] | null;
+  found_via?: string;
 };
 export type DRoute = {
   host: string;
@@ -273,7 +276,13 @@ export type DInfra = {
   prometheus_error?: string;
   prometheus_targets?: { job: string; instance: string; health: string; host?: string }[] | null;
   ssh_used: boolean;
+  links?: DLink[];
+  ssh_needed?: DSSHNeed[];
+  clients?: { address: string; connections: number; apps?: string; users?: string; to: string }[];
 };
+export type DLink = { from: string; to: string; kind: string; port?: number; source: string };
+export type DSSHNeed = { address: string; name?: string; roles: string[] | null; reason: string; via?: string };
+export type HostAuth = { host: string; user: string; port?: number; password?: string; key?: string };
 export type DSize = { cpus: number; mem_bytes: number; disk_bytes: number };
 export type DHostSizing = {
   address: string;
@@ -338,6 +347,8 @@ export type DiscoverRequest = {
   prometheus_url?: string;
   days?: number;
   horizon?: number;
+  follow?: boolean;
+  host_auth?: HostAuth[];
 };
 
 export type QueryRequest = {

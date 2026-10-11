@@ -1,6 +1,6 @@
 package storage
 
-// pg_genie: access policies, audit log and SQL editor roles (migration 20261006100000_jumbosql_policies.sql).
+// pg_mantra: access policies, audit log and SQL editor roles (migration 20261006100000_jumbosql_policies.sql).
 
 import (
 	"context"

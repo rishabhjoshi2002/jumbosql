@@ -205,6 +205,10 @@ const Infrastructure: FC<{ result: DResult }> = ({ result }) => {
   const inf = result.infra!;
   const [selected, setSelected] = useState(inf.hosts[0]?.address ?? '');
   const host = inf.hosts.find((h) => h.address === selected);
+  const nameOf = (addr: string) => {
+    const h = inf.hosts.find((x) => x.address === addr);
+    return h ? hostLabel(h) : addr;
+  };
   const comps: CompRow[] = useMemo(() => inf.hosts.flatMap((h) => h.components.map((c) => ({ host: h, c }))), [inf]);
 
   const hostCols: Col<DHost>[] = [
@@ -259,6 +263,16 @@ const Infrastructure: FC<{ result: DResult }> = ({ result }) => {
       ),
     },
     { key: 'ports', label: t('h_ports'), value: (r) => r.open_ports.join(' '), mono: true },
+    {
+      key: 'found',
+      label: t('c_found'),
+      value: (r) => r.found_via || t('inInventory'),
+      render: (r) => (
+        <Typography variant="caption" color={r.found_via ? 'text.primary' : 'text.secondary'}>
+          {r.found_via || t('inInventory')}
+        </Typography>
+      ),
+    },
   ];
   const compCols: Col<CompRow>[] = [
     { key: 'host', label: t('c_machine'), value: (r) => hostLabel(r.host) },
@@ -320,6 +334,42 @@ const Infrastructure: FC<{ result: DResult }> = ({ result }) => {
       <Card title={t('componentsTitle')}>
         <DataTable rows={comps} cols={compCols} name="components" empty={t('none')} initialSort={{ key: 'layer' }} />
       </Card>
+
+      {inf.links?.length ? (
+        <Card title={t('linksTitle')}>
+          <DataTable
+            rows={inf.links}
+            name="connections"
+            empty={t('none')}
+            initialSort={{ key: 'kind' }}
+            cols={[
+              { key: 'from', label: t('c_from'), value: (r) => nameOf(r.from) },
+              { key: 'to', label: t('c_to'), value: (r) => nameOf(r.to) },
+              { key: 'kind', label: t('c_kind'), value: (r) => t(`link_${r.kind}`, { defaultValue: r.kind }) },
+              { key: 'port', label: t('port'), value: (r) => r.port ?? '', align: 'right', mono: true },
+              { key: 'source', label: t('c_seenIn'), value: (r) => t(`ls_${r.source}`, { defaultValue: r.source }) },
+            ]}
+          />
+        </Card>
+      ) : null}
+
+      {inf.clients?.length ? (
+        <Card title={t('clientsTitle', { count: inf.clients.length })}>
+          <DataTable
+            rows={inf.clients}
+            name="clients"
+            empty={t('none')}
+            initialSort={{ key: 'conns', desc: true }}
+            cols={[
+              { key: 'addr', label: t('address'), value: (r) => r.address, mono: true },
+              { key: 'to', label: t('c_to'), value: (r) => nameOf(r.to) },
+              { key: 'conns', label: t('c_connections'), value: (r) => r.connections, align: 'right' },
+              { key: 'users', label: t('c_users'), value: (r) => r.users ?? '' },
+              { key: 'apps', label: t('c_apps'), value: (r) => r.apps ?? '' },
+            ]}
+          />
+        </Card>
+      ) : null}
 
       {inf.routes.length || inf.vips.length ? (
         <Card title={t('routesTitle')}>

@@ -87,7 +87,7 @@ const highlight = (text: string, q: string): ReactNode => {
   return parts;
 };
 
-/** pg_genie: PostgreSQL server logs of every node, read over SQL (pg_ls_logdir / pg_read_binary_file). */
+/** pg_mantra: PostgreSQL server logs of every node, read over SQL (pg_ls_logdir / pg_read_binary_file). */
 const PostgresLogs: FC = () => {
   const { t } = useTranslation(['shared', 'settings']);
   useSessionUser(); // re-render when permissions change

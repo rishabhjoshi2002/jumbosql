@@ -39,6 +39,7 @@ import { useTranslation } from 'react-i18next';
 import { toast } from 'react-toastify';
 import {
   Discovery,
+  HostAuth,
   useDeleteDiscoveryMutation,
   useGetDiscoveriesQuery,
   useLazyGetDiscoveryQuery,
@@ -52,6 +53,7 @@ import QueryRunner from './QueryRunner.tsx';
 import Card from './Card.tsx';
 import Infrastructure from './Infrastructure.tsx';
 import Sizing from './Sizing.tsx';
+import SshNeeded from './SshNeeded.tsx';
 
 const SEV = {
   critical: <ErrorOutlineIcon fontSize="small" color="error" />,
@@ -75,7 +77,7 @@ const countHosts = (s: string): number | null => {
 };
 const isAnsible = (s: string) => /^\s*\[[^\]]+\]\s*$/m.test(s) || /^\s*all:\s*$/m.test(s);
 
-/** pg_genie Discover: point at any PostgreSQL servers, get the architecture and every detail. */
+/** pg_mantra Discover: point at any PostgreSQL servers, get the architecture and every detail. */
 const Discover: FC = () => {
   const { t } = useTranslation('discover');
   const colors = useRoleColors();
@@ -87,6 +89,7 @@ const Discover: FC = () => {
     sslmode: 'prefer',
     name: '',
     save: true,
+    follow: true,
     ssh_user: '',
     ssh_port: '22',
     ssh_password: '',
@@ -114,9 +117,16 @@ const Discover: FC = () => {
   }, [res]);
 
   const set = (k: keyof typeof form, v: string | boolean) => setForm((f) => ({ ...f, [k]: v }));
-  const submit = async () => {
+  const [hostAuth, setHostAuth] = useState<HostAuth[]>([]);
+  const [fresh, setFresh] = useState(false);
+  const submit = async (extraAuth?: HostAuth[], reset = false) => {
+    const base = reset ? [] : hostAuth;
+    const auth = extraAuth ? [...base.filter((a) => !extraAuth.some((x) => x.host === a.host)), ...extraAuth] : base;
+    setHostAuth(auth);
     try {
       const out = await run({
+        follow: form.follow,
+        host_auth: auth.length ? auth : undefined,
         inventory: form.inventory,
         username: form.username,
         password: form.password,
@@ -134,12 +144,14 @@ const Discover: FC = () => {
       }).unwrap();
       setView(out.result.infra ? 'infra' : 'architecture');
       setCurrent(out);
+      setFresh(true);
       if (form.save) toast.success(t('saved'));
     } catch (e) {
       toast.error(String((e as { data?: { description?: string; title?: string } }).data?.title ?? t('failed')));
     }
   };
   const open = async (id: number) => {
+    setFresh(false);
     try {
       setCurrent(await load(id).unwrap());
     } catch {
@@ -147,6 +159,7 @@ const Discover: FC = () => {
     }
   };
   const again = (d: { inventory: string; username: string; name: string }) => {
+    setHostAuth([]);
     setForm((f) => ({
       ...f,
       inventory: d.inventory,
@@ -215,10 +228,23 @@ const Discover: FC = () => {
                 value={form.inventory}
                 onChange={(e) => set('inventory', e.target.value)}
                 placeholder={
-                  '10.0.0.11\n10.0.0.12:5432\n\n# or an Ansible inventory:\n[master]\n10.0.0.11 hostname=pgnode01\n[replica]\n10.0.0.12 hostname=pgnode02\n[balancers]\n10.0.0.20'
+                  '10.0.0.11\n\n# one address is enough (best: the primary);\n# or a list, or an Ansible inventory'
                 }
-                helperText={isAnsible(form.inventory) ? t('inventoryAnsible') : t('inventoryHelp', { count: n })}
+                helperText={
+                  isAnsible(form.inventory)
+                    ? t('inventoryAnsible')
+                    : n === 1
+                      ? t('inventoryOne')
+                      : t('inventoryHelp', { count: n })
+                }
                 InputProps={{ sx: { fontFamily: '"JetBrains Mono", monospace', fontSize: 13 } }}
+              />
+              <FormControlLabel
+                sx={{ mt: -1 }}
+                control={
+                  <Checkbox size="small" checked={form.follow} onChange={(e) => set('follow', e.target.checked)} />
+                }
+                label={<Typography variant="body2">{t('follow')}</Typography>}
               />
               <Stack direction="row" gap={1}>
                 <TextField
@@ -380,7 +406,7 @@ const Discover: FC = () => {
                 size="large"
                 startIcon={running.isLoading ? <CircularProgress size={18} color="inherit" /> : <TravelExploreIcon />}
                 disabled={running.isLoading || !n || !form.username.trim()}
-                onClick={() => void submit()}>
+                onClick={() => void submit(undefined, true)}>
                 {running.isLoading ? t('running', { count: n }) : t('run')}
               </Button>
               <Typography variant="caption" color="text.secondary">
@@ -479,6 +505,18 @@ const Discover: FC = () => {
           ) : null}
           {res && current ? (
             <>
+              {res.infra?.ssh_needed?.length ? (
+                <SshNeeded
+                  needed={res.infra.ssh_needed}
+                  defaultUser={form.ssh_user}
+                  autoOpen={fresh && !!form.ssh_user.trim()}
+                  running={running.isLoading}
+                  onSubmit={(a) => {
+                    if (!form.password && !form.ssh_password && !form.ssh_key) toast.info(t('enterPassword'));
+                    void submit(a);
+                  }}
+                />
+              ) : null}
               {/* headline */}
               <Card>
                 <Stack direction="row" alignItems="flex-start" gap={2} flexWrap="wrap">

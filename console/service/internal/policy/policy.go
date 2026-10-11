@@ -1,4 +1,4 @@
-// Package policy is pg_genie's attribute-based access control (policies only).
+// Package policy is pg_mantra's attribute-based access control (policies only).
 //
 // A Policy matches a request when all of these hold:
 //   - subject:    the user is listed by name, or has every listed attribute with one of the listed values,
@@ -43,6 +43,7 @@ const (
 	PoliciesManage      = "policies.manage"
 	AuditView           = "audit.view"
 	DiscoverRun         = "discover.run"
+	UpgradeRun          = "upgrade.run"
 )
 
 type PermissionInfo struct {
@@ -69,6 +70,7 @@ var Catalog = []PermissionInfo{
 	{PoliciesManage, "Create, change and delete access policies", false},
 	{AuditView, "Read the audit log", false},
 	{DiscoverRun, "Discover: connect to any PostgreSQL servers the console can reach and map their architecture", false},
+	{UpgradeRun, "Upgrades: plan, run and roll back package upgrades of a cluster (PostgreSQL minor, Patroni, etcd, HAProxy, ...)", true},
 }
 
 var clusterScoped = func() map[string]bool {

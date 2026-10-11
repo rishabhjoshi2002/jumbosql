@@ -22,6 +22,9 @@ type InvHost struct {
 	PGPort  int               `json:"pg_port"`
 	SSHPort int               `json:"ssh_port,omitempty"`
 	Vars    map[string]string `json:"-"`
+	// found while following connections (not in the inventory)
+	FoundVia string `json:"found_via,omitempty"`
+	Client   bool   `json:"-"` // only seen as a client: kept only if it runs something of the stack
 }
 
 // groups that mean "PostgreSQL runs here" in common inventories (CPA/Autobase, postgresql_cluster, others)

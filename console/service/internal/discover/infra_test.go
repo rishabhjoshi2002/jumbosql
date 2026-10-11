@@ -1,6 +1,8 @@
 package discover
 
 import (
+	"context"
+	"fmt"
 	"strings"
 	"testing"
 )
@@ -207,5 +209,32 @@ func TestDropProxies(t *testing.T) {
 	px := dropProxies(res)
 	if len(res.Nodes) != 2 || len(px) != 1 || px[0].Via != "10.0.0.27:5432" || px[0].To != "10.0.0.24:5432" {
 		t.Fatalf("%d nodes, %+v", len(res.Nodes), px)
+	}
+}
+
+func TestCrawlHelpers(t *testing.T) {
+	if a, p := splitAddr("[::ffff:10.0.0.5]:5432"); a != "10.0.0.5" || p != 5432 {
+		t.Errorf("%s %d", a, p)
+	}
+	hp := hostsIn("10.0.0.1:2379,10.0.0.2:2379, etcd3.local:2379")
+	if len(hp) != 3 || hp[2][0] != "etcd3.local" || hp[0][1] != "2379" {
+		t.Errorf("%v", hp)
+	}
+	h := &HostInfo{Address: "10.0.0.24", IPs: []string{"10.0.0.24"}, raw: map[string]string{}, conns: []tcpConn{
+		{"10.0.0.24", 9100, "10.0.0.34", 51000},  // Prometheus scrapes us
+		{"10.0.0.24", 44000, "10.0.0.20", 2379},  // we use etcd
+		{"10.0.0.24", 5432, "10.0.0.50", 40000},  // an application (client)
+		{"172.17.0.1", 5432, "10.0.0.60", 40000}, // not our address
+	}}
+	ps, ls := hostPeers(context.Background(), h)
+	got := map[string]bool{}
+	for _, p := range ps {
+		got[fmt.Sprintf("%s/%v", p.addr, p.client)] = true
+	}
+	if !got["10.0.0.34/false"] || !got["10.0.0.20/false"] || !got["10.0.0.50/true"] || len(ps) != 3 {
+		t.Errorf("peers %+v", ps)
+	}
+	if len(ls) != 3 || ls[0].Kind != "metrics" || ls[1].Kind != "etcd" || ls[1].From != "10.0.0.24" {
+		t.Errorf("links %+v", ls)
 	}
 }

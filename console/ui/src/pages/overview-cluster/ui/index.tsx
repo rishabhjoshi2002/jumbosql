@@ -32,7 +32,7 @@ const OverviewCluster: FC = () => {
           refetch={cluster.refetch}
         />
       </Grid>
-      {/* pg_genie: patronictl-equivalent commands for this cluster */}
+      {/* pg_mantra: patronictl-equivalent commands for this cluster */}
       <Grid item size={{ xs: 12 }}>
         <PatroniConsole clusterId={Number(clusterId)} onChanged={cluster.refetch} />
       </Grid>

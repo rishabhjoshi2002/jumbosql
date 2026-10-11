@@ -1,5 +1,5 @@
 /**
- * pg_genie SQL editor: script helpers (no React). Statement splitting follows PostgreSQL's lexical rules closely
+ * pg_mantra SQL editor: script helpers (no React). Statement splitting follows PostgreSQL's lexical rules closely
  * enough for an editor: '...' and E'...' strings, "quoted identifiers", $tag$ dollar quotes $tag$, -- line and
  * nested block comments. Statements end at a semicolon outside all of those.
  */

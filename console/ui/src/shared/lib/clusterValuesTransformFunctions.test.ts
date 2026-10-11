@@ -18,7 +18,7 @@ describe('cluster form backup defaults', () => {
   });
 });
 
-// pg_genie: getLocalMachineEnvs sends the HA inventory built from the VM roles in the inventory step
+// pg_mantra: getLocalMachineEnvs sends the HA inventory built from the VM roles in the inventory step
 describe('getLocalMachineEnvs', () => {
   const values = (expert: boolean) => ({
     authenticationMethod: 'ssh_key',

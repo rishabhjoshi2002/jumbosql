@@ -1,5 +1,5 @@
 import { FC, useMemo, useState } from 'react';
-import { Box, Stack, Typography, useTheme } from '@mui/material';
+import { Box, FormControlLabel, Stack, Switch, Typography, useTheme } from '@mui/material';
 import { useTranslation } from 'react-i18next';
 import { DInfra, DNode } from '@shared/api/api/discover.ts';
 import { IBOX, infraLayout } from '../lib/infraLayout.ts';
@@ -22,6 +22,23 @@ export const useLaneColors = () => {
   } as Record<string, string>;
 };
 
+/** connection kinds: validated categorical slots */
+const useLinkColors = (): Record<string, string> => {
+  const dark = useTheme().palette.mode === 'dark';
+  return {
+    etcd: dark ? '#9085e9' : '#4a3aa7',
+    patroni: dark ? '#199e70' : '#1baf7a',
+    metrics: '#008300',
+    prometheus: '#008300',
+    replication: dark ? '#3987e5' : '#2a78d6',
+    postgres: dark ? '#c98500' : '#eda100',
+    pgbouncer: dark ? '#c98500' : '#eda100',
+    balancer: dark ? '#d95926' : '#eb6834',
+    backup: dark ? '#3987e5' : '#2a78d6',
+    vip: dark ? '#d55181' : '#e87ba4',
+  };
+};
+
 /** The machines and what runs on them, in the order a connection travels. */
 const InfraDiagram: FC<{ infra: DInfra; nodes: DNode[]; selected?: string; onSelect: (address: string) => void }> = ({
   infra,
@@ -34,6 +51,8 @@ const InfraDiagram: FC<{ infra: DInfra; nodes: DNode[]; selected?: string; onSel
   const lane = useLaneColors();
   const role = useRoleColors();
   const [hover, setHover] = useState<string | null>(null);
+  const [showLinks, setShowLinks] = useState(true);
+  const linkColor = useLinkColors();
   const lay = useMemo(() => infraLayout(infra, nodes), [infra, nodes]);
   const ink = theme.palette.text.primary;
   const muted = theme.palette.text.secondary;
@@ -67,6 +86,19 @@ const InfraDiagram: FC<{ infra: DInfra; nodes: DNode[]; selected?: string; onSel
             <marker id="iarrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
               <path d="M0,0 L10,5 L0,10 z" fill={muted} />
             </marker>
+            {Object.entries(linkColor).map(([k, c]) => (
+              <marker
+                key={k}
+                id={`ilink-${k}`}
+                viewBox="0 0 10 10"
+                refX="9"
+                refY="5"
+                markerWidth="6"
+                markerHeight="6"
+                orient="auto">
+                <path d="M0,0 L10,5 L0,10 z" fill={c} />
+              </marker>
+            ))}
           </defs>
           <g transform={`translate(${M},${M})`}>
             {lay.lanes.map((l) => (
@@ -95,6 +127,28 @@ const InfraDiagram: FC<{ infra: DInfra; nodes: DNode[]; selected?: string; onSel
                 />
               );
             })}
+            {showLinks
+              ? lay.links.map((l, i) => {
+                  const active = hover && l.hosts.includes(hover);
+                  const c = linkColor[l.kind] ?? muted;
+                  return (
+                    <path
+                      key={`k${i}`}
+                      d={l.d}
+                      fill="none"
+                      stroke={c}
+                      strokeWidth={active ? 2.2 : 1.3}
+                      strokeDasharray={l.kind === 'metrics' || l.kind === 'backup' ? '5 4' : undefined}
+                      opacity={hover ? (active ? 0.95 : 0.12) : 0.55}
+                      markerEnd={`url(#ilink-${l.kind in linkColor ? l.kind : 'postgres'})`}>
+                      <title>
+                        {t(`link_${l.kind}`, { defaultValue: l.kind })}
+                        {l.port ? ` :${l.port}` : ''}
+                      </title>
+                    </path>
+                  );
+                })
+              : null}
             {lay.edges
               .filter((e) => e.label)
               .map((e, i) => {
@@ -175,6 +229,33 @@ const InfraDiagram: FC<{ infra: DInfra; nodes: DNode[]; selected?: string; onSel
         <Typography variant="caption" color="text.secondary">
           {t('i_arrows')}
         </Typography>
+        {lay.links.length ? (
+          <>
+            {[...new Set(lay.links.map((l) => l.kind))].map((k) => (
+              <Stack key={k} direction="row" gap={0.75} alignItems="center">
+                <svg width="22" height="8">
+                  <line
+                    x1="0"
+                    y1="4"
+                    x2="22"
+                    y2="4"
+                    stroke={linkColor[k] ?? muted}
+                    strokeWidth="2"
+                    strokeDasharray={k === 'metrics' || k === 'backup' ? '5 3' : undefined}
+                  />
+                </svg>
+                <Typography variant="caption" color="text.secondary">
+                  {t(`link_${k}`, { defaultValue: k })}
+                </Typography>
+              </Stack>
+            ))}
+            <FormControlLabel
+              sx={{ ml: 0 }}
+              control={<Switch size="small" checked={showLinks} onChange={(e) => setShowLinks(e.target.checked)} />}
+              label={<Typography variant="caption">{t('i_showLinks')}</Typography>}
+            />
+          </>
+        ) : null}
       </Stack>
     </Box>
   );

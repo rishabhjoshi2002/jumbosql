@@ -1,4 +1,4 @@
-// Package discover looks at any PostgreSQL servers the console can reach - built by pg_genie or not - with
+// Package discover looks at any PostgreSQL servers the console can reach - built by pg_mantra or not - with
 // one database login, and works out the architecture: which node is a primary, which are streaming
 // standbys (and of whom), which take data through logical replication, what manages failover, and the
 // details of every node. It only reads; it never changes anything on the servers.
@@ -37,13 +37,14 @@ type Request struct {
 	SSLMode  string
 
 	// infrastructure (all optional): the machines of the inventory, SSH for read-only commands, Prometheus for trends
-	Hosts   []InvHost
-	SSH     *SSHAuth
-	KeyFile string // written by PrepareSSH
-	Askpass string
-	PromURL string
-	Days    int // history to read from Prometheus
-	Horizon int // days ahead to size for
+	Hosts    []InvHost
+	SSH      *SSHAuth
+	HostAuth map[string]*SSHAuth // SSH logins for single machines (address -> login), over SSH
+	Follow   bool                // follow connections to machines that are not in the inventory
+	sshFiles map[*SSHAuth][2]string
+	PromURL  string
+	Days     int // history to read from Prometheus
+	Horizon  int // days ahead to size for
 }
 
 type Setting struct {
@@ -84,6 +85,14 @@ type Database struct {
 	Inventory     *Inventory    `json:"inventory,omitempty"` // everything inside (for migrations)
 	Error         string        `json:"error,omitempty"`
 	connectFailed bool
+}
+
+// Client: connections to this node from one address.
+type Client struct {
+	Addr  string `json:"addr"`
+	Count int    `json:"count"`
+	Apps  string `json:"apps,omitempty"`
+	Users string `json:"users,omitempty"`
 }
 
 // Sender is a walsender on this node: a standby or a logical subscriber reading from it.
@@ -168,6 +177,7 @@ type Node struct {
 	Patroni         *Patroni       `json:"patroni,omitempty"`
 	Group           string         `json:"group,omitempty"`   // physical cluster (same system identifier)
 	Partial         []string       `json:"partial,omitempty"` // what this login could not read
+	Clients         []Client       `json:"clients,omitempty"` // connections by source address
 	aliases         map[string]bool
 	settingsByName  map[string]string
 	primaryConninfo string
@@ -271,18 +281,11 @@ func ParseInventory(text string) ([]Target, error) {
 	return out, nil
 }
 
-// Run probes every target (in parallel) and puts the picture together.
-func Run(ctx context.Context, req Request) *Result {
-	res := &Result{At: time.Now().UTC(), Edges: []Edge{}, Groups: []Group{}, Findings: []Finding{}, Summary: []string{}}
-	var infra *Infra
-	if len(req.Hosts) > 0 {
-		infra = probeInfra(ctx, req)
-		req.Targets = pgTargets(req, infra)
-	}
-	nodes := make([]*Node, len(req.Targets))
+func probeNodes(ctx context.Context, req Request, targets []Target) []*Node {
+	nodes := make([]*Node, len(targets))
 	var wg sync.WaitGroup
 	sem := make(chan struct{}, 8)
-	for i, t := range req.Targets {
+	for i, t := range targets {
 		wg.Add(1)
 		go func(i int, t Target) {
 			defer wg.Done()
@@ -294,6 +297,19 @@ func Run(ctx context.Context, req Request) *Result {
 		}(i, t)
 	}
 	wg.Wait()
+	return nodes
+}
+
+// Run probes every target (in parallel) and puts the picture together.
+func Run(ctx context.Context, req Request) *Result {
+	res := &Result{At: time.Now().UTC(), Edges: []Edge{}, Groups: []Group{}, Findings: []Finding{}, Summary: []string{}}
+	var infra *Infra
+	var nodes []*Node
+	if len(req.Hosts) > 0 {
+		infra, nodes = crawl(ctx, req)
+	} else {
+		nodes = probeNodes(ctx, req, req.Targets)
+	}
 	res.Nodes = nodes
 	res.proxies = dropProxies(res)
 	res.Proxies = res.proxies
@@ -369,7 +385,7 @@ func tb(s string) bool { return s == "t" || s == "true" || s == "on" }
 
 func target(req Request, host string, port int, db string) sqlrun.Target {
 	return sqlrun.Target{Host: host, Port: port, User: req.User, Password: req.Password, Database: db,
-		SSLMode: req.SSLMode, AppName: "pg_genie discover"}
+		SSLMode: req.SSLMode, AppName: "pg_mantra discover"}
 }
 
 // settings shown for every node (the ones that describe its role and capacity)
@@ -464,6 +480,15 @@ func probe(ctx context.Context, req Request, t Target) *Node {
 		n.Connections = map[string]int{}
 		for _, v := range r {
 			n.Connections[v[0]] = atoi(v[1])
+		}
+	}
+
+	// where connections come from (balancers, poolers, standbys, exporters, applications)
+	if r, err := q(ctx, c, `select host(client_addr), count(*), coalesce(string_agg(distinct nullif(application_name, ''), ', '), ''),
+		coalesce(string_agg(distinct usename::text, ', '), '') from pg_stat_activity where client_addr is not null
+		and application_name <> 'pg_mantra discover' group by 1 order by 2 desc limit 200`); err == nil {
+		for _, v := range r {
+			n.Clients = append(n.Clients, Client{Addr: v[0], Count: atoi(v[1]), Apps: v[2], Users: v[3]})
 		}
 	}
 

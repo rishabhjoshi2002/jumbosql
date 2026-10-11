@@ -1,5 +1,5 @@
 // Package insights samples clusters, fits trends and turns them into forecasts and recommendations
-// (pg_genie Insights page).
+// (pg_mantra Insights page).
 package insights
 
 import (

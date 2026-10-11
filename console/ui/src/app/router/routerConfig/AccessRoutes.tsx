@@ -7,8 +7,9 @@ const AuditLog = lazy(() => import('@pages/audit'));
 const PostgresLogs = lazy(() => import('@pages/postgres-logs'));
 const Insights = lazy(() => import('@pages/insights'));
 const Discover = lazy(() => import('@pages/discover'));
+const Upgrade = lazy(() => import('@pages/upgrade'));
 
-// pg_genie: audit log (audit.view) and PostgreSQL server logs (logs.view)
+// pg_mantra: audit log (audit.view) and PostgreSQL server logs (logs.view)
 const AccessRoutes = () => [
   <Route
     key="audit"
@@ -37,6 +38,16 @@ const AccessRoutes = () => [
     element={
       <RequirePermission perms={['discover.run']}>
         <Discover />
+      </RequirePermission>
+    }
+  />,
+  <Route
+    key="upgrade"
+    path={RouterPaths.upgrade.absolutePath}
+    handle={{ breadcrumb: { label: 'title', ns: 'upgrade' } }}
+    element={
+      <RequirePermission perms={['upgrade.run']}>
+        <Upgrade />
       </RequirePermission>
     }
   />,

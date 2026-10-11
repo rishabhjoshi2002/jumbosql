@@ -1,0 +1,139 @@
+[
+{
+    "time": "2026-10-11T06:34:05.062147",
+    "task": "Check the request",
+    "host": "localhost",
+    "changed": false,
+    "failed": false,
+    "msg": "All assertions passed"
+},
+{
+    "time": "2026-10-11T06:34:05.116193",
+    "task": "Nodes that run it",
+    "host": "localhost",
+    "changed": false,
+    "failed": false,
+    "msg": ""
+},
+{
+    "time": "2026-10-11T06:34:05.170185",
+    "task": "Group them",
+    "host": "localhost",
+    "item": "127.0.0.31",
+    "changed": false,
+    "failed": false,
+    "msg": ""
+},
+{
+    "time": "2026-10-11T06:34:05.170543",
+    "task": "Group them",
+    "host": "localhost",
+    "changed": false,
+    "failed": false,
+    "msg": "All items completed"
+},
+{
+    "time": "2026-10-11T06:34:06.441523",
+    "task": "Detect",
+    "host": "127.0.0.31",
+    "changed": false,
+    "failed": false,
+    "msg": ""
+},
+{
+    "time": "2026-10-11T06:34:06.476621",
+    "task": "Keep the spec for the next plays",
+    "host": "127.0.0.31",
+    "changed": false,
+    "failed": false,
+    "msg": ""
+},
+{
+    "time": "2026-10-11T06:34:06.506786",
+    "task": "Read it",
+    "host": "127.0.0.31",
+    "changed": false,
+    "failed": false,
+    "msg": ""
+},
+{
+    "time": "2026-10-11T06:34:06.584597",
+    "task": "Standbys first, the primary last",
+    "host": "localhost",
+    "changed": false,
+    "failed": false,
+    "msg": ""
+},
+{
+    "time": "2026-10-11T06:34:06.610017",
+    "task": "Group them in that order",
+    "host": "localhost",
+    "item": "127.0.0.31",
+    "changed": false,
+    "failed": false,
+    "msg": ""
+},
+{
+    "time": "2026-10-11T06:34:06.610234",
+    "task": "Group them in that order",
+    "host": "localhost",
+    "changed": false,
+    "failed": false,
+    "msg": "All items completed"
+},
+{
+    "time": "2026-10-11T06:34:07.004948",
+    "task": "Put back the saved version",
+    "host": "127.0.0.31",
+    "changed": true,
+    "failed": false,
+    "msg": "non-zero return code"
+},
+{
+    "time": "2026-10-11T06:34:07.071723",
+    "task": "pgm_result",
+    "host": "127.0.0.31",
+    "changed": false,
+    "failed": false,
+    "msg": {
+        "host": "127.0.0.31",
+        "phase": "rollback",
+        "status": "failed",
+        "task": "Put back the saved version",
+        "error": "no saved state for run 99 on this node (/var/lib/pg_mantra/upgrade/99/pgbouncer/manifest.json): it was not upgraded",
+        "preserve": null
+    }
+},
+{
+    "time": "2026-10-11T06:34:07.105823",
+    "task": "Stop here (the other nodes are not touched)",
+    "host": "127.0.0.31",
+    "changed": false,
+    "failed": false,
+    "msg": "127.0.0.31: Put back the saved version failed - see the result above"
+},
+{
+    "time": "2026-10-11T06:34:07.106871",
+    "summary": {
+        "localhost": {
+            "ok": 5,
+            "failures": 0,
+            "unreachable": 0,
+            "changed": 0,
+            "skipped": 1,
+            "rescued": 0,
+            "ignored": 0
+        },
+        "127.0.0.31": {
+            "ok": 4,
+            "failures": 1,
+            "unreachable": 0,
+            "changed": 0,
+            "skipped": 7,
+            "rescued": 1,
+            "ignored": 0
+        }
+    },
+    "status": "failed"
+}
+]

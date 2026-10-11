@@ -6,7 +6,7 @@ import Stack from '@mui/material/Stack';
 import TextField from '@mui/material/TextField';
 import Toolbar from '@mui/material/Toolbar';
 import Typography from '@mui/material/Typography';
-import logoIcon from '@shared/assets/pgGenieIcon.png';
+import logoIcon from '@shared/assets/pgMantraIcon.png';
 import UserMenu from '@features/user-menu';
 import { BRAND } from '@shared/theme/theme.ts';
 import ThemeToggle from '@features/theme-toggle';
@@ -17,11 +17,18 @@ import { setProject } from '@app/redux/slices/projectSlice/projectSlice.ts';
 import { selectCurrentProject } from '@app/redux/slices/projectSlice/projectSelectors.ts';
 import { useAppDispatch, useAppSelector } from '@app/redux/store/hooks.ts';
 import { useTranslation } from 'react-i18next';
+import Button from '@mui/material/Button';
+import SystemUpdateAltIcon from '@mui/icons-material/SystemUpdateAlt';
+import { Link } from 'react-router-dom';
+import RouterPaths from '@app/router/routerPathsConfig';
+import { canAny } from '@shared/lib/session.ts';
+import { useSessionUser } from '@shared/lib/useSession.ts';
 
 const Header: FC = () => {
   const { t } = useTranslation('shared');
   const dispatch = useAppDispatch();
   const currentProject = useAppSelector(selectCurrentProject);
+  const user = useSessionUser();
 
   const projects = useGetProjectsQuery({ limit: 999_999_999 });
 
@@ -55,11 +62,11 @@ const Header: FC = () => {
                   placeItems: 'center',
                   flexShrink: 0,
                 }}>
-                <img src={logoIcon} alt="pg_genie" style={{ width: '32px', height: '32px' }} data-logo="true" />
+                <img src={logoIcon} alt="pg_mantra" style={{ width: '32px', height: '32px' }} data-logo="true" />
               </Box>
               <Box sx={{ lineHeight: 1 }}>
                 <Typography sx={{ color: BRAND.chromeText, fontWeight: 800, fontSize: '1.05rem', lineHeight: 1.15 }}>
-                  pg_genie
+                  pg_mantra
                 </Typography>
                 <Typography sx={{ color: BRAND.sky, fontSize: '0.74rem', fontWeight: 600, lineHeight: 1.2 }}>
                   {t('productLine')}
@@ -92,6 +99,21 @@ const Header: FC = () => {
             </TextField>
           </Stack>
           <Stack direction="row" alignItems="center" gap="8px" pr="4px">
+            {canAny(['upgrade.run'], undefined, user) ? (
+              <Button
+                component={Link}
+                to={RouterPaths.upgrade.absolutePath}
+                startIcon={<SystemUpdateAltIcon />}
+                sx={{
+                  color: BRAND.chromeText,
+                  border: '1px solid rgba(255,255,255,0.18)',
+                  textTransform: 'none',
+                  fontWeight: 600,
+                  '&:hover': { borderColor: BRAND.sky, bgcolor: 'rgba(255,255,255,0.06)' },
+                }}>
+                {t('button', { ns: 'upgrade' })}
+              </Button>
+            ) : null}
             <ThemeToggle />
             <UserMenu />
           </Stack>

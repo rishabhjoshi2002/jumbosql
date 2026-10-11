@@ -1,0 +1,213 @@
+---
+# pg_mantra upgrades - one component of one cluster, three actions:
+#   plan      dry run: on every node of the component, what is installed, what would be installed, the Patroni role,
+#             services, free disk. Changes nothing (it may refresh the package lists).
+#   run       one node at a time (standbys first, a switchover before the primary): keep the installed version
+#             (package files, pip wheel, binaries, configs + manifest), upgrade, restart, wait until healthy.
+#             Stops at the first node that fails; the others are not touched.
+#   rollback  same order: put back the saved versions of a run, restart, wait until healthy.
+#
+# Extra vars: pgm = {id, action, component, target, run_id, allow_unsaved, restore_config, binary_url, hosts}
+# Each node's outcome is a task named "pgm_result" (the console reads it from the JSON log).
+
+- name: pg_mantra upgrade | nodes of the component
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars_files: [components.yml]
+  tasks:
+    - name: Check the request
+      ansible.builtin.assert:
+        that:
+          - pgm is defined
+          - pgm.action in ['plan', 'run', 'rollback']
+          - pgm.component in pgm_components
+        fail_msg: "bad request: {{ pgm | default({}) }}"
+
+    - name: Nodes that run it
+      ansible.builtin.set_fact:
+        pgm_hosts: >-
+          {{ (pgm_components[pgm.component].groups
+              | map('extract', groups) | select('defined') | flatten | unique
+              | select('in', (pgm.hosts | default([])) if (pgm.hosts | default([])) else groups['all'])
+              | reject('equalto', 'localhost') | list) }}
+
+    - name: No node
+      ansible.builtin.fail:
+        msg: "no node of the groups {{ pgm_components[pgm.component].groups }} in the inventory"
+      when: pgm_hosts | length == 0
+
+    - name: Group them
+      ansible.builtin.add_host:
+        name: "{{ item }}"
+        groups: pgm_all
+      loop: "{{ pgm_hosts }}"
+      changed_when: false
+
+- name: pg_mantra upgrade | look at every node
+  hosts: pgm_all
+  gather_facts: false
+  become: true
+  vars_files: [components.yml]
+  vars:
+    comp: "{{ pgm_components[pgm.component] }}"
+    pgm_spec: >-
+      {{ comp | combine({'component': pgm.component, 'target': pgm.target | default(''),
+         'run_id': pgm.run_id | default(pgm.id), 'base': '/var/lib/pg_mantra/upgrade',
+         'refresh': pgm.action == 'plan', 'allow_unsaved': pgm.allow_unsaved | default(false),
+         'restore_config': pgm.restore_config | default(false)})
+         | combine({'binary': (comp.binary | default({})) | combine({'url': pgm.binary_url}) } if (pgm.binary_url | default('')) and comp.binary is defined else {}) }}
+  tasks:
+    - name: Detect
+      ansible.builtin.script:
+        cmd: "pgm_host.py detect {{ pgm_spec | to_json | b64encode }}"
+        executable: python3
+      register: pgm_detect_raw
+      changed_when: false
+      failed_when: false
+
+    - name: Keep the spec for the next plays
+      ansible.builtin.set_fact:
+        pgm_spec_fact: "{{ pgm_spec }}"
+
+    - name: Read it
+      ansible.builtin.set_fact:
+        pgm_detect: "{{ (pgm_detect_raw.stdout_lines | default(['{}']) | last | from_json) if (pgm_detect_raw.stdout_lines | default([])) else {'ok': false, 'error': pgm_detect_raw.msg | default('node not reachable')} }}"
+
+    - name: pgm_result
+      ansible.builtin.debug:
+        msg: "{{ {'host': inventory_hostname, 'phase': 'plan', 'detect': pgm_detect} }}"
+      when: pgm.action == 'plan'
+
+- name: pg_mantra upgrade | order
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars_files: [components.yml]
+  tasks:
+    - name: Standbys first, the primary last
+      ansible.builtin.set_fact:
+        pgm_order: >-
+          {%- set leaders = [] -%}{%- set others = [] -%}
+          {%- for h in groups['pgm_all'] -%}
+            {%- set role = ((hostvars[h].pgm_detect | default({})).patroni | default({}) or {}).role | default('') -%}
+            {%- if role in ['leader', 'master', 'primary', 'standby_leader'] -%}{{ leaders.append(h) or '' }}
+            {%- else -%}{{ others.append(h) or '' }}{%- endif -%}
+          {%- endfor -%}
+          {{ others + leaders }}
+      when: pgm.action in ['run', 'rollback']
+
+    - name: Group them in that order
+      ansible.builtin.add_host:
+        name: "{{ item }}"
+        groups: pgm_ordered
+      loop: "{{ pgm_order | default([]) }}"
+      changed_when: false
+
+- name: pg_mantra upgrade | one node at a time
+  hosts: pgm_ordered
+  serial: 1
+  any_errors_fatal: true
+  gather_facts: false
+  become: true
+  vars_files: [components.yml]
+  vars:
+    comp: "{{ pgm_components[pgm.component] }}"
+    pgm_spec: "{{ pgm_spec_fact }}"
+    patroni: "{{ (pgm_detect.patroni | default({})) or {} }}"
+    is_leader: "{{ patroni.role | default('') in ['leader', 'master', 'primary'] }}"
+    members: "{{ groups['pgm_ordered'] | length }}"
+    nothing: "{{ pgm.action == 'run' and (pgm_detect.to_upgrade | default([]) | length == 0) }}"
+  tasks:
+    - name: Nothing to do here
+      ansible.builtin.debug:
+        msg: "{{ {'host': inventory_hostname, 'phase': pgm.action, 'status': 'skipped', 'reason': pgm_detect.error | default('not installed here' if pgm_detect.method | default('') == 'none' else 'already at the newest allowed version'), 'detect': pgm_detect} }}"
+      when: nothing | bool
+      register: pgm_skip
+
+    - name: Upgrade / roll back this node
+      when: not (nothing | bool)
+      block:
+        - name: Pause Patroni (no failover while it restarts)
+          ansible.builtin.script:
+            cmd: "pgm_host.py patroni-pause {{ pgm_spec | to_json | b64encode }}"
+            executable: python3
+          when: comp.pause | default(false)
+          register: pgm_pause
+
+        - name: Switchover away from the primary first
+          ansible.builtin.script:
+            cmd: "pgm_host.py patroni-switchover {{ pgm_spec | combine({'candidate': hostvars[groups['pgm_ordered'][0]].pgm_detect.patroni.member | default('')}) | to_json | b64encode }}"
+            executable: python3
+          when: pgm.component == 'postgres' and is_leader | bool and members | int > 1
+          register: pgm_switch
+
+        - name: Keep the installed version
+          ansible.builtin.script:
+            cmd: "pgm_host.py preserve {{ pgm_spec | to_json | b64encode }}"
+            executable: python3
+          when: pgm.action == 'run'
+          register: pgm_preserve
+
+        - name: Install the new version
+          ansible.builtin.script:
+            cmd: "pgm_host.py upgrade {{ pgm_spec | to_json | b64encode }}"
+            executable: python3
+          when: pgm.action == 'run'
+          register: pgm_upgrade
+
+        - name: Put back the saved version
+          ansible.builtin.script:
+            cmd: "pgm_host.py rollback {{ pgm_spec | to_json | b64encode }}"
+            executable: python3
+          when: pgm.action == 'rollback'
+          register: pgm_rollback
+
+        - name: Restart
+          ansible.builtin.script:
+            cmd: "pgm_host.py restart {{ pgm_spec | to_json | b64encode }}"
+            executable: python3
+          register: pgm_restart
+
+        - name: Wait until healthy
+          ansible.builtin.script:
+            cmd: "pgm_host.py health {{ pgm_spec | to_json | b64encode }}"
+            executable: python3
+          register: pgm_health
+
+        - name: Resume Patroni
+          ansible.builtin.script:
+            cmd: "pgm_host.py patroni-resume {{ pgm_spec | to_json | b64encode }}"
+            executable: python3
+          when: comp.pause | default(false)
+
+        - name: pgm_result
+          ansible.builtin.debug:
+            msg: >-
+              {{ {'host': inventory_hostname, 'phase': pgm.action, 'status': 'success',
+                  'switchover': (pgm_switch.stdout_lines | last | from_json) if (pgm_switch.stdout_lines | default([])) else none,
+                  'preserve': (pgm_preserve.stdout_lines | last | from_json) if (pgm_preserve.stdout_lines | default([])) else none,
+                  'change': ((pgm_upgrade if pgm.action == 'run' else pgm_rollback).stdout_lines | last | from_json),
+                  'restart': (pgm_restart.stdout_lines | last | from_json),
+                  'health': (pgm_health.stdout_lines | last | from_json)} }}
+
+      rescue:
+        - name: Resume Patroni after a failure
+          ansible.builtin.script:
+            cmd: "pgm_host.py patroni-resume {{ pgm_spec | to_json | b64encode }}"
+            executable: python3
+          when: comp.pause | default(false)
+          failed_when: false
+
+        - name: pgm_result
+          ansible.builtin.debug:
+            msg: >-
+              {{ {'host': inventory_hostname, 'phase': pgm.action, 'status': 'failed',
+                  'task': ansible_failed_task.name | default(''),
+                  'error': ((ansible_failed_result.stdout_lines | default(['{}']) | last | from_json).error
+                            if (ansible_failed_result.stdout_lines | default([])) else '') or ansible_failed_result.msg | default('failed'),
+                  'preserve': (pgm_preserve.stdout_lines | last | from_json) if (pgm_preserve.stdout_lines | default([])) else none} }}
+
+        - name: Stop here (the other nodes are not touched)
+          ansible.builtin.fail:
+            msg: "{{ inventory_hostname }}: {{ ansible_failed_task.name | default('') }} failed - see the result above"

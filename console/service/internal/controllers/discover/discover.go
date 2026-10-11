@@ -68,6 +68,18 @@ func (h *runHandler) Handle(param ops.PostDiscoverParams) middleware.Responder {
 		}
 		req.SSH = &disc.SSHAuth{User: u, Port: int(b.SSHPort), Password: b.SSHPassword, Key: b.SSHKey}
 	}
+	req.Follow = b.Follow == nil || *b.Follow
+	req.HostAuth = map[string]*disc.SSHAuth{}
+	for _, a := range b.HostAuth {
+		if a == nil || strings.TrimSpace(a.Host) == "" || strings.TrimSpace(a.User) == "" {
+			continue
+		}
+		u := strings.TrimSpace(a.User)
+		if strings.ContainsAny(u, " '\"\\@;|&$`") || strings.HasPrefix(u, "-") {
+			return fail(errors.New("bad SSH user name for " + a.Host))
+		}
+		req.HostAuth[strings.TrimSpace(a.Host)] = &disc.SSHAuth{User: u, Port: int(a.Port), Password: a.Password, Key: a.Key}
+	}
 	// the SSH secrets live in a temporary folder for this run only
 	cleanup, err := disc.PrepareSSH(&req)
 	defer cleanup()

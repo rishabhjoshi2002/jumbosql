@@ -104,7 +104,11 @@ func (lw *logWatcher) doWork() {
 		localLog.Trace().Str("container_status", containerStatus).Msg("got container status")
 		switch containerStatus {
 		case ContainerStatusExited, ContainerStatusDead, ContainerStatusRemoving:
-			lw.collectContainerLog(opCtx, &op, localLog)
+			if op.Type == storage.OperationTypeUpgrade {
+				lw.collectUpgradeLog(opCtx, &op, localLog)
+			} else {
+				lw.collectContainerLog(opCtx, &op, localLog)
+			}
 			err = lw.dockerManager.RemoveContainer(opCtx, xdocker.InstanceID(op.DockerCode))
 			if err != nil {
 				localLog.Error().Err(err).Msg("failed to remove container")

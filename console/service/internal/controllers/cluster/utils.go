@@ -97,3 +97,9 @@ func getSecretEnvs(ctx context.Context, db storage.IStorage, secretID int64, sec
 		return nil, UnknownParamLocation, fmt.Errorf("secret %d has unsupported type %q", secretID, secretView.Type)
 	}
 }
+
+// SecretEnvs (pg_mantra upgrades): a stored secret as container env vars (SSH key) or extra vars (user/password).
+func SecretEnvs(ctx context.Context, db storage.IStorage, secretID int64, secretKey string, projectID int64) (envs []string, asExtraVars bool, err error) {
+	envs, loc, err := getSecretEnvs(ctx, db, secretID, secretKey, projectID, "")
+	return envs, loc == ExtraVarsParamLocation, err
+}

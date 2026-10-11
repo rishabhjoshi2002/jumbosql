@@ -1,6 +1,6 @@
 package storage
 
-// pg_genie: saved Discover results.
+// pg_mantra: saved Discover results.
 
 import (
 	"context"

@@ -1,5 +1,5 @@
 #!/bin/bash
-# entrypoint.sh - pg_genie Keen PostgreSQL HA automation: runs inside the container the console starts.
+# entrypoint.sh - pg_mantra Keen PostgreSQL HA automation: runs inside the container the console starts.
 #
 # The console always starts the container with:
 #     ansible-playbook deploy_pgcluster.yml --extra-vars '<json>'
@@ -48,6 +48,14 @@ for ((i = 0; i < ${#args[@]}; i++)); do
 done
 [[ -z "$EXTRA" ]] && EXTRA='{}'
 printf '%s' "$EXTRA" >"$WORK/autobase-extra-vars.json"
+
+# --- 3b. pg_mantra upgrades: the console sends {"pgm": {...}} - run the upgrade playbook instead of a deployment
+if python3 -c 'import json,sys; sys.exit(0 if "pgm" in json.load(open(sys.argv[1])) else 1)' "$WORK/autobase-extra-vars.json" 2>/dev/null; then
+  python3 /ha/upgrade/pgm_inventory.py "$WORK/autobase-inventory.json" /ha/upgrade/cluster.inventory.yml
+  cd /ha/upgrade
+  echo "[pg_mantra] ansible-playbook -i cluster.inventory.yml pgm-upgrade.yml ($(python3 -c 'import json,sys; p=json.load(open(sys.argv[1]))["pgm"]; print(p.get("action"), p.get("component"))' "$WORK/autobase-extra-vars.json"))"
+  exec ansible-playbook -i cluster.inventory.yml pgm-upgrade.yml -e @"$WORK/autobase-extra-vars.json"
+fi
 
 # --- 4. write the HA inventory from the console's inventory step + pick the HA variables
 python3 /ha/inventory_to_ha.py \

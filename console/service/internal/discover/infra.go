@@ -28,6 +28,26 @@ import (
 	"time"
 )
 
+type tcpConn struct {
+	LocalAddr string
+	LocalPort int
+	PeerAddr  string
+	PeerPort  int
+}
+
+// splitAddr: "10.0.0.1:5432", "[::ffff:10.0.0.1]:5432" -> address, port
+func splitAddr(s string) (string, int) {
+	i := strings.LastIndex(s, ":")
+	if i < 0 {
+		return "", 0
+	}
+	a := strings.TrimPrefix(strings.Trim(s[:i], "[]"), "::ffff:")
+	if j := strings.IndexByte(a, '%'); j >= 0 {
+		a = a[:j]
+	}
+	return a, atoi(s[i+1:])
+}
+
 // SSHAuth: how to log in to the machines (read-only commands only). The secret is used for this run only.
 type SSHAuth struct {
 	User     string
@@ -107,8 +127,11 @@ type HostInfo struct {
 	Components []*Component `json:"components"`
 	Roles      []string     `json:"roles"` // layers present, in order
 	VIPs       []string     `json:"vips,omitempty"`
+	IPs        []string     `json:"ips,omitempty"`       // all addresses of the machine (SSH)
+	FoundVia   string       `json:"found_via,omitempty"` // inventory, or which machine led to it and how
 	pgPort     int
 	declaredDB bool
+	conns      []tcpConn         // established TCP connections (SSH)
 	proxyPorts []int             // ports that looked like PostgreSQL but forward to another server
 	raw        map[string]string // SSH sections (configs), not returned
 }
@@ -130,6 +153,9 @@ type Infra struct {
 	PromError  string       `json:"prometheus_error,omitempty"`
 	Targets    []PromTarget `json:"prometheus_targets,omitempty"`
 	SSHUsed    bool         `json:"ssh_used"`
+	Links      []Link       `json:"links"`      // who talks to whom
+	SSHNeeded  []SSHNeed    `json:"ssh_needed"` // machines SSH could not enter
+	Clients    []ClientHost `json:"clients"`    // application servers (connect, run nothing of the stack)
 }
 
 /* ------------------------------------------------------------ catalog ------------------------------------------------------------ */
@@ -237,7 +263,7 @@ func firstVersion(s string) string {
 	return versionRe.FindString(s)
 }
 
-func probeHost(ctx context.Context, ih InvHost, auth *SSHAuth, keyFile, askpass string) *HostInfo {
+func probeHost(ctx context.Context, ih InvHost, auths []*SSHAuth, files map[*SSHAuth][2]string) *HostInfo {
 	h := &HostInfo{Address: ih.Address, Name: ih.Name, Groups: ih.Groups, SSH: "not tried", Components: []*Component{},
 		OpenPorts: []int{}, Roles: []string{}, pgPort: ih.PGPort, declaredDB: ih.DeclaredDB(), raw: map[string]string{}}
 	ports := append([]int{}, probePorts...)
@@ -246,18 +272,28 @@ func probeHost(ctx context.Context, ih InvHost, auth *SSHAuth, keyFile, askpass 
 	}
 	h.OpenPorts = scanPorts(ctx, ih.Address, ports)
 	h.Reachable = len(h.OpenPorts) > 0
-	if auth != nil && auth.User != "" {
+	// SSH: each login in turn (the machine's own, the main one, "same for all") until one works
+	for _, auth := range auths {
+		if auth == nil || auth.User == "" {
+			continue
+		}
 		port := auth.Port
-		if ih.SSHPort != 0 {
+		if ih.SSHPort != 0 && (port == 0 || port == 22) {
 			port = ih.SSHPort
 		}
-		if out, err := runSSH(ctx, ih.Address, port, auth, keyFile, askpass); err != nil {
+		f := files[auth]
+		out, err := runSSH(ctx, ih.Address, port, auth, f[0], f[1])
+		if err != nil {
 			h.SSH, h.SSHError = "failed", err.Error()
-		} else {
-			h.SSH = "ok"
-			h.Reachable = true
-			parseProbe(h, out)
+			if strings.Contains(err.Error(), "port closed") || strings.Contains(err.Error(), "in time") {
+				break // another login will not help
+			}
+			continue
 		}
+		h.SSH, h.SSHError = "ok", ""
+		h.Reachable = true
+		parseProbe(h, out)
+		break
 	}
 	fingerprint(ctx, h)
 	finish(h)
@@ -473,6 +509,7 @@ const probeScript = `export LC_ALL=C PATH=$PATH:/usr/sbin:/sbin:/usr/local/bin
 R() { if [ "$(id -u)" = 0 ]; then "$@" 2>/dev/null; else sudo -n "$@" 2>/dev/null || "$@" 2>/dev/null; fi; }
 echo "@@host"
 echo "hostname=$(hostname -f 2>/dev/null || hostname)"
+echo "ips=$(hostname -I 2>/dev/null || hostname -i 2>/dev/null)"
 if [ -r /etc/os-release ]; then . /etc/os-release; echo "os=$PRETTY_NAME"; fi
 echo "kernel=$(uname -r)"; echo "arch=$(uname -m)"
 echo "cpus=$(nproc 2>/dev/null || grep -c ^processor /proc/cpuinfo)"
@@ -485,6 +522,7 @@ echo "load=$(cut -d' ' -f1-3 /proc/loadavg)"
 if [ "$(id -u)" = 0 ]; then echo "sudo=root"; elif sudo -n true 2>/dev/null; then echo "sudo=yes"; else echo "sudo=no"; fi
 echo "@@disk"; df -PB1 -T -x tmpfs -x devtmpfs -x overlay -x squashfs 2>/dev/null | tail -n +2
 echo "@@listen"; R ss -Hltnp || ss -Hltn 2>/dev/null
+echo "@@conns"; ss -Htn state established 2>/dev/null | head -2000
 echo "@@services"; systemctl list-units --type=service --state=running --no-legend --plain 2>/dev/null | awk '{print $1}'
 echo "@@packages"; { rpm -qa --qf '%{NAME}\t%{VERSION}-%{RELEASE}\n' 2>/dev/null || dpkg-query -W -f='${db:Status-Abbrev}\t${Package}\t${Version}\n' 2>/dev/null | awk -F'\t' '$1 ~ /^ii/ {print $2"\t"$3}'; } | grep -Ei '^(postgres|pg|patroni|etcd|haproxy|nginx|keepalived|vip-manager|pgbouncer|odyssey|pgbackrest|pgpool|repmgr|barman|wal-g|consul|zookeeper|prometheus|alertmanager|grafana|node.exporter|golang-github-prometheus|docker|moby|containerd|podman|timescaledb|citus|python3-(patroni|psycopg|etcd))'
 echo "@@versions"
@@ -510,7 +548,7 @@ func prepareSSH(auth *SSHAuth) (dir, keyFile, askpass string, err error) {
 	if auth == nil || auth.User == "" {
 		return "", "", "", nil
 	}
-	dir, err = os.MkdirTemp("", "pggenie-ssh-")
+	dir, err = os.MkdirTemp("", "pgmantra-ssh-")
 	if err != nil {
 		return "", "", "", err
 	}
@@ -524,7 +562,7 @@ func prepareSSH(auth *SSHAuth) (dir, keyFile, askpass string, err error) {
 	if auth.Password != "" {
 		askpass = filepath.Join(dir, "askpass")
 		// the password reaches ssh through the environment, never the command line
-		if err = os.WriteFile(askpass, []byte("#!/bin/sh\nprintf '%s\\n' \"$PGGENIE_SSH_SECRET\"\n"), 0o700); err != nil {
+		if err = os.WriteFile(askpass, []byte("#!/bin/sh\nprintf '%s\\n' \"$PGMANTRA_SSH_SECRET\"\n"), 0o700); err != nil {
 			return dir, "", "", err
 		}
 	}
@@ -555,7 +593,7 @@ func runSSH(ctx context.Context, host string, port int, auth *SSHAuth, keyFile, 
 	cmd.Stdin = strings.NewReader(probeScript)
 	cmd.Env = append(os.Environ(), "LC_ALL=C")
 	if askpass != "" {
-		cmd.Env = append(cmd.Env, "SSH_ASKPASS="+askpass, "SSH_ASKPASS_REQUIRE=force", "DISPLAY=none", "PGGENIE_SSH_SECRET="+auth.Password)
+		cmd.Env = append(cmd.Env, "SSH_ASKPASS="+askpass, "SSH_ASKPASS_REQUIRE=force", "DISPLAY=none", "PGMANTRA_SSH_SECRET="+auth.Password)
 	}
 	var out, errb strings.Builder
 	cmd.Stdout, cmd.Stderr = &out, &errb
@@ -596,6 +634,12 @@ func parseProbe(h *HostInfo, out string) {
 		case "hostname":
 			if h.Name == "" {
 				h.Name = v
+			}
+		case "ips":
+			for _, ip := range strings.Fields(v) {
+				if p := net.ParseIP(ip); p != nil && !p.IsLoopback() && !p.IsLinkLocalUnicast() {
+					h.IPs = appendOnce(h.IPs, ip)
+				}
 			}
 		case "os":
 			h.OS = v
@@ -654,6 +698,17 @@ func parseProbe(h *HostInfo, out string) {
 		}
 	}
 	sort.Slice(h.Listening, func(i, j int) bool { return h.Listening[i].Port < h.Listening[j].Port })
+	for _, l := range sections["conns"] { // established TCP: [state] recv send local peer
+		f := strings.Fields(l)
+		if len(f) < 4 {
+			continue
+		}
+		la, lp := splitAddr(f[len(f)-2])
+		pa, pp := splitAddr(f[len(f)-1])
+		if pa != "" && lp > 0 && pp > 0 {
+			h.conns = append(h.conns, tcpConn{LocalAddr: la, LocalPort: lp, PeerAddr: pa, PeerPort: pp})
+		}
+	}
 	for _, l := range sections["services"] {
 		if l = strings.TrimSpace(l); l != "" {
 			h.Services = append(h.Services, strings.TrimSuffix(l, ".service"))

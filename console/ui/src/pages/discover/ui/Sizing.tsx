@@ -31,7 +31,7 @@ const mono = { fontFamily: '"JetBrains Mono", monospace', fontSize: 12.5 };
 type Rates = { currency: string; cpu: number; ram: number; disk: number };
 // rough public-cloud list prices per month (editable)
 const DEFAULT_RATES: Rates = { currency: 'USD', cpu: 20, ram: 3.75, disk: 0.08 };
-const RATES_KEY = 'pg_genie.discover.rates';
+const RATES_KEY = 'pg_mantra.discover.rates';
 
 const loadRates = (): Rates => {
   try {
