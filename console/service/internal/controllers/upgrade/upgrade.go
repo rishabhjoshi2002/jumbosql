@@ -1,10 +1,12 @@
-// Package upgrade: the Upgrades panel's API - plan (dry run), run and roll back package upgrades of a cluster's
-// components (PostgreSQL minor, Patroni, etcd, HAProxy, PgBouncer, ...). Each action runs the automation
-// container with the cluster's inventory; the playbook (automation-ha/upgrade) does one node at a time and keeps
+// Package upgrade: the Upgrades panel's API - plan (dry run), run and roll back package upgrades of the components
+// of a setup (PostgreSQL minor, Patroni, etcd, HAProxy, PgBouncer, ...). The setup is a cluster in the console
+// (its inventory) or any setup found by Discover (the machines and components it found). Each action runs the
+// upgrade runner container (automation-ha/upgrade: plain Ansible); the playbook does one node at a time and keeps
 // the installed versions so a rollback can put them back.
 package upgrade
 
 import (
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -15,9 +17,9 @@ import (
 	"postgresql-cluster-console/internal/controllers"
 	clusterctl "postgresql-cluster-console/internal/controllers/cluster"
 	"postgresql-cluster-console/internal/storage"
-	"postgresql-cluster-console/internal/watcher"
 	"postgresql-cluster-console/internal/xdocker"
 	localmid "postgresql-cluster-console/middleware"
+	"postgresql-cluster-console/models"
 	"postgresql-cluster-console/pkg/tracer"
 	ops "postgresql-cluster-console/restapi/operations/upgrade"
 
@@ -62,14 +64,22 @@ func component(name string) *Component {
 	return nil
 }
 
-// view: an upgrade as the API returns it
-func view(u *storage.Upgrade) map[string]any {
+// view: an upgrade as the API returns it (with its log when withLog)
+func view(u *storage.Upgrade, withLog bool) map[string]any {
 	var opts, res any
 	_ = json.Unmarshal(u.Options, &opts)
 	_ = json.Unmarshal(u.Result, &res)
-	return map[string]any{"id": u.ID, "cluster_id": u.ClusterID, "component": u.Component, "action": u.Action, "status": u.Status,
-		"parent_id": u.ParentID, "operation_id": u.OperationID, "options": opts, "result": res, "created_by": u.CreatedBy,
-		"created_at": u.CreatedAt, "finished_at": u.FinishedAt}
+	out := map[string]any{"id": u.ID, "cluster_id": u.ClusterID, "discovery_id": u.DiscoveryID, "component": u.Component,
+		"action": u.Action, "status": u.Status, "parent_id": u.ParentID, "options": opts, "result": res,
+		"created_by": u.CreatedBy, "created_at": u.CreatedAt, "finished_at": u.FinishedAt}
+	if withLog {
+		out["log"] = u.Log
+	}
+	return out
+}
+
+func badPayload(err error) *ops.GetClustersIDUpgradesBadRequest {
+	return ops.NewGetClustersIDUpgradesBadRequest().WithPayload(controllers.MakeErrorPayload(err, controllers.BaseError))
 }
 
 /* ------------------------------------------------------------ GET /upgrade/components */
@@ -86,55 +96,189 @@ func (componentsHandler) Handle(ops.GetUpgradeComponentsParams) middleware.Respo
 	return ops.NewGetUpgradeComponentsOK().WithPayload(out)
 }
 
-/* ------------------------------------------------------------ GET /clusters/{id}/upgrades[/{uid}] */
+/* ------------------------------------------------------------ lists and one upgrade */
 
-type listHandler struct{ db storage.IStorage }
-
-func NewGetClustersIDUpgradesHandler(db storage.IStorage) ops.GetClustersIDUpgradesHandler {
-	return &listHandler{db: db}
-}
-
-func (h *listHandler) Handle(p ops.GetClustersIDUpgradesParams) middleware.Responder {
-	list, err := h.db.ListUpgrades(p.HTTPRequest.Context(), p.ID, 100)
-	if err != nil {
-		return ops.NewGetClustersIDUpgradesBadRequest().WithPayload(controllers.MakeErrorPayload(err, controllers.BaseError))
-	}
-	out := make([]any, 0, len(list))
-	for i := range list {
-		out = append(out, view(&list[i]))
-	}
-	return ops.NewGetClustersIDUpgradesOK().WithPayload(out)
-}
-
-type getHandler struct{ db storage.IStorage }
-
-func NewGetClustersIDUpgradesUIDHandler(db storage.IStorage) ops.GetClustersIDUpgradesUIDHandler {
-	return &getHandler{db: db}
-}
-
-func (h *getHandler) Handle(p ops.GetClustersIDUpgradesUIDParams) middleware.Responder {
-	u, err := h.db.GetUpgrade(p.HTTPRequest.Context(), p.UID)
-	if err == nil && (u == nil || u.ClusterID != p.ID) {
-		err = errors.New("not found")
-	}
-	if err != nil {
-		return ops.NewGetClustersIDUpgradesUIDBadRequest().WithPayload(controllers.MakeErrorPayload(err, controllers.BaseError))
-	}
-	return ops.NewGetClustersIDUpgradesUIDOK().WithPayload(view(u))
-}
-
-/* ------------------------------------------------------------ POST /clusters/{id}/upgrades */
-
-type startHandler struct {
+type Handlers struct {
 	db     storage.IStorage
 	docker xdocker.IManager
-	logs   watcher.LogCollector
 	cfg    *configuration.Config
 }
 
-func NewPostClustersIDUpgradesHandler(db storage.IStorage, docker xdocker.IManager, logs watcher.LogCollector, cfg *configuration.Config) ops.PostClustersIDUpgradesHandler {
-	return &startHandler{db: db, docker: docker, logs: logs, cfg: cfg}
+func New(db storage.IStorage, docker xdocker.IManager, cfg *configuration.Config) *Handlers {
+	return &Handlers{db: db, docker: docker, cfg: cfg}
 }
+
+func (h *Handlers) list(ctx context.Context, clusterID, discoveryID int64) ([]any, error) {
+	list, err := h.db.ListUpgrades(ctx, clusterID, discoveryID, 100)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]any, 0, len(list))
+	for i := range list {
+		out = append(out, view(&list[i], false))
+	}
+	return out, nil
+}
+
+func (h *Handlers) one(ctx context.Context, uid, clusterID, discoveryID int64) (map[string]any, error) {
+	u, err := h.db.GetUpgrade(ctx, uid)
+	if err != nil {
+		return nil, err
+	}
+	if u == nil || (clusterID != 0 && (u.ClusterID == nil || *u.ClusterID != clusterID)) ||
+		(discoveryID != 0 && (u.DiscoveryID == nil || *u.DiscoveryID != discoveryID)) {
+		return nil, errors.New("not found")
+	}
+	return view(u, true), nil
+}
+
+type fn func(ctx context.Context) (any, error)
+
+func respond(ctx context.Context, f fn, ok func(any) middleware.Responder) middleware.Responder {
+	v, err := f(ctx)
+	if err != nil {
+		return badPayload(err)
+	}
+	return ok(v)
+}
+
+// cluster endpoints
+type clusterList struct{ *Handlers }
+type clusterOne struct{ *Handlers }
+type clusterStart struct{ *Handlers }
+
+func (h *Handlers) ClusterList() ops.GetClustersIDUpgradesHandler   { return clusterList{h} }
+func (h *Handlers) ClusterOne() ops.GetClustersIDUpgradesUIDHandler { return clusterOne{h} }
+func (h *Handlers) ClusterStart() ops.PostClustersIDUpgradesHandler { return clusterStart{h} }
+
+func (h clusterList) Handle(p ops.GetClustersIDUpgradesParams) middleware.Responder {
+	return respond(p.HTTPRequest.Context(), func(ctx context.Context) (any, error) { return h.list(ctx, p.ID, 0) },
+		func(v any) middleware.Responder { return ops.NewGetClustersIDUpgradesOK().WithPayload(v.([]any)) })
+}
+
+func (h clusterOne) Handle(p ops.GetClustersIDUpgradesUIDParams) middleware.Responder {
+	return respond(p.HTTPRequest.Context(), func(ctx context.Context) (any, error) { return h.one(ctx, p.UID, p.ID, 0) },
+		func(v any) middleware.Responder { return ops.NewGetClustersIDUpgradesUIDOK().WithPayload(v) })
+}
+
+func (h clusterStart) Handle(p ops.PostClustersIDUpgradesParams) middleware.Responder {
+	ctx := p.HTTPRequest.Context()
+	t, err := h.clusterTarget(ctx, p.ID)
+	if err != nil {
+		return badPayload(err)
+	}
+	return respond(ctx, func(ctx context.Context) (any, error) { return h.start(ctx, t, p.Body) },
+		func(v any) middleware.Responder { return ops.NewPostClustersIDUpgradesOK().WithPayload(v) })
+}
+
+// discovery endpoints
+type discoveryList struct{ *Handlers }
+type discoveryOne struct{ *Handlers }
+type discoveryStart struct{ *Handlers }
+
+func (h *Handlers) DiscoveryList() ops.GetDiscoveriesIDUpgradesHandler   { return discoveryList{h} }
+func (h *Handlers) DiscoveryOne() ops.GetDiscoveriesIDUpgradesUIDHandler { return discoveryOne{h} }
+func (h *Handlers) DiscoveryStart() ops.PostDiscoveriesIDUpgradesHandler { return discoveryStart{h} }
+
+func (h discoveryList) Handle(p ops.GetDiscoveriesIDUpgradesParams) middleware.Responder {
+	return respond(p.HTTPRequest.Context(), func(ctx context.Context) (any, error) { return h.list(ctx, 0, p.ID) },
+		func(v any) middleware.Responder { return ops.NewGetDiscoveriesIDUpgradesOK().WithPayload(v.([]any)) })
+}
+
+func (h discoveryOne) Handle(p ops.GetDiscoveriesIDUpgradesUIDParams) middleware.Responder {
+	return respond(p.HTTPRequest.Context(), func(ctx context.Context) (any, error) { return h.one(ctx, p.UID, 0, p.ID) },
+		func(v any) middleware.Responder { return ops.NewGetDiscoveriesIDUpgradesUIDOK().WithPayload(v) })
+}
+
+func (h discoveryStart) Handle(p ops.PostDiscoveriesIDUpgradesParams) middleware.Responder {
+	ctx := p.HTTPRequest.Context()
+	t, err := h.discoveryTarget(ctx, p.ID)
+	if err != nil {
+		return badPayload(err)
+	}
+	return respond(ctx, func(ctx context.Context) (any, error) { return h.start(ctx, t, p.Body) },
+		func(v any) middleware.Responder { return ops.NewPostDiscoveriesIDUpgradesOK().WithPayload(v) })
+}
+
+/* ------------------------------------------------------------ targets */
+
+// target: what an upgrade runs on - an inventory, and maybe a stored SSH secret
+type target struct {
+	clusterID, discoveryID int64
+	projectID              int64
+	secretID               *int64
+	inventory              []byte
+}
+
+func (h *Handlers) clusterTarget(ctx context.Context, id int64) (*target, error) {
+	cl, err := h.db.GetCluster(ctx, id)
+	if err != nil || cl == nil {
+		return nil, fmt.Errorf("cluster %d not found", id)
+	}
+	if len(cl.Inventory) == 0 || string(cl.Inventory) == "null" {
+		return nil, errors.New("this cluster has no inventory in the console: run Discover on it and upgrade from the saved discovery")
+	}
+	return &target{clusterID: id, projectID: cl.ProjectID, secretID: cl.SecretID, inventory: cl.Inventory}, nil
+}
+
+// discoveryTarget: the inventory of a setup found by Discover - one group pgm_<component> per component, with the
+// machines where it was found (any setup, whoever built it).
+func (h *Handlers) discoveryTarget(ctx context.Context, id int64) (*target, error) {
+	d, err := h.db.GetDiscovery(ctx, id)
+	if err != nil || d == nil {
+		return nil, fmt.Errorf("saved discovery %d not found", id)
+	}
+	inv, err := InventoryFromDiscovery(d.Result)
+	if err != nil {
+		return nil, err
+	}
+	return &target{discoveryID: id, inventory: inv}, nil
+}
+
+// InventoryFromDiscovery turns a Discover result into an Ansible inventory (JSON).
+func InventoryFromDiscovery(result []byte) ([]byte, error) {
+	var r struct {
+		Infra *struct {
+			Hosts []struct {
+				Address    string `json:"address"`
+				Name       string `json:"name"`
+				Components []struct {
+					Kind    string   `json:"kind"`
+					Sources []string `json:"sources"`
+				} `json:"components"`
+			} `json:"hosts"`
+		} `json:"infra"`
+	}
+	if err := json.Unmarshal(result, &r); err != nil {
+		return nil, err
+	}
+	if r.Infra == nil || len(r.Infra.Hosts) == 0 {
+		return nil, errors.New("this discovery has no machines: run Discover again (with SSH) and save it")
+	}
+	children := map[string]map[string]any{}
+	for _, h := range r.Infra.Hosts {
+		for _, c := range h.Components {
+			if c.Kind == "docker" || c.Kind == "podman" || component(c.Kind) == nil {
+				continue
+			}
+			g := "pgm_" + strings.ReplaceAll(c.Kind, "-", "_")
+			if children[g] == nil {
+				children[g] = map[string]any{"hosts": map[string]any{}}
+			}
+			hv := map[string]any{}
+			if h.Name != "" && h.Name != h.Address {
+				hv["hostname"] = h.Name
+			}
+			children[g]["hosts"].(map[string]any)[h.Address] = hv
+		}
+	}
+	if len(children) == 0 {
+		return nil, errors.New("Discover found no upgradable component in this setup")
+	}
+	return json.Marshal(map[string]any{"all": map[string]any{"children": children}})
+}
+
+/* ------------------------------------------------------------ start */
 
 // options: what the playbook gets (and what is stored - never the SSH secrets)
 type options struct {
@@ -143,67 +287,63 @@ type options struct {
 	RestoreConfig bool     `json:"restore_config,omitempty"`
 	BinaryURL     string   `json:"binary_url,omitempty"`
 	Hosts         []string `json:"hosts,omitempty"`
+	Repo          *repo    `json:"repo,omitempty"`
 }
 
-func (h *startHandler) Handle(p ops.PostClustersIDUpgradesParams) middleware.Responder {
-	ctx := p.HTTPRequest.Context()
-	bad := func(err error) middleware.Responder {
-		return ops.NewPostClustersIDUpgradesBadRequest().WithPayload(controllers.MakeErrorPayload(err, controllers.BaseError))
+type repo struct {
+	URL      string `json:"url"`
+	Only     bool   `json:"only,omitempty"`
+	GPGCheck bool   `json:"gpgcheck,omitempty"`
+	GPGKey   string `json:"gpgkey,omitempty"`
+}
+
+func (h *Handlers) start(ctx context.Context, t *target, b *models.RequestUpgrade) (any, error) {
+	if b == nil || b.Component == nil || b.Action == nil {
+		return nil, errors.New("component and action are required")
 	}
-	b := p.Body
-	if b == nil {
-		return bad(errors.New("body required"))
-	}
-	compName, action := "", ""
-	if b.Component != nil {
-		compName = *b.Component
-	}
-	if b.Action != nil {
-		action = *b.Action
-	}
+	compName, action := *b.Component, *b.Action
 	if component(compName) == nil {
-		return bad(fmt.Errorf("unknown component %q", compName))
+		return nil, fmt.Errorf("unknown component %q", compName)
 	}
 	switch action {
 	case "plan", "run", "rollback":
 	default:
-		return bad(errors.New("action must be plan, run or rollback"))
+		return nil, errors.New("action must be plan, run or rollback")
 	}
-	cl, err := h.db.GetCluster(ctx, p.ID)
-	if err != nil || cl == nil {
-		return bad(fmt.Errorf("cluster %d not found", p.ID))
-	}
-	if len(cl.Inventory) == 0 || string(cl.Inventory) == "null" {
-		return bad(errors.New("this cluster has no inventory in the console (deploy or import it with one first)"))
-	}
-	list, err := h.db.ListUpgrades(ctx, p.ID, 20)
+	list, err := h.db.ListUpgrades(ctx, t.clusterID, t.discoveryID, 20)
 	if err != nil {
-		return bad(err)
+		return nil, err
 	}
 	for _, u := range list {
 		if u.Status == "running" {
-			return bad(fmt.Errorf("upgrade #%d (%s %s) is still running on this cluster", u.ID, u.Action, u.Component))
+			return nil, fmt.Errorf("upgrade #%d (%s %s) is still running on this setup", u.ID, u.Action, u.Component)
 		}
 	}
 
 	opt := options{Target: strings.TrimSpace(b.Target), AllowUnsaved: b.AllowUnsaved, RestoreConfig: b.RestoreConfig,
 		BinaryURL: strings.TrimSpace(b.BinaryURL), Hosts: b.Hosts}
+	if u := strings.TrimSpace(b.RepoURL); u != "" {
+		opt.Repo = &repo{URL: u, Only: b.RepoOnly, GPGCheck: b.RepoGpgcheck, GPGKey: strings.TrimSpace(b.RepoGpgkey)}
+	}
 	var parentID *int64
 	runID := int64(0)
 	if action != "plan" {
 		if b.ParentID == 0 {
-			return bad(errors.New("parent_id is required: a run follows a plan, a rollback follows a run"))
+			return nil, errors.New("parent_id is required: a run follows a plan, a rollback follows a run")
 		}
 		parent, err := h.db.GetUpgrade(ctx, b.ParentID)
-		if err != nil || parent == nil || parent.ClusterID != p.ID || parent.Component != compName {
-			return bad(errors.New("parent upgrade not found for this cluster and component"))
+		same := parent != nil && parent.Component == compName &&
+			(t.clusterID != 0 && parent.ClusterID != nil && *parent.ClusterID == t.clusterID ||
+				t.discoveryID != 0 && parent.DiscoveryID != nil && *parent.DiscoveryID == t.discoveryID)
+		if err != nil || !same {
+			return nil, errors.New("parent upgrade not found for this setup and component")
 		}
 		want := map[string]string{"run": "plan", "rollback": "run"}[action]
 		if parent.Action != want {
-			return bad(fmt.Errorf("a %s follows a %s (#%d is a %s)", action, want, parent.ID, parent.Action))
+			return nil, fmt.Errorf("a %s follows a %s (#%d is a %s)", action, want, parent.ID, parent.Action)
 		}
 		if action == "run" && parent.Status != "success" {
-			return bad(errors.New("the plan did not finish successfully: run the dry run again"))
+			return nil, errors.New("the dry run did not finish successfully: run it again")
 		}
 		var po options
 		_ = json.Unmarshal(parent.Options, &po)
@@ -216,13 +356,23 @@ func (h *startHandler) Handle(p ops.PostClustersIDUpgradesParams) middleware.Res
 		if len(opt.Hosts) == 0 {
 			opt.Hosts = po.Hosts
 		}
+		if opt.Repo == nil {
+			opt.Repo = po.Repo // the same packages as in the dry run
+		}
 		if action == "rollback" {
 			runID = parent.ID
 		}
 		parentID = &parent.ID
 	}
-	if opt.BinaryURL != "" && !strings.HasPrefix(opt.BinaryURL, "https://") && !strings.HasPrefix(opt.BinaryURL, "http://") {
-		return bad(errors.New("the download address must start with http:// or https://"))
+	for _, u := range []string{opt.BinaryURL, func() string {
+		if opt.Repo != nil && !strings.HasPrefix(opt.Repo.URL, "deb ") {
+			return opt.Repo.URL
+		}
+		return ""
+	}()} {
+		if u != "" && !strings.HasPrefix(u, "https://") && !strings.HasPrefix(u, "http://") && !strings.HasPrefix(u, "file://") {
+			return nil, fmt.Errorf("%q: an address must start with http://, https:// or file://", u)
+		}
 	}
 
 	// SSH: the login given now, else the cluster's stored secret
@@ -230,29 +380,30 @@ func (h *startHandler) Handle(p ops.PostClustersIDUpgradesParams) middleware.Res
 	extra := map[string]any{}
 	if u := strings.TrimSpace(b.SSHUser); u != "" {
 		extra["ansible_user"] = u
+		if b.SSHPort > 0 {
+			extra["ansible_port"] = b.SSHPort
+		}
 		if b.SSHKey != "" {
 			envs = append(envs, "SSH_PRIVATE_KEY_CONTENT="+base64.StdEncoding.EncodeToString([]byte(strings.TrimSpace(b.SSHKey)+"\n")))
 		}
 		if b.SSHPassword != "" {
 			extra["ansible_ssh_pass"] = b.SSHPassword
-			extra["ansible_sudo_pass"] = b.SSHPassword
+			extra["ansible_become_pass"] = b.SSHPassword
 		}
-	} else if cl.SecretID != nil {
-		senv, asExtra, err := clusterctl.SecretEnvs(ctx, h.db, *cl.SecretID, h.cfg.EncryptionKey, cl.ProjectID)
+	} else if t.secretID != nil {
+		senv, asExtra, err := clusterctl.SecretEnvs(ctx, h.db, *t.secretID, h.cfg.EncryptionKey, t.projectID)
 		if err != nil {
-			return bad(fmt.Errorf("the cluster's SSH secret: %w", err))
+			return nil, fmt.Errorf("the cluster's SSH secret: %w", err)
 		}
 		for _, kv := range senv {
-			if asExtra {
-				if k, v, ok := strings.Cut(kv, "="); ok {
-					extra[k] = v
-				}
-			} else {
+			if k, v, ok := strings.Cut(kv, "="); ok && asExtra {
+				extra[k] = v
+			} else if !asExtra {
 				envs = append(envs, kv)
 			}
 		}
 	} else {
-		return bad(errors.New("no SSH login: this cluster has no stored secret, so give the SSH user and password or key"))
+		return nil, errors.New("give the SSH user and password or key (used for this run only)")
 	}
 
 	by := ""
@@ -260,42 +411,44 @@ func (h *startHandler) Handle(p ops.PostClustersIDUpgradesParams) middleware.Res
 		by = pr.Username
 	}
 	optJSON, _ := json.Marshal(opt)
-	up, err := h.db.CreateUpgrade(ctx, &storage.Upgrade{ClusterID: p.ID, Component: compName, Action: action,
-		ParentID: parentID, Options: optJSON, CreatedBy: by})
+	nz := func(v int64) *int64 {
+		if v == 0 {
+			return nil
+		}
+		return &v
+	}
+	up, err := h.db.CreateUpgrade(ctx, &storage.Upgrade{ClusterID: nz(t.clusterID), DiscoveryID: nz(t.discoveryID),
+		Component: compName, Action: action, ParentID: parentID, Options: optJSON, CreatedBy: by})
 	if err != nil {
-		return bad(err)
+		return nil, err
 	}
 	if runID == 0 {
 		runID = up.ID
 	}
-	fail := func(err error) middleware.Responder {
+	failed := func(err error) (any, error) {
 		_ = h.db.FinishUpgrade(ctx, up.ID, "failed", []byte(fmt.Sprintf(`[{"error": %q}]`, err.Error())))
-		return bad(err)
+		return nil, err
 	}
 
-	pgm := map[string]any{"id": up.ID, "action": action, "component": compName, "run_id": runID, "target": opt.Target,
-		"allow_unsaved": opt.AllowUnsaved, "restore_config": opt.RestoreConfig, "binary_url": opt.BinaryURL, "hosts": opt.Hosts}
-	extra["pgm"] = pgm
+	extra["pgm"] = map[string]any{"id": up.ID, "action": action, "component": compName, "run_id": runID, "target": opt.Target,
+		"allow_unsaved": opt.AllowUnsaved, "restore_config": opt.RestoreConfig, "binary_url": opt.BinaryURL, "hosts": opt.Hosts,
+		"repo": opt.Repo}
 	extraJSON, _ := json.Marshal(extra)
 	envs = append(envs,
-		"ANSIBLE_INVENTORY_JSON="+base64.StdEncoding.EncodeToString(cl.Inventory),
+		"ANSIBLE_INVENTORY_JSON="+base64.StdEncoding.EncodeToString(t.inventory),
 		fmt.Sprintf("ANSIBLE_JSON_LOG_FILE=%s/upgrade-%d.json", ansibleLogDir, up.ID))
+	dockerID, err := h.docker.ManageCluster(ctx, &xdocker.ManageClusterConfig{Image: h.cfg.Docker.UpgradeImage, Envs: envs,
+		ExtraVars: string(extraJSON), Mounts: []xdocker.Mount{{DockerPath: ansibleLogDir, HostPath: h.cfg.Docker.LogDir}}})
+	if err != nil {
+		return failed(fmt.Errorf("could not start the upgrade runner (%s - built by ./build.sh console): %w", h.cfg.Docker.UpgradeImage, err))
+	}
+	_ = h.db.SetUpgradeDocker(ctx, up.ID, string(dockerID))
 
-	dockerID, err := h.docker.ManageCluster(ctx, &xdocker.ManageClusterConfig{Envs: envs, ExtraVars: string(extraJSON),
-		Mounts: []xdocker.Mount{{DockerPath: ansibleLogDir, HostPath: h.cfg.Docker.LogDir}}})
-	if err != nil {
-		return fail(fmt.Errorf("could not start the automation container: %w", err))
-	}
+	// the runner's output, line by line, into the upgrade's log (the watcher finishes the upgrade)
 	cid, _ := ctx.Value(tracer.CtxCidKey{}).(string)
-	op, err := h.db.CreateOperation(ctx, &storage.CreateOperationReq{ProjectID: cl.ProjectID, ClusterID: cl.ID,
-		DockerCode: string(dockerID), Type: storage.OperationTypeUpgrade, Cid: cid})
-	if err != nil {
-		return fail(err)
-	}
-	_ = h.db.SetUpgradeOperation(ctx, up.ID, op.ID)
-	up.OperationID = &op.ID
-	h.logs.StoreInDb(op.ID, dockerID, cid)
-	return ops.NewPostClustersIDUpgradesOK().WithPayload(view(up))
+	lctx := context.WithValue(context.Background(), tracer.CtxCidKey{}, cid)
+	go h.docker.StoreContainerLogs(lctx, dockerID, func(line string) { _ = h.db.AppendUpgradeLog(lctx, up.ID, line) })
+	return view(up, false), nil
 }
 
 const ansibleLogDir = "/tmp/ansible"

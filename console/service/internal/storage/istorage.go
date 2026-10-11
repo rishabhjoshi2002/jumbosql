@@ -37,11 +37,12 @@ type IStorage interface {
 
 	// pg_mantra: component upgrades
 	CreateUpgrade(ctx context.Context, u *Upgrade) (*Upgrade, error)
-	SetUpgradeOperation(ctx context.Context, id, operationID int64) error
+	SetUpgradeDocker(ctx context.Context, id int64, dockerID string) error
+	AppendUpgradeLog(ctx context.Context, id int64, lines string) error
 	FinishUpgrade(ctx context.Context, id int64, status string, result []byte) error
 	GetUpgrade(ctx context.Context, id int64) (*Upgrade, error)
-	GetUpgradeByOperation(ctx context.Context, operationID int64) (*Upgrade, error)
-	ListUpgrades(ctx context.Context, clusterID int64, limit int) ([]Upgrade, error)
+	ListUpgrades(ctx context.Context, clusterID, discoveryID int64, limit int) ([]Upgrade, error)
+	ListRunningUpgrades(ctx context.Context) ([]Upgrade, error)
 	GetInsightSummaries(ctx context.Context, clusterIDs []int64) (map[int64][]byte, error)
 	GetUserPreferences(ctx context.Context, userID int64) ([]byte, error)
 	SaveUserPreferences(ctx context.Context, userID int64, prefs []byte) error

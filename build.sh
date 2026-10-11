@@ -3,6 +3,8 @@
 #
 #   ./build.sh automation   build jumbosql/automation-ha:2.2.0 from automation-ha/ (needs ha-bundle.tar.gz there)
 #   ./build.sh console      build jumbosql/console:<version> (UI + API + console DB + SQL editor)
+#                           and pg_mantra/upgrader:1.0 (Upgrades runner: plain Ansible, no vendor bundle)
+#   ./build.sh upgrader     build only pg_mantra/upgrader:1.0
 #   ./build.sh run          (re)start the console container on port 80
 #   ./build.sh all          automation + console + run
 #
@@ -23,6 +25,7 @@ cd "$(dirname "$0")"
 VERSION=$(tr -d '[:space:]' < console/service/VERSION 2>/dev/null || echo dev)
 CONSOLE_IMAGE="jumbosql/console:${VERSION}"
 AUTOMATION_IMAGE="jumbosql/automation-ha:2.2.0"
+UPGRADER_IMAGE="pg_mantra/upgrader:1.0"
 CONSOLE_POSTGRES_VERSION=${CONSOLE_POSTGRES_VERSION:-16}
 
 build_automation() {
@@ -39,6 +42,13 @@ build_automation() {
 build_console() {
   docker build -f console/Dockerfile --build-arg POSTGRES_VERSION="$CONSOLE_POSTGRES_VERSION" -t "$CONSOLE_IMAGE" .
   echo "built $CONSOLE_IMAGE"
+  build_upgrader
+}
+
+# the Upgrades runner: plain Ansible + pg_mantra's upgrade playbook (no vendor bundle needed)
+build_upgrader() {
+  docker build -f automation-ha/upgrade/Dockerfile -t "$UPGRADER_IMAGE" automation-ha
+  echo "built $UPGRADER_IMAGE"
 }
 
 # KVM host (libvirt NAT network): libvirt rejects new connections into its VM networks (virbr*) that come
@@ -95,13 +105,15 @@ run_console() {
                 --env PG_CONSOLE_VAULT_PASSWORD_FILE=/run/secrets/jumbosql_vault_pass)
   fi
 
-  docker inspect "$AUTOMATION_IMAGE" >/dev/null 2>&1 || echo "warning: $AUTOMATION_IMAGE not built yet (./build.sh automation)" >&2
+  docker inspect "$AUTOMATION_IMAGE" >/dev/null 2>&1 || echo "warning: $AUTOMATION_IMAGE not built yet (./build.sh automation) - needed only to deploy clusters" >&2
+  docker inspect "$UPGRADER_IMAGE" >/dev/null 2>&1 || echo "warning: $UPGRADER_IMAGE not built yet (./build.sh upgrader) - needed for Upgrades" >&2
   docker rm -f jumbosql-console >/dev/null 2>&1 || true
   docker run -d --name jumbosql-console \
     --publish "${JUMBOSQL_PORT:-80}:80" \
     --env PG_CONSOLE_AUTHORIZATION_TOKEN="$JUMBOSQL_TOKEN" \
     ${JUMBOSQL_ADMIN_PASSWORD:+--env PG_CONSOLE_AUTH_ADMIN_PASSWORD="$JUMBOSQL_ADMIN_PASSWORD"} \
     --env PG_CONSOLE_DOCKER_IMAGE="$AUTOMATION_IMAGE" \
+    --env PG_CONSOLE_DOCKER_UPGRADEIMAGE="$UPGRADER_IMAGE" \
     "${VAULT_ARGS[@]}" \
     ${PATRONI_PORT:+--env PG_CONSOLE_PATRONI_PORT="$PATRONI_PORT"} \
     ${PATRONI_USERNAME:+--env PG_CONSOLE_PATRONI_USERNAME="$PATRONI_USERNAME"} \
@@ -118,6 +130,7 @@ run_console() {
 case "${1:-}" in
   automation) build_automation ;;
   console) build_console ;;
+  upgrader) build_upgrader ;;
   run) run_console ;;
   all) build_automation; build_console; run_console ;;
   *) sed -n '2,12p' "$0"; exit 1 ;;

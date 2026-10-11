@@ -57,7 +57,9 @@ export type UHostResult = {
 };
 export type Upgrade = {
   id: number;
-  cluster_id: number;
+  cluster_id?: number | null;
+  discovery_id?: number | null;
+  log?: string;
   component: string;
   action: 'plan' | 'run' | 'rollback';
   status: 'running' | 'success' | 'failed';
@@ -69,6 +71,7 @@ export type Upgrade = {
     restore_config?: boolean;
     binary_url?: string;
     hosts?: string[];
+    repo?: { url: string; only?: boolean; gpgcheck?: boolean; gpgkey?: string } | null;
   } | null;
   result: (UHostResult | { error: string })[] | null;
   created_by: string;
@@ -87,21 +90,34 @@ export type UpgradeRequest = {
   ssh_user?: string;
   ssh_password?: string;
   ssh_key?: string;
+  ssh_port?: number;
+  repo_url?: string;
+  repo_only?: boolean;
+  repo_gpgcheck?: boolean;
+  repo_gpgkey?: string;
 };
+
+/** where an upgrade runs: a setup found by Discover (a saved discovery) or a cluster of the console */
+export type UTarget = { kind: 'discoveries' | 'clusters'; id: number };
+const base = (t: UTarget) => `/${t.kind}/${t.id}/upgrades`;
 
 const injectedRtkApi = api.enhanceEndpoints({ addTagTypes: ['Upgrades'] }).injectEndpoints({
   endpoints: (build) => ({
     getUpgradeComponents: build.query<UComponent[], void>({ query: () => ({ url: `/upgrade/components` }) }),
-    getUpgrades: build.query<Upgrade[], number>({
-      query: (clusterId) => ({ url: `/clusters/${clusterId}/upgrades` }),
-      providesTags: (_r, _e, id) => [{ type: 'Upgrades', id }],
+    getUpgrades: build.query<Upgrade[], UTarget>({
+      query: (t) => ({ url: base(t) }),
+      providesTags: (_r, _e, t) => [{ type: 'Upgrades', id: `${t.kind}/${t.id}` }],
     }),
-    postUpgrade: build.mutation<Upgrade, { clusterId: number; body: UpgradeRequest }>({
-      query: ({ clusterId, body }) => ({ url: `/clusters/${clusterId}/upgrades`, method: 'POST', body }),
-      invalidatesTags: (_r, _e, { clusterId }) => [{ type: 'Upgrades', id: clusterId }],
+    getUpgrade: build.query<Upgrade, UTarget & { uid: number }>({
+      query: (t) => ({ url: `${base(t)}/${t.uid}` }),
+    }),
+    postUpgrade: build.mutation<Upgrade, { target: UTarget; body: UpgradeRequest }>({
+      query: ({ target, body }) => ({ url: base(target), method: 'POST', body }),
+      invalidatesTags: (_r, _e, { target }) => [{ type: 'Upgrades', id: `${target.kind}/${target.id}` }],
     }),
   }),
   overrideExisting: false,
 });
 
-export const { useGetUpgradeComponentsQuery, useGetUpgradesQuery, usePostUpgradeMutation } = injectedRtkApi;
+export const { useGetUpgradeComponentsQuery, useGetUpgradesQuery, useGetUpgradeQuery, usePostUpgradeMutation } =
+  injectedRtkApi;

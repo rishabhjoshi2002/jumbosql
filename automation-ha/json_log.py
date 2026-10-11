@@ -96,7 +96,9 @@ class CallbackModule(CallbackBase):
         self._record_task_result(result)
 
     def v2_runner_on_unreachable(self, result):
-        # Records the result of a task that failed because the host was unreachable.
+        # Records the result of a task that failed because the host was unreachable (as a failure, so the console
+        # can tell which host it was).
+        result._result.setdefault('failed', True)
         self._record_task_result(result)
 
     def v2_playbook_on_stats(self, stats):

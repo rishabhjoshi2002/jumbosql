@@ -4,6 +4,7 @@ with every group kept. Usage: pgm_inventory.py INVENTORY_JSON OUT_YML"""
 import json
 import sys
 
+sys.path.insert(0, "/pgm")
 sys.path.insert(0, "/ha")
 try:
     from inventory_to_ha import emit_group  # same YAML writer as the deployment

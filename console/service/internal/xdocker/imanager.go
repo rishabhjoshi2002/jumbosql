@@ -4,6 +4,7 @@ import "context"
 
 type InstanceID string
 type ManageClusterConfig struct {
+	Image     string // pg_mantra: another image than the deployment one (Upgrades runner); empty = default
 	Envs      []string
 	ExtraVars string // JSON string
 	Mounts    []Mount

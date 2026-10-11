@@ -1,6 +1,6 @@
 {
   "title": "Upgrades",
-  "help": "Upgrade one component of a cluster: dry run first, then one node at a time, with the old version kept for a rollback.",
+  "help": "Upgrade one component of any setup (found by Discover, or built by pg_mantra): dry run first, then one node at a time, with the old version kept for a rollback.",
   "what": "What to upgrade",
   "cluster": "Cluster",
   "component": "Component",
@@ -77,5 +77,18 @@
   "s_wait": "wait until healthy (stops here if not)",
   "s_nothing": "nothing to install",
   "s_notInstalled": "not installed here",
-  "button": "Upgrades"
+  "button": "Upgrades",
+  "kindDiscovered": "Found by Discover",
+  "kindCluster": "Console cluster",
+  "setup": "Saved discovery",
+  "noDiscoveries": "Run Discover (with SSH) and save the result first.",
+  "repoUrl": "Package repository (optional)",
+  "repoPlaceholder": "https://repo.example/pg/el9/  or  deb https://repo.example/apt ./",
+  "repoHelp": "Your private repository: added on the nodes for each step, removed after. Empty = the repositories the nodes already have.",
+  "repoOnly": "Take the packages only from this repository",
+  "repoGpg": "Check package signatures (GPG)",
+  "repoGpgKey": "GPG key address",
+  "sshHelpDiscovered": "SSH login for the nodes (this run only, never saved).",
+  "sshPort": "Port",
+  "fixFirst": "Some nodes could not be checked (see the table). Fix that and run the dry run again before upgrading."
 }

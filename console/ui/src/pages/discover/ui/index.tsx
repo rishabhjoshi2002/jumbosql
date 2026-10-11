@@ -35,6 +35,10 @@ import ErrorOutlineIcon from '@mui/icons-material/ErrorOutline';
 import WarningAmberIcon from '@mui/icons-material/WarningAmber';
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
+import SystemUpdateAltIcon from '@mui/icons-material/SystemUpdateAlt';
+import { Link } from 'react-router-dom';
+import { canAny } from '@shared/lib/session.ts';
+import { useSessionUser } from '@shared/lib/useSession.ts';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'react-toastify';
 import {
@@ -80,6 +84,7 @@ const isAnsible = (s: string) => /^\s*\[[^\]]+\]\s*$/m.test(s) || /^\s*all:\s*$/
 /** pg_mantra Discover: point at any PostgreSQL servers, get the architecture and every detail. */
 const Discover: FC = () => {
   const { t } = useTranslation('discover');
+  const user = useSessionUser();
   const colors = useRoleColors();
   const [form, setForm] = useState({
     inventory: '',
@@ -536,6 +541,13 @@ const Discover: FC = () => {
                         <ReplayIcon />
                       </IconButton>
                     </Tooltip>
+                    {current.id && canAny(['upgrade.run'], undefined, user) ? (
+                      <Tooltip title={t('upgradeThis')}>
+                        <IconButton component={Link} to={`/upgrades?discovery=${current.id}`}>
+                          <SystemUpdateAltIcon />
+                        </IconButton>
+                      </Tooltip>
+                    ) : null}
                     <Tooltip title={t('download')}>
                       <IconButton onClick={download}>
                         <DownloadOutlined />

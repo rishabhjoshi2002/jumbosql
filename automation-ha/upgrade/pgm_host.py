@@ -38,6 +38,10 @@ def done(code=0):
 
 def fail(msg):
     OUT["error"] = msg
+    try:
+        remove_repo()
+    except Exception:  # noqa: BLE001
+        pass
     done(2)
 
 
@@ -61,6 +65,46 @@ def which(*names):
 
 PM = "dnf" if which("dnf") else "yum" if which("yum") else "apt" if which("apt-get") else None
 FAMILY = "rpm" if PM in ("dnf", "yum") else "deb" if PM == "apt" else None
+REPO_ARGS = []  # dnf/yum: --disablerepo=* --enablerepo=pg_mantra-upgrade when "use only this repository"
+REPO_FILE = "/etc/yum.repos.d/pg_mantra-upgrade.repo" if FAMILY == "rpm" else "/etc/apt/sources.list.d/pg_mantra-upgrade.list"
+
+
+def pm(*args):
+    """the package manager command, limited to the private repository when asked"""
+    return [PM, *REPO_ARGS, *args]
+
+
+def add_repo(spec):
+    """your private repository, for this action only (removed again when it ends)"""
+    r = spec.get("repo") or {}
+    url = (r.get("url") or "").strip()
+    if not url:
+        return
+    if FAMILY == "rpm":
+        lines = ["[pg_mantra-upgrade]", "name=pg_mantra upgrade repository", f"baseurl={url}", "enabled=1",
+                 f"gpgcheck={1 if r.get('gpgcheck') else 0}", "repo_gpgcheck=0", "module_hotfixes=1"]
+        if r.get("gpgkey"):
+            lines.append(f"gpgkey={r['gpgkey']}")
+        with open(REPO_FILE, "w") as f:
+            f.write("\n".join(lines) + "\n")
+        if r.get("only"):
+            REPO_ARGS[:] = ["--disablerepo=*", "--enablerepo=pg_mantra-upgrade"]
+        sh(pm("-q", "makecache"), timeout=600)
+    elif FAMILY == "deb":
+        line = url if url.startswith("deb ") else f"deb [trusted=yes] {url} ./"
+        with open(REPO_FILE, "w") as f:
+            f.write(line + "\n")
+        rc, _, e = sh(["apt-get", "update", "-q"], timeout=600)
+        if rc != 0:
+            OUT["warnings"].append("apt-get update: " + e.strip()[-200:])
+        if r.get("only"):
+            OUT["warnings"].append("'only this repository' works with dnf / yum; apt uses all its sources")
+    OUT["repo"] = url
+
+
+def remove_repo():
+    if os.path.exists(REPO_FILE) and OUT.get("repo"):
+        os.remove(REPO_FILE)
 
 
 # ---------------------------------------------------------------- versions
@@ -119,7 +163,7 @@ def installed_packages(names):
 def available_versions(name):
     vs = []
     if FAMILY == "rpm":
-        rc, o, _ = sh([PM, "-q", "list", "--showduplicates", "--available", name], timeout=300)
+        rc, o, _ = sh(pm("-q", "list", "--showduplicates", "--available", name), timeout=300)
         for line in o.splitlines():
             f = line.split()
             if len(f) >= 2 and f[0].split(".")[0] == name:
@@ -216,7 +260,13 @@ def binary_info(spec):
 # ---------------------------------------------------------------- Patroni
 
 def patroni_conf():
-    for f in ("/etc/patroni/patroni.yml", "/etc/patroni.yml", "/etc/patroni/config.yml"):
+    # the config the running Patroni was started with, else the usual places
+    _, o, _ = sh("ps -eo args")
+    for line in o.splitlines():
+        f = line.split()
+        if f and "patroni" in line and not "patronictl" in line and f[-1].endswith((".yml", ".yaml")) and os.path.exists(f[-1]):
+            return f[-1]
+    for f in ("/etc/patroni/patroni.yml", "/etc/patroni.yml", "/etc/patroni/config.yml", *sorted(glob.glob("/etc/patroni/*.yml"))):
         if os.path.exists(f):
             return f
     return None
@@ -261,6 +311,27 @@ def wait_patroni(want_role=None, timeout=300):
             return st
         time.sleep(3)
     fail(f"Patroni did not report a running {want_role or 'member'} within {timeout}s (last: {patroni_state()})")
+
+
+# ---------------------------------------------------------------- PostgreSQL without Patroni
+
+def pg_tool(name):
+    for p in sorted(glob.glob(f"/usr/pgsql-*/bin/{name}") + glob.glob(f"/usr/lib/postgresql/*/bin/{name}"), reverse=True):
+        return p
+    return which(name)
+
+
+def pg_local_role(port):
+    psql = pg_tool("psql")
+    if not psql:
+        return ""
+    rc, o, _ = sh(["su", "-", "postgres", "-s", "/bin/sh", "-c", f"{psql} -XAt -p {port} -c 'select pg_is_in_recovery()'"])
+    return {"t": "replica", "f": "primary"}.get(o.strip(), "") if rc == 0 else ""
+
+
+def pg_units():
+    _, o, _ = sh(["systemctl", "list-units", "--type=service", "--state=active", "--plain", "--no-legend", "postgresql*"])
+    return [line.split()[0] for line in o.splitlines() if line.strip()]
 
 
 # ---------------------------------------------------------------- services
@@ -320,6 +391,9 @@ def detect(spec):
     OUT["services"] = services(spec)
     if spec["component"] in ("postgres", "patroni"):
         OUT["patroni"] = patroni_state()
+    if spec["component"] == "postgres" and not (OUT.get("patroni") or {}).get("role"):
+        OUT["pg_role"] = pg_local_role((spec.get("ports") or [5432])[0])
+        OUT["pg_units"] = pg_units()
     base = spec.get("base", "/var/lib/pg_mantra/upgrade")
     probe = base
     while not os.path.exists(probe):
@@ -352,7 +426,7 @@ def preserve(spec):
         before = set(os.listdir(d))
         if FAMILY == "rpm":
             nv = f"{name}-{ver.split(':')[-1]}"
-            rc, _, e = sh([PM, "-q", "download", "--destdir", d, f"{nv}.{p['arch']}"], timeout=600)
+            rc, _, e = sh(pm("-q", "download", "--destdir", d, f"{nv}.{p['arch']}"), timeout=600)
             if rc != 0:
                 for f in glob.glob(f"/var/cache/{PM}/**/{nv}.{p['arch']}.rpm", recursive=True):
                     shutil.copy2(f, d)
@@ -411,7 +485,7 @@ def upgrade(spec):
     todo = [p for p in info["packages"] if p["candidate"]]
     if todo:
         if FAMILY == "rpm":
-            sh([PM, "-y", "install"] + [f"{p['name']}-{p['candidate'].split(':')[-1]}" for p in todo], check=True, timeout=1800)
+            sh(pm("-y", "install", *[f"{p['name']}-{p['candidate'].split(':')[-1]}" for p in todo]), check=True, timeout=1800)
         else:
             sh(["apt-get", "install", "-y", "--only-upgrade", "-o", "Dpkg::Options::=--force-confold", "-o", "Dpkg::Options::=--force-confdef"]
                + [f"{p['name']}={p['candidate']}" for p in todo], check=True, timeout=1800)
@@ -454,7 +528,7 @@ def rollback(spec):
         files = [os.path.join(d, f) for s in m["saved"] for f in s["files"] if f.endswith((".rpm", ".deb"))]
         if FAMILY == "rpm":
             args = files or [f"{p['name']}-{p['installed'].split(':')[-1]}" for p in back]
-            sh([PM, "-y", "downgrade"] + args, check=True, timeout=1800)
+            sh(pm("-y", "downgrade", *args), check=True, timeout=1800)
         else:
             args = files or [f"{p['name']}={p['installed']}" for p in back]
             sh(["apt-get", "install", "-y", "--allow-downgrades", "-o", "Dpkg::Options::=--force-confold",
@@ -480,6 +554,14 @@ def rollback(spec):
 
 def restart(spec):
     comp = spec["component"]
+    if comp == "postgres" and not (patroni_state() or {}).get("role"):
+        units = pg_units()  # no Patroni: restart the PostgreSQL service itself
+        if not units:
+            fail("no running postgresql service found to restart")
+        for u in units:
+            sh(["systemctl", "restart", u], check=True, timeout=600)
+        OUT["restarted"] = units
+        return OUT
     if comp == "postgres":
         st = patroni_state() or {}
         rc, o, e = patronictl("restart", st.get("scope", ""), st.get("member", ""), "--force")
@@ -499,6 +581,15 @@ def restart(spec):
 
 def health(spec):
     comp, t0, timeout = spec["component"], time.time(), int(spec.get("health_timeout", 300))
+    if comp == "postgres" and not (patroni_state() or {}).get("role"):
+        ready = pg_tool("pg_isready")
+        port = (spec.get("ports") or [5432])[0]
+        while time.time() - t0 < timeout:
+            if ready and sh([ready, "-q", "-h", "127.0.0.1", "-p", str(port)])[0] == 0 or not ready and port_open(port):
+                OUT["healthy"] = True
+                return OUT
+            time.sleep(3)
+        fail(f"PostgreSQL does not accept connections on port {port} after {timeout}s")
     if comp in ("postgres", "patroni"):
         OUT["patroni"] = wait_patroni(timeout=timeout)
         return OUT
@@ -555,6 +646,8 @@ def main():
     OUT.update(action=action, component=spec.get("component"), host=os.uname().nodename)
     acts = {"detect": detect, "preserve": preserve, "upgrade": upgrade, "rollback": rollback, "restart": restart, "health": health}
     try:
+        if action in ("detect", "preserve", "upgrade", "rollback"):
+            add_repo(spec)
         if action in acts:
             acts[action](spec)
         elif action.startswith("patroni-"):
@@ -564,7 +657,9 @@ def main():
     except subprocess.TimeoutExpired as e:
         fail(f"timed out: {e}")
     except Exception as e:  # noqa: BLE001 - report, never a traceback the console cannot read
+        remove_repo()
         fail(f"{type(e).__name__}: {e}")
+    remove_repo()
     done(0)
 
 

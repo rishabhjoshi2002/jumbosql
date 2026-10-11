@@ -2,6 +2,7 @@ package watcher
 
 type LogEntity struct {
 	Task    string      `json:"task"`
+	Host    string      `json:"host,omitempty"`
 	Failed  bool        `json:"failed"`
 	Msg     interface{} `json:"msg"`
 	Summary interface{} `json:"summary,omitempty"`

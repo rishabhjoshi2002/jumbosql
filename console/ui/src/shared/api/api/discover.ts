@@ -397,5 +397,6 @@ export const {
   usePostDiscoverMutation,
   useGetDiscoveriesQuery,
   useLazyGetDiscoveryQuery,
+  useGetDiscoveryQuery,
   useDeleteDiscoveryMutation,
 } = injectedRtkApi;

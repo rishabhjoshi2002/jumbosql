@@ -84,6 +84,7 @@ func (lw *logWatcher) loop() {
 }
 
 func (lw *logWatcher) doWork() {
+	lw.doUpgrades()
 	lw.log.Debug().Msg("starting to collect info about operations performed on clusters")
 	operations, err := lw.db.GetInProgressOperations(lw.ctx, time.Now().Add(-lw.cfg.LogWatcher.AnalyzePast))
 	if err != nil {
@@ -104,11 +105,7 @@ func (lw *logWatcher) doWork() {
 		localLog.Trace().Str("container_status", containerStatus).Msg("got container status")
 		switch containerStatus {
 		case ContainerStatusExited, ContainerStatusDead, ContainerStatusRemoving:
-			if op.Type == storage.OperationTypeUpgrade {
-				lw.collectUpgradeLog(opCtx, &op, localLog)
-			} else {
-				lw.collectContainerLog(opCtx, &op, localLog)
-			}
+			lw.collectContainerLog(opCtx, &op, localLog)
 			err = lw.dockerManager.RemoveContainer(opCtx, xdocker.InstanceID(op.DockerCode))
 			if err != nil {
 				localLog.Error().Err(err).Msg("failed to remove container")

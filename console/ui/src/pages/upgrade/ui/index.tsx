@@ -23,6 +23,8 @@ import {
   TableHead,
   TableRow,
   TextField,
+  ToggleButton,
+  ToggleButtonGroup,
   Typography,
 } from '@mui/material';
 import PlayArrowIcon from '@mui/icons-material/PlayArrow';
@@ -31,13 +33,16 @@ import UndoIcon from '@mui/icons-material/Undo';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'react-toastify';
 import { useGetClustersQuery } from '@shared/api/api/clusters.ts';
-import { useGetOperationsByIdLogQuery } from '@shared/api/api/operations.ts';
+import { useGetDiscoveriesQuery, useGetDiscoveryQuery } from '@shared/api/api/discover.ts';
+import { useSearchParams } from 'react-router-dom';
 import {
   UHostResult,
   Upgrade,
   UpgradeRequest,
   useGetUpgradeComponentsQuery,
+  useGetUpgradeQuery,
   useGetUpgradesQuery,
+  UTarget,
   usePostUpgradeMutation,
 } from '@shared/api/api/upgrade.ts';
 import { selectCurrentProject } from '@app/redux/slices/projectSlice/projectSelectors.ts';
@@ -53,39 +58,76 @@ const STATUS = { running: 'info', success: 'success', failed: 'error' } as const
 
 const isHost = (r: unknown): r is UHostResult => !!r && typeof r === 'object' && 'host' in r;
 
-/** pg_mantra Upgrades: one component of one cluster - dry run, upgrade (old version kept), rollback. */
+/** pg_mantra Upgrades: one component of a setup (found by Discover, or a console cluster) - dry run, upgrade
+ * (old version kept), rollback. */
 const UpgradePage: FC = () => {
   const { t } = useTranslation('upgrade');
   const user = useSessionUser();
+  const [params] = useSearchParams();
   const projectId = Number(useAppSelector(selectCurrentProject));
   const clusters = useGetClustersQuery({ projectId, offset: 0, limit: 999_999_999 }, { skip: !projectId });
   const allowed = useMemo(
     () => (clusters.data?.data ?? []).filter((c) => c.id && can('upgrade.run', c.id, user)),
     [clusters.data, user],
   );
-  const [clusterId, setClusterId] = useState<number>(0);
+  const discoveries = useGetDiscoveriesQuery();
+  const [kind, setKind] = useState<UTarget['kind']>(params.get('cluster') ? 'clusters' : 'discoveries');
+  const [targetId, setTargetId] = useState<number>(Number(params.get('discovery') || params.get('cluster') || 0));
+  const target: UTarget = { kind, id: targetId };
+  const discovery = useGetDiscoveryQuery(targetId, { skip: kind !== 'discoveries' || !targetId });
+  // components Discover found in the setup, and on which machines
+  const found = useMemo(() => {
+    const m: Record<string, string[]> = {};
+    (discovery.data?.result.infra?.hosts ?? []).forEach((h) =>
+      h.components.forEach((c) =>
+        (m[c.kind] ??= []).push(h.name && h.name !== h.address ? `${h.name} (${h.address})` : h.address),
+      ),
+    );
+    return m;
+  }, [discovery.data]);
   const [compName, setCompName] = useState('postgres');
-  const [form, setForm] = useState({ target: '', binary_url: '', ssh_user: '', ssh_password: '', ssh_key: '' });
+  const [form, setForm] = useState({
+    target: '',
+    binary_url: '',
+    ssh_user: '',
+    ssh_password: '',
+    ssh_key: '',
+    ssh_port: '22',
+    repo_url: '',
+    repo_gpgkey: '',
+  });
+  const [repoOnly, setRepoOnly] = useState(false);
+  const [repoGpg, setRepoGpg] = useState(false);
   const [allowUnsaved, setAllowUnsaved] = useState(false);
   const [restoreConfig, setRestoreConfig] = useState(false);
   const [selected, setSelected] = useState<number>(0);
   const [confirm, setConfirm] = useState<null | 'run' | 'rollback'>(null);
   const components = useGetUpgradeComponentsQuery();
+  const offered = useMemo(
+    () => (components.data ?? []).filter((c) => kind === 'clusters' || !discovery.data || found[c.name]),
+    [components.data, kind, discovery.data, found],
+  );
   const comp = components.data?.find((c) => c.name === compName);
 
   useEffect(() => {
-    if (!clusterId && allowed[0]?.id) setClusterId(allowed[0].id);
-  }, [allowed, clusterId]);
+    if (targetId) return;
+    if (kind === 'clusters' && allowed[0]?.id) setTargetId(allowed[0].id);
+    if (kind === 'discoveries' && discoveries.data?.[0]) setTargetId(discoveries.data[0].id);
+  }, [allowed, discoveries.data, kind, targetId]);
+  useEffect(() => {
+    if (offered.length && !offered.some((c) => c.name === compName)) setCompName(offered[0].name);
+  }, [offered, compName]);
 
   const [running, setRunning] = useState(false);
-  const list = useGetUpgradesQuery(clusterId, { skip: !clusterId, pollingInterval: running ? 4000 : 0 });
+  const list = useGetUpgradesQuery(target, { skip: !targetId, pollingInterval: running ? 4000 : 0 });
   const upgrades = useMemo(() => (list.data ?? []).filter((u) => u.component === compName), [list.data, compName]);
   useEffect(() => setRunning((list.data ?? []).some((u) => u.status === 'running')), [list.data]);
   const current: Upgrade | undefined = upgrades.find((u) => u.id === selected) ?? upgrades[0];
-  const log = useGetOperationsByIdLogQuery(
-    { id: current?.operation_id ?? 0 },
-    { skip: !current?.operation_id, pollingInterval: current?.status === 'running' ? 3000 : 0 },
+  const detail = useGetUpgradeQuery(
+    { ...target, uid: current?.id ?? 0 },
+    { skip: !current?.id, pollingInterval: current?.status === 'running' ? 3000 : 0 },
   );
+  const log = { data: { log: detail.data?.id === current?.id ? detail.data?.log : '' } };
   const [post, posting] = usePostUpgradeMutation();
 
   // the latest plan / run of this component, to offer the next step
@@ -99,12 +141,13 @@ const UpgradePage: FC = () => {
     [current, lastPlan, comp, t],
   );
   const anyChange = plan.some((h) => h.changes.length);
+  const anyError = plan.some((h) => h.error);
   const step = !lastPlan ? 0 : !lastRun || (lastRun && lastPlan && lastPlan.id > lastRun.id) ? 1 : rolledBack ? 3 : 2;
 
   const start = async (action: UpgradeRequest['action'], parent?: number) => {
     try {
       const out = await post({
-        clusterId,
+        target,
         body: {
           component: compName,
           action,
@@ -116,6 +159,11 @@ const UpgradePage: FC = () => {
           ssh_user: form.ssh_user.trim() || undefined,
           ssh_password: form.ssh_user.trim() ? form.ssh_password || undefined : undefined,
           ssh_key: form.ssh_user.trim() ? form.ssh_key.trim() || undefined : undefined,
+          ssh_port: Number(form.ssh_port) || undefined,
+          repo_url: action === 'plan' ? form.repo_url.trim() || undefined : undefined,
+          repo_only: action === 'plan' && form.repo_url.trim() ? repoOnly : undefined,
+          repo_gpgcheck: action === 'plan' && form.repo_url.trim() ? repoGpg : undefined,
+          repo_gpgkey: action === 'plan' && repoGpg ? form.repo_gpgkey.trim() || undefined : undefined,
         },
       }).unwrap();
       setSelected(out.id);
@@ -154,20 +202,41 @@ const UpgradePage: FC = () => {
         <Stack gap={2}>
           <Card title={t('what')}>
             <Stack gap={1.5}>
+              <ToggleButtonGroup
+                exclusive
+                size="small"
+                fullWidth
+                value={kind}
+                onChange={(_, v) => {
+                  if (!v) return;
+                  setKind(v);
+                  setTargetId(0);
+                  setSelected(0);
+                }}>
+                <ToggleButton value="discoveries">{t('kindDiscovered')}</ToggleButton>
+                <ToggleButton value="clusters">{t('kindCluster')}</ToggleButton>
+              </ToggleButtonGroup>
               <TextField
                 select
                 size="small"
-                label={t('cluster')}
-                value={clusterId || ''}
+                label={kind === 'clusters' ? t('cluster') : t('setup')}
+                value={targetId || ''}
+                helperText={kind === 'discoveries' && !discoveries.data?.length ? t('noDiscoveries') : undefined}
                 onChange={(e) => {
-                  setClusterId(Number(e.target.value));
+                  setTargetId(Number(e.target.value));
                   setSelected(0);
                 }}>
-                {allowed.map((c) => (
-                  <MenuItem key={c.id} value={c.id}>
-                    {c.name}
-                  </MenuItem>
-                ))}
+                {kind === 'clusters'
+                  ? allowed.map((c) => (
+                      <MenuItem key={c.id} value={c.id}>
+                        {c.name}
+                      </MenuItem>
+                    ))
+                  : (discoveries.data ?? []).map((d) => (
+                      <MenuItem key={d.id} value={d.id}>
+                        #{d.id} {d.name}
+                      </MenuItem>
+                    ))}
               </TextField>
               <TextField
                 select
@@ -178,7 +247,7 @@ const UpgradePage: FC = () => {
                   setCompName(e.target.value);
                   setSelected(0);
                 }}>
-                {(components.data ?? []).map((c) => (
+                {offered.map((c) => (
                   <MenuItem key={c.name} value={c.name}>
                     {c.label}
                   </MenuItem>
@@ -187,7 +256,8 @@ const UpgradePage: FC = () => {
               {comp ? (
                 <Box sx={{ bgcolor: 'action.hover', borderRadius: 1.5, p: 1.25 }}>
                   <Typography variant="caption" component="div">
-                    <b>{t('where')}:</b> {comp.groups.join(', ')}
+                    <b>{t('where')}:</b>{' '}
+                    {kind === 'discoveries' ? (found[comp.name] ?? []).join(', ') || '—' : comp.groups.join(', ')}
                   </Typography>
                   <Typography variant="caption" component="div">
                     <b>{t('order')}:</b> {t(`order_${comp.order}`)}
@@ -208,11 +278,30 @@ const UpgradePage: FC = () => {
                     placeholder: 'https://github.com/etcd-io/etcd/releases/download/v{version}/...',
                   })
                 : null}
+              {field('repo_url', t('repoUrl'), { placeholder: t('repoPlaceholder'), helperText: t('repoHelp') })}
+              {form.repo_url.trim() ? (
+                <Stack>
+                  <FormControlLabel
+                    control={
+                      <Checkbox size="small" checked={repoOnly} onChange={(e) => setRepoOnly(e.target.checked)} />
+                    }
+                    label={<Typography variant="body2">{t('repoOnly')}</Typography>}
+                  />
+                  <FormControlLabel
+                    control={<Checkbox size="small" checked={repoGpg} onChange={(e) => setRepoGpg(e.target.checked)} />}
+                    label={<Typography variant="body2">{t('repoGpg')}</Typography>}
+                  />
+                  {repoGpg
+                    ? field('repo_gpgkey', t('repoGpgKey'), { placeholder: 'https://repo.example/RPM-GPG-KEY' })
+                    : null}
+                </Stack>
+              ) : null}
               <Typography variant="caption" color="text.secondary">
-                {t('sshHelp')}
+                {kind === 'clusters' ? t('sshHelp') : t('sshHelpDiscovered')}
               </Typography>
               <Stack direction="row" gap={1}>
                 {field('ssh_user', t('sshUser'), { fullWidth: true, autoComplete: 'off' })}
+                {field('ssh_port', t('sshPort'), { sx: { width: 90, flexShrink: 0 } })}
                 {field('ssh_password', t('sshPassword'), {
                   fullWidth: true,
                   type: 'password',
@@ -224,7 +313,9 @@ const UpgradePage: FC = () => {
                 variant="contained"
                 size="large"
                 startIcon={posting.isLoading ? <CircularProgress size={18} color="inherit" /> : <FactCheckIcon />}
-                disabled={!clusterId || posting.isLoading || running}
+                disabled={
+                  !targetId || posting.isLoading || running || (kind === 'discoveries' && !form.ssh_user.trim())
+                }
                 onClick={() => void start('plan')}>
                 {t('dryRun')}
               </Button>
@@ -409,7 +500,12 @@ const UpgradePage: FC = () => {
                       {t('nothingToDo')}
                     </Alert>
                   ) : null}
-                  {current.status === 'success' && anyChange && current.id === lastPlan?.id ? (
+                  {anyError && current.status === 'success' ? (
+                    <Alert severity="warning" sx={{ mt: 2 }}>
+                      {t('fixFirst')}
+                    </Alert>
+                  ) : null}
+                  {current.status === 'success' && anyChange && !anyError && current.id === lastPlan?.id ? (
                     <Stack direction="row" gap={2} alignItems="center" mt={2} flexWrap="wrap">
                       <Button
                         variant="contained"

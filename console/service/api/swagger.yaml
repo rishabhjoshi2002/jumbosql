@@ -993,6 +993,60 @@ paths:
           schema:
             $ref: "#/definitions/Response.Error"
 
+  /discoveries/{id}/upgrades:
+    get:
+      summary: "pg_mantra: upgrades of a setup found by Discover, newest first"
+      tags: [upgrade]
+      parameters:
+        - {name: id, in: path, required: true, type: integer}
+      responses:
+        '200':
+          description: OK
+          schema:
+            type: array
+            items:
+              type: object
+        '400':
+          description: Error
+          schema:
+            $ref: "#/definitions/Response.Error"
+    post:
+      summary: "pg_mantra: start a dry run, an upgrade or a rollback on a setup found by Discover"
+      tags: [upgrade]
+      parameters:
+        - {name: id, in: path, required: true, type: integer}
+        - name: body
+          in: body
+          required: true
+          schema:
+            $ref: "#/definitions/Request.Upgrade"
+      responses:
+        '200':
+          description: OK
+          schema:
+            type: object
+        '400':
+          description: Error
+          schema:
+            $ref: "#/definitions/Response.Error"
+
+  /discoveries/{id}/upgrades/{uid}:
+    get:
+      summary: "pg_mantra: one upgrade of a discovered setup, with its log"
+      tags: [upgrade]
+      parameters:
+        - {name: id, in: path, required: true, type: integer}
+        - {name: uid, in: path, required: true, type: integer}
+      responses:
+        '200':
+          description: OK
+          schema:
+            type: object
+        '400':
+          description: Error
+          schema:
+            $ref: "#/definitions/Response.Error"
+
   /discoveries:
     get:
       summary: "pg_mantra: saved discoveries (newest first)"
@@ -1626,6 +1680,18 @@ definitions:
       ssh_key:
         type: string
         description: "used for this run only, never stored"
+      ssh_port:
+        type: integer
+      repo_url:
+        type: string
+        description: "your package repository (yum baseurl, or a full 'deb ...' line), added on the nodes for the run only"
+      repo_only:
+        type: boolean
+        description: "take the packages only from that repository (dnf / yum)"
+      repo_gpgcheck:
+        type: boolean
+      repo_gpgkey:
+        type: string
 
   Request.DiscoverQuery:
     type: object

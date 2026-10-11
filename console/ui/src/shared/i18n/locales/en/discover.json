@@ -31,6 +31,7 @@
   "emptyHelp": "Enter the inventory and logins on the left, or open a saved discovery.",
   "loginAs": "login {{user}}",
   "download": "Download as JSON",
+  "upgradeThis": "Upgrade components of this setup",
   "print": "Print or save as PDF",
   "k_servers": "Servers",
   "k_reachable": "reachable / in inventory",

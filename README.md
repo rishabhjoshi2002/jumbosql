@@ -282,25 +282,37 @@ Results can be saved (passwords never are), opened again, downloaded as JSON or 
 ## Upgrades (admins)
 
 **Upgrades** (the button left of the theme switch in the header, `upgrade.run`, given to Administrators)
-upgrades one component of a cluster at a time - PostgreSQL (minor version), Patroni, etcd, HAProxy, keepalived,
-PgBouncer, pgBackRest, vip-manager, node_exporter, postgres_exporter, Prometheus, Alertmanager, Grafana - with the
-same automation container that deploys clusters (`automation-ha/upgrade/pgm-upgrade.yml`, rebuild the image
-with `./build.sh automation`). The cluster needs an inventory in the console; SSH uses the cluster's stored
-secret, or a login typed on the page (never saved).
+upgrades one component at a time - PostgreSQL (minor version), Patroni, etcd, HAProxy, keepalived, PgBouncer,
+pgBackRest, vip-manager, node_exporter, postgres_exporter, Prometheus, Alertmanager, Grafana - on **any setup**:
+
+- **Found by Discover** (the usual case): pick a saved discovery (or press the upgrade button on a Discover
+  result). The machines and what runs on each come from what Discover found - the setup does not need to be built
+  by pg_mantra. Give the SSH login for the nodes (used for that run only, never saved).
+- **Console cluster**: a cluster created or imported in the console, with its inventory and stored SSH secret.
+
+pg_mantra's own playbook does the work (`automation-ha/upgrade/`: plain Ansible, no vendor collection). It runs in
+the **upgrade runner** image `pg_mantra/upgrader:1.0`, built by `./build.sh console` (or `./build.sh upgrader`);
+the deployment image (`./build.sh automation`) is not needed for upgrades.
+
+**Packages from your own repository**: give its address (a yum/dnf `baseurl`, or a full `deb ...` line). It is
+added on the nodes for each step and removed after, optionally as the only source and with GPG checks; empty
+means the repositories the nodes already have.
 
 1. **Dry run** - changes nothing: on every node of the component, what is installed, the version that would be
-   installed (newest in the configured repositories, or the target version you give), the Patroni role,
-   services, free disk; then **what will happen** node by node and the **rollback plan**.
-2. **Upgrade** (after a successful dry run) - one node at a time, standbys first: for PostgreSQL a switchover
-   moves the primary role to an upgraded standby before the old primary is done; Patroni is paused while it
-   restarts. On each node: keep the installed version (the .rpm / .deb files, pip wheel or binaries, the config
-   files and a manifest in `/var/lib/pg_mantra/upgrade/<run>/<component>/`), install, restart, wait until
-   healthy. It stops at the first node that fails; the others are not touched. If the old package cannot be kept
-   (not in the repository or cache), it stops before changing anything, unless you allow it.
+   installed (newest available, or the target version you give), the role (Patroni, or the PostgreSQL primary /
+   standby), services, free disk; then **what will happen** node by node and the **rollback plan**. Nodes that
+   cannot be reached are shown, and the upgrade is only offered when every node could be checked.
+2. **Upgrade** (after a successful dry run) - one node at a time, standbys first: with Patroni, a switchover moves
+   the primary role to an upgraded standby before the old primary is done, and Patroni is paused while it restarts;
+   without Patroni the PostgreSQL service itself is restarted (the primary last). On each node: keep the installed
+   version (the .rpm / .deb files, pip wheel or binaries, the config files and a manifest in
+   `/var/lib/pg_mantra/upgrade/<run>/<component>/`), install, restart, wait until healthy. It stops at the first
+   node that fails; the others are not touched. If the old package cannot be kept, it stops before changing
+   anything, unless you allow it.
 3. **Roll back** (after an upgrade, even a failed one) - same order: put the kept versions back (from the saved
    files, else the repository), optionally restore the config files, restart, wait until healthy.
 
-Every step's log is shown live, and each node's result (before / after versions, what was kept) is stored.
+The runner's log is shown live, and each node's result (before / after versions, what was kept) is stored.
 
 ## PostgreSQL logs
 

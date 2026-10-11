@@ -86,6 +86,8 @@ var routes = []Route{
 	r("GET", `/upgrade/components`, scopeNone, "upgrade.components", policy.UpgradeRun),
 	r("GET", `/clusters/(\d+)/upgrades(/\d+)?`, scopeCluster, "upgrade.read", policy.UpgradeRun),
 	r("POST", `/clusters/(\d+)/upgrades`, scopeCluster, "upgrade.start", policy.UpgradeRun),
+	r("GET", `/discoveries/\d+/upgrades(/\d+)?`, scopeNone, "upgrade.read", policy.UpgradeRun),
+	r("POST", `/discoveries/\d+/upgrades`, scopeNone, "upgrade.start", policy.UpgradeRun),
 
 	r("GET", `/operations`, scopeNone, "operations.list", policy.ClustersView),
 	r("GET", `/operations/(\d+)/log`, scopeOperation, "operations.log", policy.ClustersView),

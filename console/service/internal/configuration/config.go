@@ -64,6 +64,8 @@ type Config struct {
 		Host   string `default:"unix:///var/run/docker.sock" desc:"Docker host"`
 		LogDir string `default:"/tmp/ansible" desc:"Directory inside docker container for ansible json log"`
 		Image  string `default:"jumbosql/automation-ha:2.2.0" desc:"Docker image for the HA automation (built locally by build.sh)"`
+		// pg_mantra: the Upgrades runner (plain Ansible + the upgrade playbook), PG_CONSOLE_DOCKER_UPGRADEIMAGE
+		UpgradeImage string `envconfig:"upgradeimage" default:"pg_mantra/upgrader:1.0" desc:"Docker image for Upgrades (built by build.sh console)"`
 	}
 	LogWatcher struct {
 		RunEvery    time.Duration `default:"1m" desc:"LogWatcher run interval"`

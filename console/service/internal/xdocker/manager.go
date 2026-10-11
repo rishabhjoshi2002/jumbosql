@@ -49,14 +49,18 @@ func NewDockerManager(host string, image string, extraEnv ...string) (IManager, 
 
 func (m *dockerManager) ManageCluster(ctx context.Context, config *ManageClusterConfig) (InstanceID, error) {
 	localLog := m.log.With().Str("cid", ctx.Value(tracer.CtxCidKey{}).(string)).Logger()
-	err := m.pullImage(ctx, m.image)
+	img := m.image
+	if config.Image != "" {
+		img = strings.TrimSpace(config.Image)
+	}
+	err := m.pullImage(ctx, img)
 	if err != nil {
 		return "", err
 	}
 
 	resp, err := m.cli.ContainerCreate(ctx,
 		&container.Config{
-			Image: m.image,
+			Image: img,
 			Tty:   true,
 			Env:   append(append([]string{}, config.Envs...), m.extraEnv...),
 			Cmd: func() []string {

@@ -1,9 +1,9 @@
-# pg_mantra upgrades: what each component is, where it runs (inventory groups of the HA layout) and how it is
-# checked. {major} is replaced by the PostgreSQL major version installed on the node.
+# pg_mantra upgrades: what each component is, where it runs and how it is checked. Groups: those of the HA layout
+# (clusters built by pg_mantra / CPA) and pgm_<component> (machines where Discover found it - any setup). {major} is replaced by the PostgreSQL major version installed on the node.
 pgm_components:
   postgres:
     label: PostgreSQL (minor version)
-    groups: [patroni_cluster]
+    groups: [patroni_cluster, pgm_postgres]
     packages_rpm: ["postgresql{major}", "postgresql{major}-server", "postgresql{major}-contrib", "postgresql{major}-libs", "postgresql{major}-llvmjit"]
     packages_deb: ["postgresql-{major}", "postgresql-client-{major}"]
     services: []
@@ -12,7 +12,7 @@ pgm_components:
     order: replicas_first      # standbys one by one, then a switchover, then the old primary
   patroni:
     label: Patroni
-    groups: [patroni_cluster]
+    groups: [patroni_cluster, pgm_patroni]
     packages_rpm: [patroni, patroni-etcd, patroni-consul]
     packages_deb: [patroni]
     pip: {name: patroni, binary: patroni}
@@ -23,7 +23,7 @@ pgm_components:
     pause: true                # Patroni paused while it restarts, so no failover happens
   etcd:
     label: etcd
-    groups: [etcd_cluster]
+    groups: [etcd_cluster, pgm_etcd]
     packages_rpm: [etcd]
     packages_deb: [etcd, etcd-server]
     binary:
@@ -34,7 +34,7 @@ pgm_components:
     configs: [/etc/etcd, /etc/default/etcd]
   haproxy:
     label: HAProxy
-    groups: [haproxy_cluster]
+    groups: [haproxy_cluster, pgm_haproxy]
     packages_rpm: [haproxy]
     packages_deb: [haproxy]
     services: [haproxy]
@@ -42,7 +42,7 @@ pgm_components:
     configs: [/etc/haproxy]
   keepalived:
     label: keepalived
-    groups: [haproxy_cluster]
+    groups: [haproxy_cluster, pgm_keepalived]
     packages_rpm: [keepalived]
     packages_deb: [keepalived]
     services: [keepalived]
@@ -50,7 +50,7 @@ pgm_components:
     configs: [/etc/keepalived]
   pgbouncer:
     label: PgBouncer
-    groups: [pgbouncer_cluster]
+    groups: [pgbouncer_cluster, pgm_pgbouncer]
     packages_rpm: [pgbouncer]
     packages_deb: [pgbouncer]
     services: [pgbouncer]
@@ -58,7 +58,7 @@ pgm_components:
     configs: [/etc/pgbouncer]
   pgbackrest:
     label: pgBackRest
-    groups: [backrest_cluster, patroni_cluster]
+    groups: [backrest_cluster, patroni_cluster, pgm_pgbackrest]
     packages_rpm: [pgbackrest]
     packages_deb: [pgbackrest]
     services: []
@@ -66,7 +66,7 @@ pgm_components:
     configs: [/etc/pgbackrest.conf, /etc/pgbackrest]
   vip-manager:
     label: vip-manager
-    groups: [patroni_cluster]
+    groups: [patroni_cluster, pgm_vip_manager]
     packages_rpm: [vip-manager]
     packages_deb: [vip-manager]
     services: [vip-manager]
@@ -74,7 +74,7 @@ pgm_components:
     configs: [/etc/patroni/vip-manager.yml, /etc/default/vip-manager.yml]
   node_exporter:
     label: node_exporter
-    groups: [all]
+    groups: [all, pgm_node_exporter]
     packages_rpm: [node_exporter, golang-github-prometheus-node-exporter]
     packages_deb: [prometheus-node-exporter]
     services: [node_exporter, prometheus-node-exporter]
@@ -82,7 +82,7 @@ pgm_components:
     configs: []
   postgres_exporter:
     label: postgres_exporter
-    groups: [patroni_cluster]
+    groups: [patroni_cluster, pgm_postgres_exporter]
     packages_rpm: [postgres_exporter, prometheus-postgres-exporter]
     packages_deb: [prometheus-postgres-exporter]
     services: [postgres_exporter, prometheus-postgres-exporter]
@@ -90,7 +90,7 @@ pgm_components:
     configs: []
   prometheus:
     label: Prometheus
-    groups: [prometheus_cluster]
+    groups: [prometheus_cluster, pgm_prometheus]
     packages_rpm: [prometheus, prometheus2, golang-github-prometheus]
     packages_deb: [prometheus]
     services: [prometheus]
@@ -98,7 +98,7 @@ pgm_components:
     configs: [/etc/prometheus]
   alertmanager:
     label: Alertmanager
-    groups: [alertmanager_cluster]
+    groups: [alertmanager_cluster, pgm_alertmanager]
     packages_rpm: [alertmanager, prometheus-alertmanager]
     packages_deb: [prometheus-alertmanager]
     services: [alertmanager, prometheus-alertmanager]
@@ -106,7 +106,7 @@ pgm_components:
     configs: [/etc/alertmanager, /etc/prometheus/alertmanager.yml]
   grafana:
     label: Grafana
-    groups: [grafana_cluster]
+    groups: [grafana_cluster, pgm_grafana]
     packages_rpm: [grafana, grafana-enterprise]
     packages_deb: [grafana, grafana-enterprise]
     services: [grafana-server, grafana]

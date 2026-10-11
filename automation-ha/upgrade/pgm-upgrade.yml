@@ -7,7 +7,8 @@
 #             Stops at the first node that fails; the others are not touched.
 #   rollback  same order: put back the saved versions of a run, restart, wait until healthy.
 #
-# Extra vars: pgm = {id, action, component, target, run_id, allow_unsaved, restore_config, binary_url, hosts}
+# Extra vars: pgm = {id, action, component, target, run_id, allow_unsaved, restore_config, binary_url, hosts,
+#                    repo: {url, only, gpgcheck, gpgkey}}   (repo: your private repository, added for the run only)
 # Each node's outcome is a task named "pgm_result" (the console reads it from the JSON log).
 
 - name: pg_mantra upgrade | nodes of the component
@@ -55,7 +56,7 @@
       {{ comp | combine({'component': pgm.component, 'target': pgm.target | default(''),
          'run_id': pgm.run_id | default(pgm.id), 'base': '/var/lib/pg_mantra/upgrade',
          'refresh': pgm.action == 'plan', 'allow_unsaved': pgm.allow_unsaved | default(false),
-         'restore_config': pgm.restore_config | default(false)})
+         'restore_config': pgm.restore_config | default(false), 'repo': pgm.repo | default({})})
          | combine({'binary': (comp.binary | default({})) | combine({'url': pgm.binary_url}) } if (pgm.binary_url | default('')) and comp.binary is defined else {}) }}
   tasks:
     - name: Detect
@@ -65,6 +66,7 @@
       register: pgm_detect_raw
       changed_when: false
       failed_when: false
+      ignore_unreachable: true
 
     - name: Keep the spec for the next plays
       ansible.builtin.set_fact:
@@ -90,7 +92,8 @@
         pgm_order: >-
           {%- set leaders = [] -%}{%- set others = [] -%}
           {%- for h in groups['pgm_all'] -%}
-            {%- set role = ((hostvars[h].pgm_detect | default({})).patroni | default({}) or {}).role | default('') -%}
+            {%- set d = hostvars[h].pgm_detect | default({}) -%}
+            {%- set role = ((d.patroni | default({}) or {}).role | default('')) or d.pg_role | default('') -%}
             {%- if role in ['leader', 'master', 'primary', 'standby_leader'] -%}{{ leaders.append(h) or '' }}
             {%- else -%}{{ others.append(h) or '' }}{%- endif -%}
           {%- endfor -%}
