@@ -1,4 +1,4 @@
-import { FC, useEffect, useMemo, useState } from 'react';
+import { FC, useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Alert,
   Box,
@@ -13,9 +13,6 @@ import {
   FormControlLabel,
   MenuItem,
   Stack,
-  Step,
-  StepLabel,
-  Stepper,
   Table,
   TableBody,
   TableCell,
@@ -23,18 +20,16 @@ import {
   TableHead,
   TableRow,
   TextField,
-  ToggleButton,
-  ToggleButtonGroup,
   Typography,
 } from '@mui/material';
 import PlayArrowIcon from '@mui/icons-material/PlayArrow';
 import FactCheckIcon from '@mui/icons-material/FactCheckOutlined';
 import UndoIcon from '@mui/icons-material/Undo';
+import ReplayIcon from '@mui/icons-material/Replay';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'react-toastify';
-import { useGetClustersQuery } from '@shared/api/api/clusters.ts';
-import { useGetDiscoveriesQuery, useGetDiscoveryQuery } from '@shared/api/api/discover.ts';
 import { useSearchParams } from 'react-router-dom';
+import { useGetDiscoveryQuery } from '@shared/api/api/discover.ts';
 import {
   UHostResult,
   Upgrade,
@@ -45,42 +40,45 @@ import {
   UTarget,
   usePostUpgradeMutation,
 } from '@shared/api/api/upgrade.ts';
-import { selectCurrentProject } from '@app/redux/slices/projectSlice/projectSelectors.ts';
-import { useAppSelector } from '@app/redux/store/hooks.ts';
-import { can } from '@shared/lib/session.ts';
-import { useSessionUser } from '@shared/lib/useSession.ts';
 import { bytes } from '@pages/insights/lib/format.ts';
 import Card from '@pages/discover/ui/Card.tsx';
 import { planOf } from '../lib/plan.ts';
+import { BUILTIN_STEPS, builtinSteps } from '../lib/ansibleLog.ts';
+import FlowStepper, { flowSteps } from './FlowStepper.tsx';
+import RunView from './RunView.tsx';
+import TargetSelect from './TargetSelect.tsx';
 
 const mono = { fontFamily: '"JetBrains Mono", monospace', fontSize: 12.5 };
 const STATUS = { running: 'info', success: 'success', failed: 'error' } as const;
-
 const isHost = (r: unknown): r is UHostResult => !!r && typeof r === 'object' && 'host' in r;
+const stepOf = (task: string) => BUILTIN_STEPS[task];
 
-/** pg_mantra Upgrades: one component of a setup (found by Discover, or a console cluster) - dry run, upgrade
- * (old version kept), rollback. */
+/** pg_mantra Upgrades: one component of any cluster (created by pg_mantra or found by Discover) - dry run,
+ * upgrade (old version kept), rollback - with a live picture of the run next to its Ansible log. */
 const BuiltInUpgrades: FC = () => {
   const { t } = useTranslation('upgrade');
-  const user = useSessionUser();
   const [params] = useSearchParams();
-  const projectId = Number(useAppSelector(selectCurrentProject));
-  const clusters = useGetClustersQuery({ projectId, offset: 0, limit: 999_999_999 }, { skip: !projectId });
-  const allowed = useMemo(
-    () => (clusters.data?.data ?? []).filter((c) => c.id && can('upgrade.run', c.id, user)),
-    [clusters.data, user],
-  );
-  const discoveries = useGetDiscoveriesQuery();
-  const [kind, setKind] = useState<UTarget['kind']>(params.get('cluster') ? 'clusters' : 'discoveries');
-  const [targetId, setTargetId] = useState<number>(Number(params.get('discovery') || params.get('cluster') || 0));
-  const target: UTarget = { kind, id: targetId };
-  const discovery = useGetDiscoveryQuery(targetId, { skip: kind !== 'discoveries' || !targetId });
+  const [target, setTarget] = useState<UTarget | null>(() => {
+    const d = Number(params.get('discovery'));
+    const c = Number(params.get('cluster'));
+    return d ? { kind: 'discoveries', id: d } : c ? { kind: 'clusters', id: c } : null;
+  });
+  const onTarget = useCallback((v: UTarget | null) => {
+    setTarget(v);
+    setSelected(0);
+    setView('form');
+  }, []);
+  const kind = target?.kind;
+  const discovery = useGetDiscoveryQuery(target?.id ?? 0, { skip: kind !== 'discoveries' || !target?.id });
   // components Discover found in the setup, and on which machines
   const found = useMemo(() => {
-    const m: Record<string, string[]> = {};
+    const m: Record<string, { label: string; address: string }[]> = {};
     (discovery.data?.result.infra?.hosts ?? []).forEach((h) =>
       h.components.forEach((c) =>
-        (m[c.kind] ??= []).push(h.name && h.name !== h.address ? `${h.name} (${h.address})` : h.address),
+        (m[c.kind] ??= []).push({
+          label: h.name && h.name !== h.address ? `${h.name} (${h.address})` : h.address,
+          address: h.address,
+        }),
       ),
     );
     return m;
@@ -101,6 +99,7 @@ const BuiltInUpgrades: FC = () => {
   const [allowUnsaved, setAllowUnsaved] = useState(false);
   const [restoreConfig, setRestoreConfig] = useState(false);
   const [selected, setSelected] = useState<number>(0);
+  const [view, setView] = useState<'form' | 'run'>('form');
   const [confirm, setConfirm] = useState<null | 'run' | 'rollback'>(null);
   const components = useGetUpgradeComponentsQuery();
   const offered = useMemo(
@@ -108,43 +107,61 @@ const BuiltInUpgrades: FC = () => {
     [components.data, kind, discovery.data, found],
   );
   const comp = components.data?.find((c) => c.name === compName);
-
-  useEffect(() => {
-    if (targetId) return;
-    if (kind === 'clusters' && allowed[0]?.id) setTargetId(allowed[0].id);
-    if (kind === 'discoveries' && discoveries.data?.[0]) setTargetId(discoveries.data[0].id);
-  }, [allowed, discoveries.data, kind, targetId]);
   useEffect(() => {
     if (offered.length && !offered.some((c) => c.name === compName)) setCompName(offered[0].name);
   }, [offered, compName]);
 
   const [running, setRunning] = useState(false);
-  const list = useGetUpgradesQuery(target, { skip: !targetId, pollingInterval: running ? 4000 : 0 });
+  const list = useGetUpgradesQuery(target ?? { kind: 'discoveries', id: 0 }, {
+    skip: !target?.id,
+    pollingInterval: running ? 3000 : 0,
+  });
   const upgrades = useMemo(() => (list.data ?? []).filter((u) => u.component === compName), [list.data, compName]);
   useEffect(() => setRunning((list.data ?? []).some((u) => u.status === 'running')), [list.data]);
-  const current: Upgrade | undefined = upgrades.find((u) => u.id === selected) ?? upgrades[0];
+  // a run still going (e.g. after a page reload): show it
+  useEffect(() => {
+    const r = upgrades.find((u) => u.status === 'running');
+    if (r && view === 'form') {
+      setSelected(r.id);
+      setView('run');
+    }
+  }, [upgrades, view]);
+  const current: Upgrade | undefined = upgrades.find((u) => u.id === selected);
   const detail = useGetUpgradeQuery(
-    { ...target, uid: current?.id ?? 0 },
-    { skip: !current?.id, pollingInterval: current?.status === 'running' ? 3000 : 0 },
+    { ...(target ?? { kind: 'discoveries', id: 0 }), uid: current?.id ?? 0 },
+    { skip: !current?.id || !target, pollingInterval: current?.status === 'running' ? 2000 : 0 },
   );
-  const log = { data: { log: detail.data?.id === current?.id ? detail.data?.log : '' } };
+  const log = detail.data?.id === current?.id ? (detail.data?.log ?? '') : '';
   const [post, posting] = usePostUpgradeMutation();
 
-  // the latest plan / run of this component, to offer the next step
   const lastPlan = upgrades.find((u) => u.action === 'plan');
   const lastRun = upgrades.find((u) => u.action === 'run');
+  const lastRollback = upgrades.find((u) => u.action === 'rollback');
   const rolledBack =
-    lastRun && upgrades.some((u) => u.action === 'rollback' && u.parent_id === lastRun.id && u.status !== 'failed');
-  const hostResults = (current?.result ?? []).filter(isHost);
-  const plan = useMemo(
-    () => planOf((current?.action === 'plan' ? current : lastPlan)?.result?.filter(isHost) ?? [], comp, t),
-    [current, lastPlan, comp, t],
-  );
+    lastRun && upgrades.some((u) => u.action === 'rollback' && u.parent_id === lastRun.id && u.status === 'success');
+  const steps = flowSteps([t('s1'), t('s2'), t('s3'), t('s4')], {
+    plan: lastPlan,
+    run: lastRun,
+    rollback: lastRollback,
+  });
+  const planRun =
+    current?.action === 'plan' ? current : (upgrades.find((u) => u.id === current?.parent_id) ?? lastPlan);
+  const plan = useMemo(() => planOf(planRun?.result?.filter(isHost) ?? [], comp, t), [planRun, comp, t]);
   const anyChange = plan.some((h) => h.changes.length);
   const anyError = plan.some((h) => h.error);
-  const step = !lastPlan ? 0 : !lastRun || (lastRun && lastPlan && lastPlan.id > lastRun.id) ? 1 : rolledBack ? 3 : 2;
+  const hostResults = (current?.result ?? []).filter(isHost);
+  // the machines in the order they will be done, and their roles - for the live picture
+  const knownHosts = useMemo(
+    () =>
+      current?.action === 'plan' || !plan.length
+        ? (found[compName] ?? []).map((f) => f.address)
+        : plan.map((h) => h.host),
+    [current, plan, found, compName],
+  );
+  const roles = useMemo(() => Object.fromEntries(plan.filter((h) => h.role).map((h) => [h.host, h.role])), [plan]);
 
   const start = async (action: UpgradeRequest['action'], parent?: number) => {
+    if (!target) return;
     try {
       const out = await post({
         target,
@@ -167,6 +184,7 @@ const BuiltInUpgrades: FC = () => {
         },
       }).unwrap();
       setSelected(out.id);
+      setView('run');
       setRunning(true);
       toast.success(t(`started_${action}`));
     } catch (e) {
@@ -183,453 +201,294 @@ const BuiltInUpgrades: FC = () => {
       {...extra}
     />
   );
+  const needLogin = kind === 'discoveries' && !form.ssh_user.trim();
 
-  return (
-    <Stack gap={2}>
-      <Box
-        sx={{
-          display: 'grid',
-          gap: 2,
-          alignItems: 'start',
-          gridTemplateColumns: { xs: 'minmax(0,1fr)', lg: '340px minmax(0,1fr)' },
-        }}>
-        <Stack gap={2}>
-          <Card title={t('what')}>
-            <Stack gap={1.5}>
-              <ToggleButtonGroup
-                exclusive
-                size="small"
-                fullWidth
-                value={kind}
-                onChange={(_, v) => {
-                  if (!v) return;
-                  setKind(v);
-                  setTargetId(0);
-                  setSelected(0);
-                }}>
-                <ToggleButton value="discoveries">{t('kindDiscovered')}</ToggleButton>
-                <ToggleButton value="clusters">{t('kindCluster')}</ToggleButton>
-              </ToggleButtonGroup>
-              <TextField
-                select
-                size="small"
-                label={kind === 'clusters' ? t('cluster') : t('setup')}
-                value={targetId || ''}
-                helperText={kind === 'discoveries' && !discoveries.data?.length ? t('noDiscoveries') : undefined}
-                onChange={(e) => {
-                  setTargetId(Number(e.target.value));
-                  setSelected(0);
-                }}>
-                {kind === 'clusters'
-                  ? allowed.map((c) => (
-                      <MenuItem key={c.id} value={c.id}>
-                        {c.name}
-                      </MenuItem>
-                    ))
-                  : (discoveries.data ?? []).map((d) => (
-                      <MenuItem key={d.id} value={d.id}>
-                        #{d.id} {d.name}
-                      </MenuItem>
-                    ))}
-              </TextField>
-              <TextField
-                select
-                size="small"
-                label={t('component')}
-                value={compName}
-                onChange={(e) => {
-                  setCompName(e.target.value);
-                  setSelected(0);
-                }}>
-                {offered.map((c) => (
-                  <MenuItem key={c.name} value={c.name}>
-                    {c.label}
-                  </MenuItem>
-                ))}
-              </TextField>
-              {comp ? (
-                <Box sx={{ bgcolor: 'action.hover', borderRadius: 1.5, p: 1.25 }}>
-                  <Typography variant="caption" component="div">
-                    <b>{t('where')}:</b>{' '}
-                    {kind === 'discoveries' ? (found[comp.name] ?? []).join(', ') || '—' : comp.groups.join(', ')}
-                  </Typography>
-                  <Typography variant="caption" component="div">
-                    <b>{t('order')}:</b> {t(`order_${comp.order}`)}
-                  </Typography>
-                  <Typography variant="caption" component="div">
-                    <b>{t('restart')}:</b> {comp.restart}
-                  </Typography>
-                  {(comp.notes ?? []).map((n) => (
-                    <Typography key={n} variant="caption" component="div" color="text.secondary">
-                      · {n}
-                    </Typography>
-                  ))}
-                </Box>
-              ) : null}
-              {field('target', t('target'), { placeholder: t('targetPlaceholder') })}
-              {compName === 'etcd'
-                ? field('binary_url', t('binaryUrl'), {
-                    placeholder: 'https://github.com/etcd-io/etcd/releases/download/v{version}/...',
-                  })
-                : null}
-              {field('repo_url', t('repoUrl'), { placeholder: t('repoPlaceholder'), helperText: t('repoHelp') })}
-              {form.repo_url.trim() ? (
-                <Stack>
-                  <FormControlLabel
-                    control={
-                      <Checkbox size="small" checked={repoOnly} onChange={(e) => setRepoOnly(e.target.checked)} />
-                    }
-                    label={<Typography variant="body2">{t('repoOnly')}</Typography>}
-                  />
-                  <FormControlLabel
-                    control={<Checkbox size="small" checked={repoGpg} onChange={(e) => setRepoGpg(e.target.checked)} />}
-                    label={<Typography variant="body2">{t('repoGpg')}</Typography>}
-                  />
-                  {repoGpg
-                    ? field('repo_gpgkey', t('repoGpgKey'), { placeholder: 'https://repo.example/RPM-GPG-KEY' })
-                    : null}
-                </Stack>
-              ) : null}
-              <Typography variant="caption" color="text.secondary">
-                {kind === 'clusters' ? t('sshHelp') : t('sshHelpDiscovered')}
-              </Typography>
-              <Stack direction="row" gap={1}>
-                {field('ssh_user', t('sshUser'), { fullWidth: true, autoComplete: 'off' })}
-                {field('ssh_port', t('sshPort'), { sx: { width: 90, flexShrink: 0 } })}
-                {field('ssh_password', t('sshPassword'), {
-                  fullWidth: true,
-                  type: 'password',
-                  autoComplete: 'new-password',
-                })}
-              </Stack>
-              {field('ssh_key', t('sshKey'), { multiline: true, minRows: 2, maxRows: 5, InputProps: { sx: mono } })}
-              <Button
-                variant="contained"
-                size="large"
-                startIcon={posting.isLoading ? <CircularProgress size={18} color="inherit" /> : <FactCheckIcon />}
-                disabled={
-                  !targetId || posting.isLoading || running || (kind === 'discoveries' && !form.ssh_user.trim())
-                }
-                onClick={() => void start('plan')}>
-                {t('dryRun')}
-              </Button>
-              {running ? <Alert severity="info">{t('busy')}</Alert> : null}
-            </Stack>
-          </Card>
+  /* ------------------------------------------------------------ what comes next, under the run */
+  const actions = (() => {
+    if (!current || current.status === 'running') return null;
+    const tryAgain = (
+      <Button variant="outlined" startIcon={<ReplayIcon />} onClick={() => setView('form')}>
+        {t('tryAgain')}
+      </Button>
+    );
+    if (current.action === 'plan') {
+      if (current.status === 'failed' || anyError) {
+        return (
+          <>
+            <Alert severity="warning" sx={{ flex: 1 }}>
+              {current.status === 'failed' ? t('planFailedFix') : t('fixFirst')}
+            </Alert>
+            {tryAgain}
+          </>
+        );
+      }
+      if (!anyChange) return <Alert severity="success">{t('nothingToDo')}</Alert>;
+      if (current.id !== lastPlan?.id) return null;
+      return (
+        <>
+          <Button
+            variant="contained"
+            color="warning"
+            size="large"
+            startIcon={<PlayArrowIcon />}
+            disabled={running}
+            onClick={() => setConfirm('run')}>
+            {t('proceed')}
+          </Button>
+          <FormControlLabel
+            control={<Checkbox checked={allowUnsaved} onChange={(e) => setAllowUnsaved(e.target.checked)} />}
+            label={<Typography variant="body2">{t('allowUnsaved')}</Typography>}
+          />
+          <Button onClick={() => setView('form')}>{t('changeSettings')}</Button>
+        </>
+      );
+    }
+    if (current.action === 'run' && current.id === lastRun?.id && !rolledBack) {
+      if (current.status === 'failed') {
+        return (
+          <>
+            <Alert severity="error" sx={{ flex: 1 }}>
+              {t('runFailed')}
+            </Alert>
+            <Button
+              variant="contained"
+              color="error"
+              size="large"
+              startIcon={<UndoIcon />}
+              disabled={running || posting.isLoading}
+              onClick={() => void start('rollback', current.id)}>
+              {t('rollbackNow')}
+            </Button>
+            {tryAgain}
+          </>
+        );
+      }
+      return (
+        <>
+          <Alert severity="success" sx={{ flex: 1 }}>
+            {t('runDone')}
+          </Alert>
+          <Button variant="outlined" color="error" startIcon={<UndoIcon />} onClick={() => setConfirm('rollback')}>
+            {t('rollback')}
+          </Button>
+          <FormControlLabel
+            control={<Checkbox checked={restoreConfig} onChange={(e) => setRestoreConfig(e.target.checked)} />}
+            label={<Typography variant="body2">{t('restoreConfig')}</Typography>}
+          />
+        </>
+      );
+    }
+    if (current.action === 'rollback') {
+      return current.status === 'failed' && lastRun ? (
+        <>
+          <Alert severity="error" sx={{ flex: 1 }}>
+            {t('rollbackFailed')}
+          </Alert>
+          <Button
+            variant="contained"
+            color="error"
+            startIcon={<ReplayIcon />}
+            disabled={running || posting.isLoading}
+            onClick={() => void start('rollback', lastRun.id)}>
+            {t('rollbackAgain')}
+          </Button>
+          {tryAgain}
+        </>
+      ) : (
+        <Alert severity="success">{t('rollbackDone')}</Alert>
+      );
+    }
+    return null;
+  })();
 
-          <Card title={t('history')}>
-            <Stack divider={<Box sx={{ borderTop: 1, borderColor: 'divider' }} />}>
-              {upgrades.map((u) => (
-                <Stack
-                  key={u.id}
-                  direction="row"
-                  alignItems="center"
-                  gap={1}
-                  py={0.75}
-                  px={0.75}
-                  sx={{
-                    cursor: 'pointer',
-                    borderRadius: 1,
-                    bgcolor: current?.id === u.id ? 'action.selected' : undefined,
-                    '&:hover': { bgcolor: 'action.hover' },
-                  }}
-                  onClick={() => setSelected(u.id)}>
-                  <Box flex={1} minWidth={0}>
-                    <Typography variant="body2" fontWeight={700}>
-                      #{u.id} {t(`a_${u.action}`)}
-                    </Typography>
-                    <Typography variant="caption" color="text.secondary">
-                      {new Date(u.created_at).toLocaleString()} · {u.created_by || '—'}
-                    </Typography>
-                  </Box>
-                  <Chip size="small" color={STATUS[u.status]} label={t(`st_${u.status}`)} sx={{ fontWeight: 700 }} />
-                </Stack>
-              ))}
-              {!upgrades.length ? (
-                <Typography variant="body2" color="text.secondary">
-                  {t('none')}
-                </Typography>
-              ) : null}
-            </Stack>
-          </Card>
-        </Stack>
-
-        <Stack gap={2} minWidth={0}>
-          <Card>
-            <Stepper activeStep={step} alternativeLabel>
-              {['s1', 's2', 's3', 's4'].map((s) => (
-                <Step key={s}>
-                  <StepLabel>{t(s)}</StepLabel>
-                </Step>
-              ))}
-            </Stepper>
-          </Card>
-
-          {current ? (
-            <Card
-              title={`#${current.id} ${t(`a_${current.action}`)} · ${comp?.label ?? current.component}`}
-              action={
-                <Chip color={STATUS[current.status]} label={t(`st_${current.status}`)} sx={{ fontWeight: 700 }} />
-              }>
-              {current.options?.target ? (
-                <Typography variant="body2" mb={1}>
-                  {t('targetIs', { v: current.options.target })}
-                </Typography>
-              ) : null}
-              {(current.result ?? [])
-                .filter((r) => !isHost(r))
-                .map((r, i) => (
-                  <Alert key={i} severity="error" sx={{ mb: 1 }}>
-                    {(r as { error: string }).error}
-                  </Alert>
-                ))}
-
-              {current.action === 'plan' && current.status !== 'running' ? (
-                <>
-                  <TableContainer>
-                    <Table size="small">
-                      <TableHead>
-                        <TableRow sx={{ '& th': { whiteSpace: 'nowrap' } }}>
-                          <TableCell>#</TableCell>
-                          <TableCell>{t('node')}</TableCell>
-                          <TableCell>{t('role')}</TableCell>
-                          <TableCell>{t('change')}</TableCell>
-                          <TableCell>{t('services')}</TableCell>
-                          <TableCell align="right">{t('free')}</TableCell>
-                        </TableRow>
-                      </TableHead>
-                      <TableBody>
-                        {plan.map((h, i) => (
-                          <TableRow key={h.host}>
-                            <TableCell>{i + 1}</TableCell>
-                            <TableCell sx={{ fontWeight: 700, whiteSpace: 'nowrap' }}>{h.host}</TableCell>
-                            <TableCell>{h.role || '—'}</TableCell>
-                            <TableCell sx={mono}>
-                              {h.error ? (
-                                <Typography color="error" variant="body2">
-                                  {h.error}
-                                </Typography>
-                              ) : h.changes.length ? (
-                                h.changes.map((c) => (
-                                  <div key={c.name}>
-                                    {c.name}: {c.from} → <b>{c.to}</b>
-                                  </div>
-                                ))
-                              ) : (
-                                <Typography variant="body2" color="text.secondary">
-                                  {h.detect?.method === 'none' ? t('s_notInstalled') : t('upToDate')}
-                                </Typography>
-                              )}
-                              {h.warnings.map((w) => (
-                                <Typography key={w} variant="caption" color="warning.main" display="block">
-                                  {w}
-                                </Typography>
-                              ))}
-                            </TableCell>
-                            <TableCell>
-                              {(h.detect?.services ?? []).map((s) => `${s.name} ${s.active ? '●' : '○'}`).join(', ') ||
-                                '—'}
-                            </TableCell>
-                            <TableCell align="right">
-                              {h.detect?.free_bytes ? bytes(h.detect.free_bytes) : '—'}
-                            </TableCell>
-                          </TableRow>
+  /* ------------------------------------------------------------ the detailed result */
+  const details =
+    current && current.status !== 'running' ? (
+      <Card title={t('details')}>
+        {(current.result ?? [])
+          .filter((r) => !isHost(r))
+          .map((r, i) => (
+            <Alert key={i} severity="error" sx={{ mb: 1 }}>
+              {(r as { error: string }).error}
+            </Alert>
+          ))}
+        {current.options?.target ? (
+          <Typography variant="body2" mb={1}>
+            {t('targetIs', { v: current.options.target })}
+          </Typography>
+        ) : null}
+        {current.action === 'plan' ? (
+          <>
+            <TableContainer>
+              <Table size="small">
+                <TableHead>
+                  <TableRow sx={{ '& th': { whiteSpace: 'nowrap' } }}>
+                    <TableCell>#</TableCell>
+                    <TableCell>{t('node')}</TableCell>
+                    <TableCell>{t('role')}</TableCell>
+                    <TableCell>{t('change')}</TableCell>
+                    <TableCell>{t('services')}</TableCell>
+                    <TableCell align="right">{t('free')}</TableCell>
+                  </TableRow>
+                </TableHead>
+                <TableBody>
+                  {plan.map((h, i) => (
+                    <TableRow key={h.host}>
+                      <TableCell>{i + 1}</TableCell>
+                      <TableCell sx={{ fontWeight: 700, whiteSpace: 'nowrap' }}>{h.host}</TableCell>
+                      <TableCell>{h.role || '—'}</TableCell>
+                      <TableCell sx={mono}>
+                        {h.error ? (
+                          <Typography color="error" variant="body2">
+                            {h.error}
+                          </Typography>
+                        ) : h.changes.length ? (
+                          h.changes.map((c) => (
+                            <div key={c.name}>
+                              {c.name}: {c.from} → <b>{c.to}</b>
+                            </div>
+                          ))
+                        ) : (
+                          <Typography variant="body2" color="text.secondary">
+                            {h.detect?.method === 'none' ? t('s_notInstalled') : t('upToDate')}
+                          </Typography>
+                        )}
+                        {h.warnings.map((w) => (
+                          <Typography key={w} variant="caption" color="warning.main" display="block">
+                            {w}
+                          </Typography>
                         ))}
-                      </TableBody>
-                    </Table>
-                  </TableContainer>
-                  {anyChange ? (
-                    <Box sx={{ display: 'grid', gap: 2, mt: 2, gridTemplateColumns: { xs: '1fr', xl: '1fr 1fr' } }}>
-                      <Box>
-                        <Typography fontWeight={700} mb={0.5}>
-                          {t('whatHappens')}
-                        </Typography>
-                        {plan
-                          .filter((h) => h.changes.length)
-                          .map((h, i) => (
-                            <Box key={h.host} mb={1}>
-                              <Typography variant="body2" fontWeight={700}>
-                                {i + 1}. {h.host} {h.role ? `(${h.role})` : ''}
-                              </Typography>
-                              <Box component="ol" sx={{ m: 0, pl: 3 }}>
-                                {h.steps.map((s) => (
-                                  <Typography component="li" variant="body2" key={s}>
-                                    {s}
-                                  </Typography>
-                                ))}
-                              </Box>
-                            </Box>
-                          ))}
-                        <Typography variant="caption" color="text.secondary">
-                          {t('stopRule')}
-                        </Typography>
-                      </Box>
-                      <Box>
-                        <Typography fontWeight={700} mb={0.5}>
-                          {t('rollbackPlan')}
-                        </Typography>
-                        {plan
-                          .filter((h) => h.changes.length)
-                          .map((h, i) => (
-                            <Box key={h.host} mb={1}>
-                              <Typography variant="body2" fontWeight={700}>
-                                {i + 1}. {h.host}
-                              </Typography>
-                              <Box component="ol" sx={{ m: 0, pl: 3 }}>
-                                {h.rollback.map((s) => (
-                                  <Typography component="li" variant="body2" key={s}>
-                                    {s}
-                                  </Typography>
-                                ))}
-                              </Box>
-                            </Box>
-                          ))}
-                        <Typography variant="caption" color="text.secondary">
-                          {t('keptIn')}
-                        </Typography>
-                      </Box>
-                    </Box>
-                  ) : current.status === 'success' ? (
-                    <Alert severity="success" sx={{ mt: 2 }}>
-                      {t('nothingToDo')}
-                    </Alert>
-                  ) : null}
-                  {anyError && current.status === 'success' ? (
-                    <Alert severity="warning" sx={{ mt: 2 }}>
-                      {t('fixFirst')}
-                    </Alert>
-                  ) : null}
-                  {current.status === 'success' && anyChange && !anyError && current.id === lastPlan?.id ? (
-                    <Stack direction="row" gap={2} alignItems="center" mt={2} flexWrap="wrap">
-                      <Button
-                        variant="contained"
-                        color="warning"
-                        startIcon={<PlayArrowIcon />}
-                        disabled={running}
-                        onClick={() => setConfirm('run')}>
-                        {t('proceed')}
-                      </Button>
-                      <FormControlLabel
-                        control={
-                          <Checkbox checked={allowUnsaved} onChange={(e) => setAllowUnsaved(e.target.checked)} />
-                        }
-                        label={<Typography variant="body2">{t('allowUnsaved')}</Typography>}
-                      />
-                    </Stack>
-                  ) : null}
-                </>
-              ) : null}
-
-              {current.action !== 'plan' && hostResults.length ? (
-                <TableContainer>
-                  <Table size="small">
-                    <TableHead>
-                      <TableRow sx={{ '& th': { whiteSpace: 'nowrap' } }}>
-                        <TableCell>{t('node')}</TableCell>
-                        <TableCell>{t('result')}</TableCell>
-                        <TableCell>{t('versions')}</TableCell>
-                        <TableCell>{t('kept')}</TableCell>
-                      </TableRow>
-                    </TableHead>
-                    <TableBody>
-                      {hostResults.map((r) => (
-                        <TableRow key={r.host}>
-                          <TableCell sx={{ fontWeight: 700, whiteSpace: 'nowrap' }}>{r.host}</TableCell>
-                          <TableCell>
-                            <Chip
-                              size="small"
-                              color={r.status === 'failed' ? 'error' : r.status === 'success' ? 'success' : 'default'}
-                              label={t(`st_${r.status ?? 'skipped'}`)}
-                            />
-                            {r.error ? (
-                              <Typography variant="caption" color="error" display="block" mt={0.5}>
-                                {r.task ? `${r.task}: ` : ''}
-                                {r.error}
-                              </Typography>
-                            ) : null}
-                            {r.reason ? (
-                              <Typography variant="caption" color="text.secondary" display="block">
-                                {r.reason}
-                              </Typography>
-                            ) : null}
-                          </TableCell>
-                          <TableCell sx={mono}>
-                            {Object.entries(r.change?.after ?? {}).map(([k, v]) => (
-                              <div key={k}>
-                                {k}: {r.change?.before?.[k]} → <b>{v}</b>
-                              </div>
-                            ))}
-                          </TableCell>
-                          <TableCell sx={mono}>
-                            {(r.preserve?.saved ?? []).map((s) => (
-                              <div key={s.name}>
-                                {s.name} {s.version} ✓
-                              </div>
-                            ))}
-                            {(r.preserve?.unsaved ?? []).map((s) => (
-                              <Typography key={s.name} variant="caption" color="warning.main" display="block">
-                                {s.name} {s.version}: {t('notKept')}
+                      </TableCell>
+                      <TableCell>
+                        {(h.detect?.services ?? []).map((s) => `${s.name} ${s.active ? '●' : '○'}`).join(', ') || '—'}
+                      </TableCell>
+                      <TableCell align="right">{h.detect?.free_bytes ? bytes(h.detect.free_bytes) : '—'}</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </TableContainer>
+            {anyChange ? (
+              <Box sx={{ display: 'grid', gap: 2, mt: 2, gridTemplateColumns: { xs: '1fr', xl: '1fr 1fr' } }}>
+                {(['whatHappens', 'rollbackPlan'] as const).map((k) => (
+                  <Box key={k}>
+                    <Typography fontWeight={700} mb={0.5}>
+                      {t(k)}
+                    </Typography>
+                    {plan
+                      .filter((h) => h.changes.length)
+                      .map((h, i) => (
+                        <Box key={h.host} mb={1}>
+                          <Typography variant="body2" fontWeight={700}>
+                            {i + 1}. {h.host} {h.role ? `(${h.role})` : ''}
+                          </Typography>
+                          <Box component="ol" sx={{ m: 0, pl: 3 }}>
+                            {(k === 'whatHappens' ? h.steps : h.rollback).map((s) => (
+                              <Typography component="li" variant="body2" key={s}>
+                                {s}
                               </Typography>
                             ))}
-                            {r.preserve?.dir ? (
-                              <Typography variant="caption" color="text.secondary" display="block">
-                                {r.preserve.dir}
-                              </Typography>
-                            ) : null}
-                          </TableCell>
-                        </TableRow>
+                          </Box>
+                        </Box>
                       ))}
-                    </TableBody>
-                  </Table>
-                </TableContainer>
-              ) : null}
-
-              {current.action === 'run' && current.status !== 'running' && current.id === lastRun?.id && !rolledBack ? (
-                <Stack direction="row" gap={2} alignItems="center" mt={2} flexWrap="wrap">
-                  <Button
-                    variant="outlined"
-                    color="error"
-                    startIcon={<UndoIcon />}
-                    disabled={running}
-                    onClick={() => setConfirm('rollback')}>
-                    {t('rollback')}
-                  </Button>
-                  <FormControlLabel
-                    control={<Checkbox checked={restoreConfig} onChange={(e) => setRestoreConfig(e.target.checked)} />}
-                    label={<Typography variant="body2">{t('restoreConfig')}</Typography>}
-                  />
-                </Stack>
-              ) : null}
-
-              {current.status !== 'running' || log.data.log ? (
-                <Box mt={2}>
-                  <Typography variant="body2" fontWeight={700} mb={0.5}>
-                    {t('log')}
-                  </Typography>
-                  <Box
-                    component="pre"
-                    sx={{
-                      ...mono,
-                      fontSize: 11.5,
-                      m: 0,
-                      p: 1.25,
-                      bgcolor: 'action.hover',
-                      borderRadius: 1.5,
-                      maxHeight: 340,
-                      overflow: 'auto',
-                      whiteSpace: 'pre-wrap',
-                    }}>
-                    {(log.data as { log?: string } | undefined)?.log?.slice(-20000) || t('noLog')}
+                    <Typography variant="caption" color="text.secondary">
+                      {k === 'whatHappens' ? t('stopRule') : t('keptIn')}
+                    </Typography>
                   </Box>
-                </Box>
-              ) : null}
-            </Card>
-          ) : (
-            <Alert severity="info">{t('start')}</Alert>
-          )}
-        </Stack>
-      </Box>
+                ))}
+              </Box>
+            ) : null}
+          </>
+        ) : hostResults.length ? (
+          <TableContainer>
+            <Table size="small">
+              <TableHead>
+                <TableRow sx={{ '& th': { whiteSpace: 'nowrap' } }}>
+                  <TableCell>{t('node')}</TableCell>
+                  <TableCell>{t('result')}</TableCell>
+                  <TableCell>{t('versions')}</TableCell>
+                  <TableCell>{t('kept')}</TableCell>
+                </TableRow>
+              </TableHead>
+              <TableBody>
+                {hostResults.map((r) => (
+                  <TableRow key={r.host}>
+                    <TableCell sx={{ fontWeight: 700, whiteSpace: 'nowrap' }}>{r.host}</TableCell>
+                    <TableCell>
+                      <Chip
+                        size="small"
+                        color={r.status === 'failed' ? 'error' : r.status === 'success' ? 'success' : 'default'}
+                        label={t(`st_${r.status ?? 'skipped'}`)}
+                      />
+                      {r.error ? (
+                        <Typography variant="caption" color="error" display="block" mt={0.5}>
+                          {r.task ? `${r.task}: ` : ''}
+                          {r.error}
+                        </Typography>
+                      ) : null}
+                      {r.reason ? (
+                        <Typography variant="caption" color="text.secondary" display="block">
+                          {r.reason}
+                        </Typography>
+                      ) : null}
+                    </TableCell>
+                    <TableCell sx={mono}>
+                      {Object.entries(r.change?.after ?? {}).map(([k, v]) => (
+                        <div key={k}>
+                          {k}: {r.change?.before?.[k]} → <b>{v}</b>
+                        </div>
+                      ))}
+                    </TableCell>
+                    <TableCell sx={mono}>
+                      {(r.preserve?.saved ?? []).map((s) => (
+                        <div key={s.name}>
+                          {s.name} {s.version} ✓
+                        </div>
+                      ))}
+                      {(r.preserve?.unsaved ?? []).map((s) => (
+                        <Typography key={s.name} variant="caption" color="warning.main" display="block">
+                          {s.name} {s.version}: {t('notKept')}
+                        </Typography>
+                      ))}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </TableContainer>
+        ) : null}
+      </Card>
+    ) : null;
 
+  const stepper = (
+    <Card>
+      <FlowStepper steps={steps} running={running} />
+    </Card>
+  );
+
+  if (view === 'run' && current) {
+    return (
+      <Stack gap={2}>
+        {stepper}
+        <RunView
+          title={`#${current.id} ${t(`a_${current.action}`)} · ${comp?.label ?? current.component}`}
+          status={current.status}
+          log={log}
+          knownHosts={knownHosts}
+          steps={builtinSteps(current.action)}
+          stepOf={stepOf}
+          roles={roles}
+          actions={actions}
+          onBack={() => setView('form')}>
+          {details}
+        </RunView>
+        {confirmDialog()}
+      </Stack>
+    );
+  }
+
+  function confirmDialog() {
+    return (
       <Dialog open={!!confirm} onClose={() => setConfirm(null)}>
         <DialogTitle>{confirm === 'run' ? t('confirmRunTitle') : t('confirmRollbackTitle')}</DialogTitle>
         <DialogContent>
@@ -654,6 +513,142 @@ const BuiltInUpgrades: FC = () => {
           </Button>
         </DialogActions>
       </Dialog>
+    );
+  }
+
+  return (
+    <Stack gap={2}>
+      <Box
+        sx={{
+          display: 'grid',
+          gap: 2,
+          alignItems: 'start',
+          gridTemplateColumns: { xs: 'minmax(0,1fr)', lg: '360px minmax(0,1fr)' },
+        }}>
+        <Card title={t('what')}>
+          <Stack gap={1.5}>
+            <TargetSelect value={target} onChange={onTarget} />
+            <TextField
+              select
+              size="small"
+              label={t('component')}
+              value={compName}
+              onChange={(e) => {
+                setCompName(e.target.value);
+                setSelected(0);
+              }}>
+              {offered.map((c) => (
+                <MenuItem key={c.name} value={c.name}>
+                  {c.label}
+                </MenuItem>
+              ))}
+            </TextField>
+            {comp ? (
+              <Box sx={{ bgcolor: 'action.hover', borderRadius: 1.5, p: 1.25 }}>
+                <Typography variant="caption" component="div">
+                  <b>{t('where')}:</b>{' '}
+                  {kind === 'discoveries'
+                    ? (found[comp.name] ?? []).map((f) => f.label).join(', ') || '—'
+                    : comp.groups.join(', ')}
+                </Typography>
+                <Typography variant="caption" component="div">
+                  <b>{t('order')}:</b> {t(`order_${comp.order}`)}
+                </Typography>
+                <Typography variant="caption" component="div">
+                  <b>{t('restart')}:</b> {comp.restart}
+                </Typography>
+                {(comp.notes ?? []).map((n) => (
+                  <Typography key={n} variant="caption" component="div" color="text.secondary">
+                    · {n}
+                  </Typography>
+                ))}
+              </Box>
+            ) : null}
+            {field('target', t('target'), { placeholder: t('targetPlaceholder') })}
+            {compName === 'etcd'
+              ? field('binary_url', t('binaryUrl'), {
+                  placeholder: 'https://github.com/etcd-io/etcd/releases/download/v{version}/...',
+                })
+              : null}
+            {field('repo_url', t('repoUrl'), { placeholder: t('repoPlaceholder'), helperText: t('repoHelp') })}
+            {form.repo_url.trim() ? (
+              <Stack>
+                <FormControlLabel
+                  control={<Checkbox size="small" checked={repoOnly} onChange={(e) => setRepoOnly(e.target.checked)} />}
+                  label={<Typography variant="body2">{t('repoOnly')}</Typography>}
+                />
+                <FormControlLabel
+                  control={<Checkbox size="small" checked={repoGpg} onChange={(e) => setRepoGpg(e.target.checked)} />}
+                  label={<Typography variant="body2">{t('repoGpg')}</Typography>}
+                />
+                {repoGpg
+                  ? field('repo_gpgkey', t('repoGpgKey'), { placeholder: 'https://repo.example/RPM-GPG-KEY' })
+                  : null}
+              </Stack>
+            ) : null}
+            <Typography variant="body2" fontWeight={700} mt={0.5}>
+              {t('sshTitle')}
+            </Typography>
+            <Typography variant="caption" color="text.secondary" mt={-1}>
+              {kind === 'clusters' ? t('sshHelp') : t('sshHelpDiscovered')}
+            </Typography>
+            <Stack direction="row" gap={1}>
+              {field('ssh_user', t('sshUser'), { fullWidth: true, autoComplete: 'off' })}
+              {field('ssh_port', t('sshPort'), { sx: { width: 90, flexShrink: 0 } })}
+            </Stack>
+            {field('ssh_password', t('sshPassword'), { type: 'password', autoComplete: 'new-password' })}
+            {field('ssh_key', t('sshKey'), { multiline: true, minRows: 2, maxRows: 5, InputProps: { sx: mono } })}
+            <Button
+              variant="contained"
+              size="large"
+              startIcon={posting.isLoading ? <CircularProgress size={18} color="inherit" /> : <FactCheckIcon />}
+              disabled={!target?.id || posting.isLoading || running || needLogin}
+              onClick={() => void start('plan')}>
+              {t('dryRun')}
+            </Button>
+            {running ? <Alert severity="info">{t('busy')}</Alert> : null}
+          </Stack>
+        </Card>
+
+        <Stack gap={2} minWidth={0}>
+          {stepper}
+          <Card title={t('history')}>
+            <Stack divider={<Box sx={{ borderTop: 1, borderColor: 'divider' }} />}>
+              {upgrades.map((u) => (
+                <Stack
+                  key={u.id}
+                  direction="row"
+                  alignItems="center"
+                  gap={1}
+                  py={0.75}
+                  px={0.75}
+                  sx={{ cursor: 'pointer', borderRadius: 1, '&:hover': { bgcolor: 'action.hover' } }}
+                  onClick={() => {
+                    setSelected(u.id);
+                    setView('run');
+                  }}>
+                  <Box flex={1} minWidth={0}>
+                    <Typography variant="body2" fontWeight={700}>
+                      #{u.id} {t(`a_${u.action}`)}
+                      {u.options?.target ? ` · ${u.options.target}` : ''}
+                    </Typography>
+                    <Typography variant="caption" color="text.secondary">
+                      {new Date(u.created_at).toLocaleString()} · {u.created_by || '—'}
+                    </Typography>
+                  </Box>
+                  <Chip size="small" color={STATUS[u.status]} label={t(`st_${u.status}`)} sx={{ fontWeight: 700 }} />
+                </Stack>
+              ))}
+              {!upgrades.length ? (
+                <Typography variant="body2" color="text.secondary">
+                  {t('start')}
+                </Typography>
+              ) : null}
+            </Stack>
+          </Card>
+        </Stack>
+      </Box>
+      {confirmDialog()}
     </Stack>
   );
 };

@@ -1,6 +1,6 @@
 # pg_mantra upgrade runner - the image the console starts for Upgrades (dry run, upgrade, rollback).
 # Plain Ansible (+ ansible.posix, community.general, community.postgresql), pg_mantra's own upgrade playbook and
-# your custom playbooks (Upgrades > Custom playbooks): works for any setup (built by pg_mantra or found by Discover). Built by ./build.sh console (or ./build.sh upgrader):
+# your own playbooks (the Ansible Playbooks page): works for any setup (built by pg_mantra or found by Discover). Built by ./build.sh console (or ./build.sh upgrader):
 #     docker build -f upgrade/Dockerfile -t pg_mantra/upgrader:1.0 automation-ha
 FROM registry.access.redhat.com/ubi9/ubi:latest
 LABEL org.opencontainers.image.title="pg_mantra-upgrader"

@@ -676,7 +676,7 @@ func friendlyErr(err error) string {
 	if errors.As(err, &pe) {
 		switch pe.Code {
 		case "28P01":
-			return "wrong username or password"
+			return "wrong database user or password"
 		case "28000":
 			return "not allowed by pg_hba.conf (add a line for the console's IP) - " + pe.Message
 		case "3D000":
@@ -697,7 +697,9 @@ func friendlyErr(err error) string {
 	case strings.Contains(s, "no pg_hba.conf entry"):
 		return "not allowed by pg_hba.conf (add a line for the console's IP)"
 	case strings.Contains(s, "password authentication failed"):
-		return "wrong username or password"
+		return "wrong database user or password"
+	case strings.Contains(s, "no password supplied"), strings.Contains(s, "password is required"):
+		return "the database password is needed"
 	}
 	return s
 }

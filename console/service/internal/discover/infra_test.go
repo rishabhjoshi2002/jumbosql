@@ -168,7 +168,7 @@ func TestPkgMatches(t *testing.T) {
 }
 
 func TestParseProbe(t *testing.T) {
-	out := "@@host\nhostname=lb1.example\nos=Rocky Linux 9.4 (Blue Onyx)\ncpus=2\nmem_kb=4000000\nswap_kb=0\nsudo=yes\n" +
+	out := "@@host\nhostname=lb1.example\nsshfrom=192.168.122.1\ngateway=192.168.122.1\nos=Rocky Linux 9.4 (Blue Onyx)\ncpus=2\nmem_kb=4000000\nswap_kb=0\nsudo=yes\n" +
 		"@@disk\n/dev/vda1 xfs 21474836480 5368709120 16106127360 25% /\n" +
 		"@@listen\nLISTEN 0 4096 10.0.0.100:5000 0.0.0.0:* users:((\"haproxy\",pid=812,fd=7))\n" +
 		"LISTEN 0 4096 0.0.0.0:7000 0.0.0.0:* users:((\"haproxy\",pid=812,fd=5))\n" +
@@ -182,6 +182,9 @@ func TestParseProbe(t *testing.T) {
 	finish(h)
 	if h.Name != "lb1.example" || h.CPUs != 2 || len(h.Disks) != 1 || len(h.VIPs) != 1 || h.VIPs[0] != "10.0.0.100" {
 		t.Fatalf("%+v", h)
+	}
+	if len(h.selfAddrs) != 1 || h.selfAddrs[0] != "192.168.122.1" {
+		t.Errorf("self %v", h.selfAddrs)
 	}
 	hp := h.comp("haproxy")
 	if hp.Version != "2.8.3" || hp.Package != "haproxy 2.8.3-1.el9" || !hp.Running || len(hp.Ports) != 2 {

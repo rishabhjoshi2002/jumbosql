@@ -217,8 +217,8 @@ not build - any client, any layout - as long as the console can reach them. Give
 - one **database login** for all of them (a superuser shows everything; a role with `pg_monitor` and
   `pg_read_all_settings` shows almost everything). The servers' `pg_hba.conf` must allow the console's IP.
 
-- optionally, an **SSH login** (password or private key) and a **Prometheus** address (else one found on the
-  machines is used).
+- optionally, an **SSH login** (password or private key). Prometheus is found automatically (the one that
+  scrapes the machines); nothing to type.
 
 **One address is enough.** Give only the PostgreSQL primary (with the database login and one SSH login) and
 Discover finds the rest by following its connections: its standbys and logical subscribers, its clients
@@ -227,8 +227,14 @@ the HAProxy / nginx / PgBouncer / keepalived / pgBackRest / Prometheus configs, 
 connections on the known ports (`ss`). Each new machine is probed the same way, round after round (up to 60
 machines). Application servers that only connect to PostgreSQL are listed as clients, not followed. Where the
 SSH login does not work, a pop-up asks for the logins of those machines (one for all, or one each) and Discover
-runs again; they are used for that run only and never saved. The diagram draws the connections it saw (etcd,
-Patroni checks, metrics scrapes, replication, balancer routes).
+runs again; they are used for that run only and never saved. pg_mantra's own address as the machines see it
+(the SSH client address, often a NAT gateway such as `192.168.122.1`) and their default gateway are ignored:
+those connections are Discover's own probes, not part of the setup. If PostgreSQL cannot be reached, the summary
+says why (e.g. "wrong database user or password").
+
+The diagram shows the traffic path (grey arrows) and, by colour, the connections it saw, in groups that can be
+switched on and off: **Data Path** (replication, PgBouncer, balancer routes - on by default), **Cluster Control**
+(etcd, Patroni), **Monitoring**, **Backup**. Pointing at a machine shows all of its connections, with the port.
 
 It looks at every machine at once and only reads: open ports and the HTTP endpoints that say what and which
 version they are (Prometheus, Alertmanager, Grafana, etcd, Consul, Patroni, HAProxy stats, exporters, nginx /
@@ -281,14 +287,18 @@ Results can be saved (passwords never are), opened again, downloaded as JSON or 
 
 ## Upgrades (admins)
 
-**Upgrades** (the button left of the theme switch in the header, `upgrade.run`, given to Administrators)
-upgrades one component at a time - PostgreSQL (minor version), Patroni, etcd, HAProxy, keepalived, PgBouncer,
-pgBackRest, vip-manager, node_exporter, postgres_exporter, Prometheus, Alertmanager, Grafana - on **any setup**:
+**Upgrades** (a button in the header, `upgrade.run`, given to Administrators) upgrades one component at a time -
+PostgreSQL (minor version), Patroni, etcd, HAProxy, keepalived, PgBouncer, pgBackRest, vip-manager, node_exporter,
+postgres_exporter, Prometheus, Alertmanager, Grafana - on **any cluster**. One **Cluster** list holds every cluster:
+those **Found By Discover** (any setup, whoever built it: the machines and what runs on each come from Discover)
+and those **Created By pg_mantra** (with their inventory and stored SSH secret). Give the SSH login for the nodes
+(used for that run only, never saved).
 
-- **Found by Discover** (the usual case): pick a saved discovery (or press the upgrade button on a Discover
-  result). The machines and what runs on each come from what Discover found - the setup does not need to be built
-  by pg_mantra. Give the SSH login for the nodes (used for that run only, never saved).
-- **Console cluster**: a cluster created or imported in the console, with its inventory and stored SSH secret.
+The steps are shown on top: Dry Run → Review → Upgrade → Rollback (If Needed). The step going on is dark, finished
+steps turn green, the next ones stay grey. When a run starts the form is hidden and the screen splits in two:
+**Live Progress** (the runner container, a line to each node, and on each node its steps - keep old version,
+install, restart, health check - ticking as they finish) and the **Ansible Log**. If anything fails: **Roll Back
+Now** (one click) or **Try Again** (back to the form to change the settings).
 
 pg_mantra's own playbook does the work (`automation-ha/upgrade/`: plain Ansible, no vendor collection). It runs in
 the **upgrade runner** image `pg_mantra/upgrader:1.0`, built by `./build.sh console` (or `./build.sh upgrader`);
@@ -314,9 +324,10 @@ means the repositories the nodes already have.
 
 The runner's log is shown live, and each node's result (before / after versions, what was kept) is stored.
 
-### Custom playbooks (your own upgrade playbook)
+## Ansible Playbooks (admins)
 
-**Upgrades > Custom playbooks** runs **your** Ansible playbooks in the same runner container.
+**Playbooks** (a button in the header) is a separate page for **your own** Ansible playbooks, saved by name and
+run in the same runner container on any machines you choose.
 
 **Add a playbook** (saved in the console):
 - the **upgrade playbook** and, optionally, the **rollback playbook**: paste the YAML, or upload an archive
@@ -329,13 +340,17 @@ The runner's log is shown live, and each node's result (before / after versions,
   the image.
 
 **Run it**:
-1. Choose the machines: a saved discovery, a console cluster, or your own inventory (INI or YAML). You can limit
-   the run to some hosts.
-2. Fill the inputs and the SSH login (used for that run only, never saved). Under *More options*: sudo password,
-   Ansible Vault password, extra variables, `-vv`.
+1. Choose the machines: **IP Addresses** (type them, one per line - every group of the playbook gets all of them),
+   a **Cluster** (created or discovered; you can limit it to some hosts), or **My Inventory** (INI or YAML).
+2. Fill the inputs, the **Username** and **Password** (used for that run only, never saved). Under *More Options*:
+   SSH key, sudo password, Ansible Vault password, extra variables, `-vv`.
 3. **Dry run** = `ansible-playbook --check --diff`: nothing is changed. It shows, per host, what would change.
-4. **Upgrade** (after a dry run) runs the upgrade playbook on the same machines with the same inputs.
-5. **Roll back** (after an upgrade, even a failed one) runs the rollback playbook.
+4. **Run The Playbook** (after a dry run) on the same machines with the same inputs.
+5. **Roll Back** (after a run, even a failed one - **Roll Back Now** appears as soon as a run fails) runs the
+   rollback playbook. **Try Again** goes back to the form to change the inputs.
+
+The same split screen as Upgrades shows each machine live (its current task, tasks done, changes, the error)
+next to the Ansible log.
 
 The playbooks also get `pgm.action` (`plan` / `run` / `rollback`), `pgm.run_id` and `ansible_check_mode`.
 `pgm.run_id` is the id of the upgrade that a rollback undoes, so an upgrade can keep its backups under it

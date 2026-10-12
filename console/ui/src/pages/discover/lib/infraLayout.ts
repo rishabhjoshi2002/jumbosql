@@ -26,7 +26,30 @@ export type IBox = {
   h: number;
 };
 export type IEdge = { from: string; to: string; label: string; d: string; lx: number; ly: number; kind: string };
-export type ILink = { from: string; to: string; kind: string; port?: number; d: string; hosts: [string, string] };
+export type ILink = {
+  from: string;
+  to: string;
+  kind: string;
+  port?: number;
+  d: string;
+  hosts: [string, string];
+  lx: number; // middle of the line (for its label)
+  ly: number;
+};
+
+/** what a connection is for: the data path is shown by default, the rest on demand or when a machine is pointed at */
+export const LINK_GROUP: Record<string, 'data' | 'control' | 'monitoring' | 'backup'> = {
+  replication: 'data',
+  postgres: 'data',
+  pgbouncer: 'data',
+  balancer: 'data',
+  vip: 'data',
+  etcd: 'control',
+  patroni: 'control',
+  metrics: 'monitoring',
+  prometheus: 'monitoring',
+  backup: 'backup',
+};
 export type ILayout = {
   width: number;
   height: number;
@@ -228,12 +251,16 @@ export const infraLayout = (inf: DInfra, nodes: DNode[]): ILayout => {
     if (linkSeen.has(key)) return;
     linkSeen.add(key);
     let d: string;
+    let lx: number;
+    let ly: number;
     if (Math.abs(a.y - b.y) < 1) {
       // same lane: an arc over the boxes
       const x1 = a.x + IBOX.w / 2;
       const x2 = b.x + IBOX.w / 2;
       const top = a.y - 18 - Math.min(40, Math.abs(x2 - x1) / 8);
       d = `M${x1},${a.y} C${x1},${top} ${x2},${top} ${x2},${b.y}`;
+      lx = (x1 + x2) / 2;
+      ly = (2 * a.y + 6 * top) / 8;
     } else {
       const down = b.y > a.y;
       const x1 = a.x + IBOX.w / 2 + (down ? 18 : -18);
@@ -242,8 +269,10 @@ export const infraLayout = (inf: DInfra, nodes: DNode[]): ILayout => {
       const y2 = down ? b.y : b.y + b.h;
       const my = (y1 + y2) / 2;
       d = `M${x1},${y1} C${x1},${my} ${x2},${my} ${x2},${y2}`;
+      lx = (x1 + x2) / 2;
+      ly = my;
     }
-    links.push({ from: a.id, to: b.id, kind: l.kind, port: l.port, d, hosts: [l.from, l.to] });
+    links.push({ from: a.id, to: b.id, kind: l.kind, port: l.port, d, hosts: [l.from, l.to], lx, ly });
   });
 
   return { width: LABEL_W + innerW, height: Math.max(0, y - GAP_Y), boxes, edges, links, lanes };

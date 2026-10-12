@@ -99,7 +99,6 @@ const Discover: FC = () => {
     ssh_port: '22',
     ssh_password: '',
     ssh_key: '',
-    prometheus_url: '',
     days: '30',
     horizon: '180',
   });
@@ -143,7 +142,6 @@ const Discover: FC = () => {
         ssh_port: Number(form.ssh_port) || undefined,
         ssh_password: form.ssh_user.trim() ? form.ssh_password || undefined : undefined,
         ssh_key: form.ssh_user.trim() ? form.ssh_key.trim() || undefined : undefined,
-        prometheus_url: form.prometheus_url.trim() || undefined,
         days: Number(form.days) || undefined,
         horizon: Number(form.horizon) || undefined,
       }).unwrap();
@@ -302,14 +300,7 @@ const Discover: FC = () => {
                       {t('machinesSection')}
                     </Typography>
                     <Typography variant="caption" color="text.secondary">
-                      {form.ssh_user.trim() || form.prometheus_url.trim()
-                        ? [
-                            form.ssh_user.trim() && `SSH ${form.ssh_user.trim()}`,
-                            form.prometheus_url.trim() && 'Prometheus',
-                          ]
-                            .filter(Boolean)
-                            .join(' · ')
-                        : t('machinesSectionHelp')}
+                      {form.ssh_user.trim() ? `SSH ${form.ssh_user.trim()}` : t('machinesSectionHelp')}
                     </Typography>
                   </Box>
                 </AccordionSummary>
@@ -352,14 +343,6 @@ const Discover: FC = () => {
                       placeholder="-----BEGIN OPENSSH PRIVATE KEY-----"
                       disabled={!form.ssh_user.trim()}
                       InputProps={{ sx: { fontFamily: '"JetBrains Mono", monospace', fontSize: 12 } }}
-                    />
-                    <TextField
-                      label={t('promUrl')}
-                      size="small"
-                      value={form.prometheus_url}
-                      onChange={(e) => set('prometheus_url', e.target.value)}
-                      placeholder="http://10.0.0.30:9090"
-                      helperText={t('promUrlHelp')}
                     />
                     <Stack direction="row" gap={1}>
                       <TextField

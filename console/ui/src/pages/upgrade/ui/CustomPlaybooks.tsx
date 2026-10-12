@@ -1,4 +1,4 @@
-import { FC, useEffect, useMemo, useRef, useState } from 'react';
+import { FC, useEffect, useMemo, useState } from 'react';
 import {
   Accordion,
   AccordionDetails,
@@ -18,9 +18,6 @@ import {
   IconButton,
   MenuItem,
   Stack,
-  Step,
-  StepLabel,
-  Stepper,
   Table,
   TableBody,
   TableCell,
@@ -40,10 +37,10 @@ import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import FactCheckIcon from '@mui/icons-material/FactCheckOutlined';
 import PlayArrowIcon from '@mui/icons-material/PlayArrow';
 import UndoIcon from '@mui/icons-material/Undo';
+import ReplayIcon from '@mui/icons-material/Replay';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'react-toastify';
-import { useGetClustersQuery } from '@shared/api/api/clusters.ts';
-import { useGetDiscoveriesQuery, useGetDiscoveryQuery } from '@shared/api/api/discover.ts';
+import { useGetDiscoveryQuery } from '@shared/api/api/discover.ts';
 import {
   PHostResult,
   Playbook,
@@ -56,12 +53,12 @@ import {
   useGetPlaybooksQuery,
   usePostPlaybookRunMutation,
 } from '@shared/api/api/playbooks.ts';
-import { selectCurrentProject } from '@app/redux/slices/projectSlice/projectSelectors.ts';
-import { useAppSelector } from '@app/redux/store/hooks.ts';
-import { can } from '@shared/lib/session.ts';
-import { useSessionUser } from '@shared/lib/useSession.ts';
+import { UTarget } from '@shared/api/api/upgrade.ts';
 import Card from '@pages/discover/ui/Card.tsx';
 import PlaybookEditor from './PlaybookEditor.tsx';
+import FlowStepper, { flowSteps } from './FlowStepper.tsx';
+import RunView from './RunView.tsx';
+import TargetSelect, { useTargetNames } from './TargetSelect.tsx';
 
 const mono = { fontFamily: '"JetBrains Mono", monospace', fontSize: 12.5 };
 const STATUS = { running: 'info', success: 'success', failed: 'error' } as const;
@@ -69,13 +66,26 @@ const isHost = (r: unknown): r is PHostResult => !!r && typeof r === 'object' &&
 const errText = (e: unknown, t: (k: string) => string) =>
   String((e as { data?: { title?: string } }).data?.title ?? t('failed'));
 
-type Machines = 'discovery' | 'cluster' | 'inventory';
+type Machines = 'ips' | 'cluster' | 'inventory';
 
-/** pg_mantra Upgrades > Custom playbooks: your own upgrade + rollback playbooks, with the inputs they need, run by
- * the console in the upgrade runner container: dry run (--check --diff), upgrade, rollback. */
+/** the addresses typed by the user (one per line, or separated by commas / spaces) */
+export const ipList = (s: string) => [
+  ...new Set(
+    s
+      .split(/[\s,;]+/)
+      .map((x) => x.trim())
+      .filter(Boolean),
+  ),
+];
+
+/** an inventory where every group of the playbook (and all) holds the given machines */
+export const ipInventory = (ips: string[], groups: string[]) =>
+  ['[pgm_targets]', ...ips, '', ...groups.flatMap((g) => [`[${g}:children]`, 'pgm_targets', ''])].join('\n');
+
+/** pg_mantra Ansible Playbooks: your own playbooks, by name, run on the machines you choose (IP addresses and a
+ * login, a cluster, or your inventory) - dry run (--check --diff), run, rollback, with a live picture and the log. */
 const CustomPlaybooks: FC = () => {
   const { t } = useTranslation('upgrade');
-  const user = useSessionUser();
   const playbooks = useGetPlaybooksQuery();
   const [pid, setPid] = useState(0);
   const pb: Playbook | undefined = playbooks.data?.find((p) => p.id === pid);
@@ -87,27 +97,19 @@ const CustomPlaybooks: FC = () => {
   }, [pb, playbooks.data]);
 
   // the machines
-  const projectId = Number(useAppSelector(selectCurrentProject));
-  const clusters = useGetClustersQuery({ projectId, offset: 0, limit: 999_999_999 }, { skip: !projectId });
-  const allowed = useMemo(
-    () => (clusters.data?.data ?? []).filter((c) => c.id && can('upgrade.run', c.id, user)),
-    [clusters.data, user],
-  );
-  const discoveries = useGetDiscoveriesQuery();
-  const [machines, setMachines] = useState<Machines>('discovery');
-  const [discoveryId, setDiscoveryId] = useState(0);
-  const [clusterId, setClusterId] = useState(0);
+  const names = useTargetNames();
+  const [machines, setMachines] = useState<Machines>('ips');
+  const [ips, setIps] = useState('');
+  const [target, setTarget] = useState<UTarget | null>(null);
   const [inventory, setInventory] = useState('');
   const [hosts, setHosts] = useState<string[]>([]);
-  const discovery = useGetDiscoveryQuery(discoveryId, { skip: machines !== 'discovery' || !discoveryId });
+  const discovery = useGetDiscoveryQuery(target?.id ?? 0, {
+    skip: machines !== 'cluster' || target?.kind !== 'discoveries' || !target?.id,
+  });
   const hostOptions = useMemo(
     () => (discovery.data?.result.infra?.hosts ?? []).map((h) => h.address),
     [discovery.data],
   );
-  useEffect(() => {
-    if (!discoveryId && discoveries.data?.[0]) setDiscoveryId(discoveries.data[0].id);
-    if (!clusterId && allowed[0]?.id) setClusterId(allowed[0].id);
-  }, [discoveries.data, allowed, discoveryId, clusterId]);
 
   // the inputs and the login
   const [vals, setVals] = useState<Record<string, unknown>>({});
@@ -123,36 +125,46 @@ const CustomPlaybooks: FC = () => {
 
   // runs
   const [selected, setSelected] = useState(0);
+  const [view, setView] = useState<'form' | 'run'>('form');
   const [running, setRunning] = useState(false);
-  const runs = useGetPlaybookRunsQuery(pid, { skip: !pid, pollingInterval: running ? 4000 : 0 });
+  const runs = useGetPlaybookRunsQuery(pid, { skip: !pid, pollingInterval: running ? 3000 : 0 });
   useEffect(() => setRunning((runs.data ?? []).some((r) => r.status === 'running')), [runs.data]);
-  const list = runs.data ?? [];
-  const current: PlaybookRun | undefined = list.find((r) => r.id === selected) ?? list[0];
+  const list = useMemo(() => runs.data ?? [], [runs.data]);
+  useEffect(() => {
+    const r = list.find((x) => x.status === 'running');
+    if (r && view === 'form') {
+      setSelected(r.id);
+      setView('run');
+    }
+  }, [list, view]);
+  const current: PlaybookRun | undefined = list.find((r) => r.id === selected);
   const detail = useGetPlaybookRunQuery(
     { id: pid, uid: current?.id ?? 0 },
-    { skip: !current?.id, pollingInterval: current?.status === 'running' ? 3000 : 0 },
+    { skip: !current?.id, pollingInterval: current?.status === 'running' ? 2000 : 0 },
   );
-  const logText = (detail.data?.id === current?.id ? detail.data?.log : '')?.slice(-30000) ?? '';
-  const logRef = useRef<HTMLPreElement>(null);
-  useEffect(() => {
-    // follow the end of the log
-    if (logRef.current) logRef.current.scrollTop = logRef.current.scrollHeight;
-  }, [logText]);
+  const log = detail.data?.id === current?.id ? (detail.data?.log ?? '') : '';
   const lastPlan = list.find((r) => r.action === 'plan');
   const lastRun = list.find((r) => r.action === 'run');
-  const rolledBack = lastRun && list.some((r) => r.action === 'rollback' && r.parent_id === lastRun.id);
-  const step = !lastPlan ? 0 : !lastRun || lastPlan.id > lastRun.id ? 1 : rolledBack ? 3 : 2;
+  const lastRollback = list.find((r) => r.action === 'rollback');
+  const rolledBack =
+    lastRun && list.some((r) => r.action === 'rollback' && r.parent_id === lastRun.id && r.status === 'success');
+  const steps = flowSteps([t('pb.s1'), t('pb.s2'), t('pb.s3'), t('pb.s4')], {
+    plan: lastPlan,
+    run: lastRun,
+    rollback: lastRollback,
+  });
   const [confirm, setConfirm] = useState<null | 'run' | 'rollback'>(null);
   const [post, posting] = usePostPlaybookRunMutation();
 
   const missing = defs.filter(
     (d) => d.required && d.type !== 'boolean' && (vals[d.name] === '' || vals[d.name] == null),
   );
+  const ipsList = ipList(ips);
   const noMachines =
-    (machines === 'discovery' && !discoveryId) ||
-    (machines === 'cluster' && !clusterId) ||
+    (machines === 'ips' && !ipsList.length) ||
+    (machines === 'cluster' && !target?.id) ||
     (machines === 'inventory' && !inventory.trim());
-  const needLogin = machines === 'discovery' && !login.user.trim();
+  const needLogin = (machines === 'ips' || target?.kind === 'discoveries') && !login.user.trim();
 
   const start = async (action: PlaybookRunRequest['action'], parent?: number) => {
     if (!pb) return;
@@ -168,11 +180,18 @@ const CustomPlaybooks: FC = () => {
       verbose,
     };
     if (action === 'plan') {
-      // the dry run fixes the machines and the inputs; the upgrade and the rollback reuse them
-      body.discovery_id = machines === 'discovery' ? discoveryId : undefined;
-      body.cluster_id = machines === 'cluster' ? clusterId : undefined;
-      body.inventory = machines === 'inventory' ? inventory : undefined;
-      body.hosts = hosts.length ? hosts : undefined;
+      // the dry run fixes the machines and the inputs; the run and the rollback reuse them
+      if (machines === 'ips')
+        body.inventory = ipInventory(
+          ipsList,
+          (pb.groups ?? []).map((g) => g.group),
+        );
+      if (machines === 'inventory') body.inventory = inventory;
+      if (machines === 'cluster' && target) {
+        if (target.kind === 'discoveries') body.discovery_id = target.id;
+        else body.cluster_id = target.id;
+        body.hosts = hosts.length ? hosts : undefined;
+      }
       body.vars = vals;
       body.extra_vars = extraVars.trim() || undefined;
     } else {
@@ -181,8 +200,9 @@ const CustomPlaybooks: FC = () => {
     try {
       const out = await post({ id: pb.id, body }).unwrap();
       setSelected(out.id);
+      setView('run');
       setRunning(true);
-      toast.success(t(`started_${action}`));
+      toast.success(t(`pb.started_${action}`));
     } catch (e) {
       toast.error(errText(e, t));
     }
@@ -232,14 +252,284 @@ const CustomPlaybooks: FC = () => {
     />
   );
 
-  const hostResults = (current?.result ?? []).filter(isHost);
   const where = (r?: PlaybookRun) => {
     const o = r?.options;
     if (!o) return '';
-    if (o.discovery_id) return `${t('kindDiscovered')} #${o.discovery_id}`;
-    if (o.cluster_id) return `${t('cluster')} ${allowed.find((c) => c.id === o.cluster_id)?.name ?? o.cluster_id}`;
-    return t('pb.ownInventory');
+    if (o.discovery_id) return names[`discoveries:${o.discovery_id}`] ?? `#${o.discovery_id}`;
+    if (o.cluster_id) return names[`clusters:${o.cluster_id}`] ?? `#${o.cluster_id}`;
+    const fromIps = (o.inventory ?? '').startsWith('[pgm_targets]')
+      ? ipList((o.inventory ?? '').split('\n\n')[0].replace('[pgm_targets]', ''))
+      : [];
+    return fromIps.length ? fromIps.join(', ') : t('pb.ownInventory');
   };
+  const knownHosts = useMemo(() => {
+    const o = current?.options;
+    if (o?.inventory?.startsWith('[pgm_targets]'))
+      return ipList(o.inventory.split('\n\n')[0].replace('[pgm_targets]', ''));
+    return o?.hosts ?? [];
+  }, [current]);
+
+  /* ------------------------------------------------------------ what comes next, under the run */
+  const actions = (() => {
+    if (!current || current.status === 'running' || !pb) return null;
+    const tryAgain = (
+      <Button variant="outlined" startIcon={<ReplayIcon />} onClick={() => setView('form')}>
+        {t('tryAgain')}
+      </Button>
+    );
+    if (current.action === 'plan') {
+      if (current.id !== lastPlan?.id) return null;
+      return (
+        <>
+          {current.status === 'failed' ? (
+            <Alert severity="warning" sx={{ flex: 1 }}>
+              {t('pb.planFailed')}
+            </Alert>
+          ) : null}
+          <Button
+            variant="contained"
+            color="warning"
+            size="large"
+            startIcon={<PlayArrowIcon />}
+            disabled={running}
+            onClick={() => setConfirm('run')}>
+            {current.status === 'failed' ? t('pb.runAnyway') : t('pb.runIt')}
+          </Button>
+          {current.status === 'failed' ? (
+            tryAgain
+          ) : (
+            <Button onClick={() => setView('form')}>{t('changeSettings')}</Button>
+          )}
+        </>
+      );
+    }
+    if (current.action === 'run' && current.id === lastRun?.id && !rolledBack) {
+      if (current.status === 'failed') {
+        return (
+          <>
+            <Alert severity="error" sx={{ flex: 1 }}>
+              {pb.has_rollback ? t('pb.runFailed') : t('pb.runFailedNoRb')}
+            </Alert>
+            {pb.has_rollback ? (
+              <Button
+                variant="contained"
+                color="error"
+                size="large"
+                startIcon={<UndoIcon />}
+                disabled={running || posting.isLoading}
+                onClick={() => void start('rollback', current.id)}>
+                {t('rollbackNow')}
+              </Button>
+            ) : null}
+            {tryAgain}
+          </>
+        );
+      }
+      return (
+        <>
+          <Alert severity="success" sx={{ flex: 1 }}>
+            {t('pb.runDone')}
+          </Alert>
+          {pb.has_rollback ? (
+            <Button variant="outlined" color="error" startIcon={<UndoIcon />} onClick={() => setConfirm('rollback')}>
+              {t('rollback')}
+            </Button>
+          ) : null}
+        </>
+      );
+    }
+    if (current.action === 'rollback') {
+      return current.status === 'failed' && lastRun ? (
+        <>
+          <Alert severity="error" sx={{ flex: 1 }}>
+            {t('rollbackFailed')}
+          </Alert>
+          <Button
+            variant="contained"
+            color="error"
+            startIcon={<ReplayIcon />}
+            disabled={running || posting.isLoading}
+            onClick={() => void start('rollback', lastRun.id)}>
+            {t('rollbackAgain')}
+          </Button>
+          {tryAgain}
+        </>
+      ) : (
+        <Alert severity="success">{t('rollbackDone')}</Alert>
+      );
+    }
+    return null;
+  })();
+
+  const hostResults = (current?.result ?? []).filter(isHost);
+  const details =
+    current && current.status !== 'running' ? (
+      <Card title={t('details')}>
+        {(current.result ?? [])
+          .filter((r) => !isHost(r))
+          .map((r, i) => (
+            <Alert key={i} severity="error" sx={{ mb: 1 }}>
+              {(r as { error: string }).error}
+            </Alert>
+          ))}
+        {current.options?.vars && Object.keys(current.options.vars).length ? (
+          <Typography variant="body2" mb={1} sx={mono}>
+            {Object.entries(current.options.vars)
+              .map(([k, v]) => `${k}=${String(v)}`)
+              .join('  ')}
+          </Typography>
+        ) : null}
+        {hostResults.length ? (
+          <TableContainer>
+            <Table size="small">
+              <TableHead>
+                <TableRow sx={{ '& th': { whiteSpace: 'nowrap' } }}>
+                  <TableCell>{t('node')}</TableCell>
+                  <TableCell>{t('result')}</TableCell>
+                  <TableCell>{current.action === 'plan' ? t('pb.wouldChange') : t('pb.changed')}</TableCell>
+                  <TableCell align="right">{t('pb.counts')}</TableCell>
+                </TableRow>
+              </TableHead>
+              <TableBody>
+                {hostResults.map((r) => (
+                  <TableRow key={r.host}>
+                    <TableCell sx={{ fontWeight: 700, whiteSpace: 'nowrap' }}>{r.host}</TableCell>
+                    <TableCell>
+                      <Chip
+                        size="small"
+                        color={r.status === 'failed' ? 'error' : 'success'}
+                        label={t(`st_${r.status}`)}
+                      />
+                      {r.error ? (
+                        <Typography
+                          variant="caption"
+                          color="error"
+                          display="block"
+                          mt={0.5}
+                          sx={{ whiteSpace: 'pre-wrap', maxWidth: 520 }}>
+                          {r.task ? `${r.task}: ` : ''}
+                          {r.error.slice(0, 600)}
+                        </Typography>
+                      ) : null}
+                    </TableCell>
+                    <TableCell sx={mono}>
+                      {(r.changed ?? []).length
+                        ? (r.changed ?? []).map((c) => <div key={c}>{c}</div>)
+                        : t('pb.noChange')}
+                    </TableCell>
+                    <TableCell align="right" sx={{ ...mono, whiteSpace: 'nowrap' }}>
+                      {r.stats
+                        ? t('pb.countsIs', {
+                            ok: r.stats.ok,
+                            changed: r.stats.changed,
+                            failed: r.stats.failures + r.stats.unreachable,
+                            skipped: r.stats.skipped,
+                          })
+                        : '—'}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </TableContainer>
+        ) : null}
+        {current.action === 'plan' ? (
+          <Typography variant="caption" color="text.secondary" display="block" mt={1}>
+            {t('pb.checkNote')}
+          </Typography>
+        ) : null}
+      </Card>
+    ) : null;
+
+  const dialogs = (
+    <>
+      <PlaybookEditor
+        open={editor.open}
+        edit={editor.edit}
+        onClose={(saved) => {
+          setEditor({ open: false });
+          if (saved) setPid(saved.id);
+        }}
+      />
+      <Dialog open={!!confirm} onClose={() => setConfirm(null)}>
+        <DialogTitle>{confirm === 'run' ? t('pb.confirmRunTitle') : t('confirmRollbackTitle')}</DialogTitle>
+        <DialogContent>
+          <Typography variant="body2">
+            {confirm === 'run'
+              ? t('pb.confirmRun', { name: pb?.name, where: where(lastPlan) })
+              : t('pb.confirmRollback', { name: pb?.name, where: where(lastRun) })}
+          </Typography>
+          {defs.some((d) => d.type === 'password') || login.password ? (
+            <Typography variant="caption" color="text.secondary" display="block" mt={1}>
+              {t('pb.secretsAgain')}
+            </Typography>
+          ) : null}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setConfirm(null)}>{t('cancel')}</Button>
+          <Button
+            variant="contained"
+            color={confirm === 'run' ? 'warning' : 'error'}
+            onClick={() => {
+              const c = confirm;
+              setConfirm(null);
+              if (c === 'run' && lastPlan) void start('run', lastPlan.id);
+              if (c === 'rollback' && lastRun) void start('rollback', lastRun.id);
+            }}>
+            {confirm === 'run' ? t('pb.runIt') : t('rollback')}
+          </Button>
+        </DialogActions>
+      </Dialog>
+      <Dialog open={askDelete} onClose={() => setAskDelete(false)}>
+        <DialogTitle>{t('pb.deleteTitle', { name: pb?.name })}</DialogTitle>
+        <DialogContent>
+          <Typography variant="body2">{t('pb.deleteText')}</Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setAskDelete(false)}>{t('cancel')}</Button>
+          <Button
+            variant="contained"
+            color="error"
+            disabled={deleting.isLoading}
+            onClick={async () => {
+              setAskDelete(false);
+              try {
+                if (pb) await del(pb.id).unwrap();
+                setPid(0);
+              } catch (e) {
+                toast.error(errText(e, t));
+              }
+            }}>
+            {t('pb.delete')}
+          </Button>
+        </DialogActions>
+      </Dialog>
+    </>
+  );
+
+  const stepper = (
+    <Card>
+      <FlowStepper steps={steps} running={running} />
+    </Card>
+  );
+
+  if (view === 'run' && current && pb) {
+    return (
+      <Stack gap={2}>
+        {stepper}
+        <RunView
+          title={`#${current.id} ${t(`pb.a_${current.action}`)} · ${pb.name} · ${where(current)}`}
+          status={current.status}
+          log={log}
+          knownHosts={knownHosts}
+          actions={actions}
+          onBack={() => setView('form')}>
+          {details}
+        </RunView>
+        {dialogs}
+      </Stack>
+    );
+  }
 
   return (
     <Box
@@ -247,97 +537,58 @@ const CustomPlaybooks: FC = () => {
         display: 'grid',
         gap: 2,
         alignItems: 'start',
-        gridTemplateColumns: { xs: 'minmax(0,1fr)', lg: '320px minmax(0,1fr)' },
+        gridTemplateColumns: { xs: 'minmax(0,1fr)', lg: '300px minmax(0,1fr)' },
       }}>
-      <Stack gap={2}>
-        <Card
-          title={t('pb.list')}
-          action={
-            <Button size="small" startIcon={<AddIcon />} onClick={() => setEditor({ open: true, edit: null })}>
-              {t('pb.add')}
-            </Button>
-          }>
-          <Stack divider={<Box sx={{ borderTop: 1, borderColor: 'divider' }} />}>
-            {(playbooks.data ?? []).map((p) => (
-              <Box
-                key={p.id}
-                onClick={() => {
-                  setPid(p.id);
-                  setSelected(0);
-                }}
-                sx={{
-                  cursor: 'pointer',
-                  borderRadius: 1,
-                  p: 0.75,
-                  bgcolor: p.id === pid ? 'action.selected' : undefined,
-                  '&:hover': { bgcolor: 'action.hover' },
-                }}>
-                <Typography variant="body2" fontWeight={700}>
-                  {p.name}
-                </Typography>
-                <Typography variant="caption" color="text.secondary" display="block" noWrap>
-                  {p.description || p.playbook_path || '—'}
-                </Typography>
-                <Stack direction="row" gap={0.5} mt={0.5}>
-                  <Chip size="small" variant="outlined" label={t('pb.inputsN', { n: p.variables?.length ?? 0 })} />
-                  {p.has_rollback ? <Chip size="small" variant="outlined" label={t('pb.hasRollback')} /> : null}
-                  {p.files_name ? <Chip size="small" variant="outlined" label={p.files_name} /> : null}
-                </Stack>
-              </Box>
-            ))}
-            {!playbooks.data?.length ? (
-              <Typography variant="body2" color="text.secondary">
-                {t('pb.empty')}
+      <Card
+        title={t('pb.list')}
+        action={
+          <Button size="small" startIcon={<AddIcon />} onClick={() => setEditor({ open: true, edit: null })}>
+            {t('pb.add')}
+          </Button>
+        }>
+        <Stack divider={<Box sx={{ borderTop: 1, borderColor: 'divider' }} />}>
+          {(playbooks.data ?? []).map((p) => (
+            <Box
+              key={p.id}
+              onClick={() => {
+                setPid(p.id);
+                setSelected(0);
+              }}
+              sx={{
+                cursor: 'pointer',
+                borderRadius: 1,
+                p: 0.75,
+                bgcolor: p.id === pid ? 'action.selected' : undefined,
+                '&:hover': { bgcolor: 'action.hover' },
+              }}>
+              <Typography variant="body2" fontWeight={700}>
+                {p.name}
               </Typography>
-            ) : null}
-          </Stack>
-        </Card>
-
-        {pb ? (
-          <Card title={t('history')}>
-            <Stack divider={<Box sx={{ borderTop: 1, borderColor: 'divider' }} />}>
-              {list.map((r) => (
-                <Stack
-                  key={r.id}
-                  direction="row"
-                  alignItems="center"
-                  gap={1}
-                  py={0.75}
-                  px={0.75}
-                  sx={{
-                    cursor: 'pointer',
-                    borderRadius: 1,
-                    bgcolor: current?.id === r.id ? 'action.selected' : undefined,
-                    '&:hover': { bgcolor: 'action.hover' },
-                  }}
-                  onClick={() => setSelected(r.id)}>
-                  <Box flex={1} minWidth={0}>
-                    <Typography variant="body2" fontWeight={700}>
-                      #{r.id} {t(`a_${r.action}`)}
-                    </Typography>
-                    <Typography variant="caption" color="text.secondary" display="block" noWrap>
-                      {new Date(r.created_at).toLocaleString()} · {r.created_by || '—'} · {where(r)}
-                    </Typography>
-                  </Box>
-                  <Chip size="small" color={STATUS[r.status]} label={t(`st_${r.status}`)} sx={{ fontWeight: 700 }} />
-                </Stack>
-              ))}
-              {!list.length ? (
-                <Typography variant="body2" color="text.secondary">
-                  {t('pb.noRuns')}
-                </Typography>
-              ) : null}
-            </Stack>
-          </Card>
-        ) : null}
-      </Stack>
+              <Typography variant="caption" color="text.secondary" display="block" noWrap>
+                {p.description || p.playbook_path || '—'}
+              </Typography>
+              <Stack direction="row" gap={0.5} mt={0.5} flexWrap="wrap">
+                <Chip size="small" variant="outlined" label={t('pb.inputsN', { n: p.variables?.length ?? 0 })} />
+                {p.has_rollback ? <Chip size="small" variant="outlined" label={t('pb.hasRollback')} /> : null}
+              </Stack>
+            </Box>
+          ))}
+          {!playbooks.data?.length ? (
+            <Typography variant="body2" color="text.secondary">
+              {t('pb.empty')}
+            </Typography>
+          ) : null}
+        </Stack>
+      </Card>
 
       {!pb ? (
         <Alert severity="info">{t('pb.start')}</Alert>
       ) : (
         <Stack gap={2} minWidth={0}>
+          {stepper}
           <Card
             title={pb.name}
+            subtitle={pb.description}
             action={
               <Stack direction="row">
                 <Tooltip title={t('pb.edit')}>
@@ -352,11 +603,6 @@ const CustomPlaybooks: FC = () => {
                 </Tooltip>
               </Stack>
             }>
-            {pb.description ? (
-              <Typography variant="body2" color="text.secondary" mb={1.5}>
-                {pb.description}
-              </Typography>
-            ) : null}
             <Box sx={{ display: 'grid', gap: 2.5, gridTemplateColumns: { xs: '1fr', md: '1fr 1fr' } }}>
               <Stack gap={1.5}>
                 <Typography fontWeight={700} variant="body2">
@@ -368,37 +614,49 @@ const CustomPlaybooks: FC = () => {
                   fullWidth
                   value={machines}
                   onChange={(_, v) => v && setMachines(v)}>
-                  <ToggleButton value="discovery">{t('kindDiscovered')}</ToggleButton>
-                  <ToggleButton value="cluster">{t('kindCluster')}</ToggleButton>
+                  <ToggleButton value="ips">{t('pb.byIp')}</ToggleButton>
+                  <ToggleButton value="cluster">{t('cluster')}</ToggleButton>
                   <ToggleButton value="inventory">{t('pb.ownInventory')}</ToggleButton>
                 </ToggleButtonGroup>
-                {machines === 'discovery' ? (
+                {machines === 'ips' ? (
                   <TextField
-                    select
-                    size="small"
-                    label={t('setup')}
-                    value={discoveryId || ''}
-                    helperText={!discoveries.data?.length ? t('noDiscoveries') : undefined}
-                    onChange={(e) => setDiscoveryId(Number(e.target.value))}>
-                    {(discoveries.data ?? []).map((d) => (
-                      <MenuItem key={d.id} value={d.id}>
-                        #{d.id} {d.name}
-                      </MenuItem>
-                    ))}
-                  </TextField>
+                    multiline
+                    minRows={3}
+                    maxRows={10}
+                    label={t('pb.ips')}
+                    value={ips}
+                    onChange={(e) => setIps(e.target.value)}
+                    placeholder={'192.168.122.24\n192.168.122.25'}
+                    helperText={
+                      ipsList.length
+                        ? t('pb.ipsCount', { n: ipsList.length })
+                        : pb.groups?.length
+                          ? t('pb.ipsGroups', { list: pb.groups.map((g) => g.group).join(', ') })
+                          : t('pb.ipsHelp')
+                    }
+                    InputProps={{ sx: mono }}
+                  />
                 ) : machines === 'cluster' ? (
-                  <TextField
-                    select
-                    size="small"
-                    label={t('cluster')}
-                    value={clusterId || ''}
-                    onChange={(e) => setClusterId(Number(e.target.value))}>
-                    {allowed.map((c) => (
-                      <MenuItem key={c.id} value={c.id}>
-                        {c.name}
-                      </MenuItem>
-                    ))}
-                  </TextField>
+                  <>
+                    <TargetSelect value={target} onChange={setTarget} />
+                    {pb.groups?.length ? (
+                      <Typography variant="caption" color="text.secondary">
+                        {t('pb.groupsAre')}{' '}
+                        {pb.groups
+                          .map((g) => `${g.group} = ${g.from === 'all' ? t('pb.allMachines') : g.from}`)
+                          .join(', ')}
+                      </Typography>
+                    ) : null}
+                    <Autocomplete
+                      multiple
+                      freeSolo
+                      size="small"
+                      options={hostOptions}
+                      value={hosts}
+                      onChange={(_, v) => setHosts(v)}
+                      renderInput={(p) => <TextField {...p} label={t('pb.limit')} placeholder={t('pb.limitAll')} />}
+                    />
+                  </>
                 ) : (
                   <TextField
                     multiline
@@ -411,21 +669,6 @@ const CustomPlaybooks: FC = () => {
                     InputProps={{ sx: mono }}
                   />
                 )}
-                {pb.groups?.length && machines !== 'inventory' ? (
-                  <Typography variant="caption" color="text.secondary">
-                    {t('pb.groupsAre')}{' '}
-                    {pb.groups.map((g) => `${g.group} = ${g.from === 'all' ? t('pb.allMachines') : g.from}`).join(', ')}
-                  </Typography>
-                ) : null}
-                <Autocomplete
-                  multiple
-                  freeSolo
-                  size="small"
-                  options={hostOptions}
-                  value={hosts}
-                  onChange={(_, v) => setHosts(v)}
-                  renderInput={(p) => <TextField {...p} label={t('pb.limit')} placeholder={t('pb.limitAll')} />}
-                />
                 {defs.length ? (
                   <>
                     <Typography fontWeight={700} variant="body2" mt={1}>
@@ -441,18 +684,17 @@ const CustomPlaybooks: FC = () => {
                   {t('pb.login')}
                 </Typography>
                 <Typography variant="caption" color="text.secondary" mt={-1}>
-                  {machines === 'cluster'
-                    ? t('sshHelp')
-                    : machines === 'inventory'
-                      ? t('pb.sshInventory')
+                  {machines === 'inventory'
+                    ? t('pb.sshInventory')
+                    : machines === 'cluster' && target?.kind === 'clusters'
+                      ? t('sshHelp')
                       : t('sshHelpDiscovered')}
                 </Typography>
                 <Stack direction="row" gap={1}>
-                  {field('user', t('sshUser'), { fullWidth: true, autoComplete: 'off' })}
+                  {field('user', t('pb.username'), { fullWidth: true, autoComplete: 'off' })}
                   {field('port', t('sshPort'), { sx: { width: 90, flexShrink: 0 } })}
                 </Stack>
-                {field('password', t('sshPassword'), { type: 'password', autoComplete: 'new-password' })}
-                {field('key', t('sshKey'), { multiline: true, minRows: 2, maxRows: 5, InputProps: { sx: mono } })}
+                {field('password', t('pb.password'), { type: 'password', autoComplete: 'new-password' })}
                 <Accordion
                   disableGutters
                   variant="outlined"
@@ -464,6 +706,7 @@ const CustomPlaybooks: FC = () => {
                   </AccordionSummary>
                   <AccordionDetails>
                     <Stack gap={1.5}>
+                      {field('key', t('sshKey'), { multiline: true, minRows: 2, maxRows: 5, InputProps: { sx: mono } })}
                       {field('become', t('pb.become'), { type: 'password', autoComplete: 'new-password' })}
                       {field('vault', t('pb.vault'), { type: 'password', autoComplete: 'new-password' })}
                       <TextField
@@ -503,222 +746,42 @@ const CustomPlaybooks: FC = () => {
             </Box>
           </Card>
 
-          <Card>
-            <Stepper activeStep={step} alternativeLabel>
-              {['s1', 's2', 's3', 's4'].map((s) => (
-                <Step key={s}>
-                  <StepLabel>{t(s)}</StepLabel>
-                </Step>
-              ))}
-            </Stepper>
-          </Card>
-
-          {current ? (
-            <Card
-              title={`#${current.id} ${t(`a_${current.action}`)} · ${where(current)}`}
-              action={
-                <Chip color={STATUS[current.status]} label={t(`st_${current.status}`)} sx={{ fontWeight: 700 }} />
-              }>
-              {(current.result ?? [])
-                .filter((r) => !isHost(r))
-                .map((r, i) => (
-                  <Alert key={i} severity="error" sx={{ mb: 1 }}>
-                    {(r as { error: string }).error}
-                  </Alert>
-                ))}
-              {current.options?.vars && Object.keys(current.options.vars).length ? (
-                <Typography variant="body2" mb={1} sx={mono}>
-                  {Object.entries(current.options.vars)
-                    .map(([k, v]) => `${k}=${String(v)}`)
-                    .join('  ')}
-                </Typography>
-              ) : null}
-              {hostResults.length ? (
-                <TableContainer>
-                  <Table size="small">
-                    <TableHead>
-                      <TableRow sx={{ '& th': { whiteSpace: 'nowrap' } }}>
-                        <TableCell>{t('node')}</TableCell>
-                        <TableCell>{t('result')}</TableCell>
-                        <TableCell>{current.action === 'plan' ? t('pb.wouldChange') : t('pb.changed')}</TableCell>
-                        <TableCell align="right">{t('pb.counts')}</TableCell>
-                      </TableRow>
-                    </TableHead>
-                    <TableBody>
-                      {hostResults.map((r) => (
-                        <TableRow key={r.host}>
-                          <TableCell sx={{ fontWeight: 700, whiteSpace: 'nowrap' }}>{r.host}</TableCell>
-                          <TableCell>
-                            <Chip
-                              size="small"
-                              color={r.status === 'failed' ? 'error' : 'success'}
-                              label={t(`st_${r.status}`)}
-                            />
-                            {r.error ? (
-                              <Typography
-                                variant="caption"
-                                color="error"
-                                display="block"
-                                mt={0.5}
-                                sx={{ whiteSpace: 'pre-wrap', maxWidth: 520 }}>
-                                {r.task ? `${r.task}: ` : ''}
-                                {r.error.slice(0, 600)}
-                              </Typography>
-                            ) : null}
-                          </TableCell>
-                          <TableCell sx={mono}>
-                            {(r.changed ?? []).length
-                              ? (r.changed ?? []).map((c) => <div key={c}>{c}</div>)
-                              : current.status !== 'running'
-                                ? t('pb.noChange')
-                                : ''}
-                          </TableCell>
-                          <TableCell align="right" sx={{ ...mono, whiteSpace: 'nowrap' }}>
-                            {r.stats
-                              ? t('pb.countsIs', {
-                                  ok: r.stats.ok,
-                                  changed: r.stats.changed,
-                                  failed: r.stats.failures + r.stats.unreachable,
-                                  skipped: r.stats.skipped,
-                                })
-                              : '—'}
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                </TableContainer>
-              ) : null}
-              {current.action === 'plan' && current.status !== 'running' ? (
-                <Typography variant="caption" color="text.secondary" display="block" mt={1}>
-                  {t('pb.checkNote')}
-                </Typography>
-              ) : null}
-
-              {current.action === 'plan' && current.status !== 'running' && current.id === lastPlan?.id ? (
-                <Stack direction="row" gap={2} alignItems="center" mt={2} flexWrap="wrap">
-                  <Button
-                    variant="contained"
-                    color="warning"
-                    startIcon={<PlayArrowIcon />}
-                    disabled={running}
-                    onClick={() => setConfirm('run')}>
-                    {t('proceed')}
-                  </Button>
-                  {current.status === 'failed' ? (
-                    <Typography variant="caption" color="warning.main">
-                      {t('pb.planFailed')}
-                    </Typography>
-                  ) : null}
-                </Stack>
-              ) : null}
-              {current.action === 'run' && current.status !== 'running' && current.id === lastRun?.id && !rolledBack ? (
-                <Stack direction="row" gap={2} alignItems="center" mt={2} flexWrap="wrap">
-                  <Button
-                    variant="outlined"
-                    color="error"
-                    startIcon={<UndoIcon />}
-                    disabled={running || !pb.has_rollback}
-                    onClick={() => setConfirm('rollback')}>
-                    {t('rollback')}
-                  </Button>
-                  {!pb.has_rollback ? (
-                    <Typography variant="caption" color="text.secondary">
-                      {t('pb.noRollback')}
-                    </Typography>
-                  ) : null}
-                </Stack>
-              ) : null}
-
-              <Box mt={2}>
-                <Typography variant="body2" fontWeight={700} mb={0.5}>
-                  {t('log')}
-                </Typography>
-                <Box
-                  component="pre"
-                  ref={logRef}
-                  sx={{
-                    ...mono,
-                    fontSize: 11.5,
-                    m: 0,
-                    p: 1.25,
-                    bgcolor: 'action.hover',
-                    borderRadius: 1.5,
-                    maxHeight: 380,
-                    overflow: 'auto',
-                    whiteSpace: 'pre-wrap',
+          <Card title={t('history')}>
+            <Stack divider={<Box sx={{ borderTop: 1, borderColor: 'divider' }} />}>
+              {list.map((r) => (
+                <Stack
+                  key={r.id}
+                  direction="row"
+                  alignItems="center"
+                  gap={1}
+                  py={0.75}
+                  px={0.75}
+                  sx={{ cursor: 'pointer', borderRadius: 1, '&:hover': { bgcolor: 'action.hover' } }}
+                  onClick={() => {
+                    setSelected(r.id);
+                    setView('run');
                   }}>
-                  {logText || t('noLog')}
-                </Box>
-              </Box>
-            </Card>
-          ) : null}
+                  <Box flex={1} minWidth={0}>
+                    <Typography variant="body2" fontWeight={700}>
+                      #{r.id} {t(`pb.a_${r.action}`)} · {where(r)}
+                    </Typography>
+                    <Typography variant="caption" color="text.secondary" display="block" noWrap>
+                      {new Date(r.created_at).toLocaleString()} · {r.created_by || '—'}
+                    </Typography>
+                  </Box>
+                  <Chip size="small" color={STATUS[r.status]} label={t(`st_${r.status}`)} sx={{ fontWeight: 700 }} />
+                </Stack>
+              ))}
+              {!list.length ? (
+                <Typography variant="body2" color="text.secondary">
+                  {t('pb.noRuns')}
+                </Typography>
+              ) : null}
+            </Stack>
+          </Card>
         </Stack>
       )}
-
-      <PlaybookEditor
-        open={editor.open}
-        edit={editor.edit}
-        onClose={(saved) => {
-          setEditor({ open: false });
-          if (saved) setPid(saved.id);
-        }}
-      />
-
-      <Dialog open={!!confirm} onClose={() => setConfirm(null)}>
-        <DialogTitle>{confirm === 'run' ? t('confirmRunTitle') : t('confirmRollbackTitle')}</DialogTitle>
-        <DialogContent>
-          <Typography variant="body2">
-            {confirm === 'run'
-              ? t('pb.confirmRun', { name: pb?.name, where: where(lastPlan) })
-              : t('pb.confirmRollback', { name: pb?.name, where: where(lastRun) })}
-          </Typography>
-          {defs.some((d) => d.type === 'password') || !login.user.trim() ? (
-            <Typography variant="caption" color="text.secondary" display="block" mt={1}>
-              {t('pb.secretsAgain')}
-            </Typography>
-          ) : null}
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setConfirm(null)}>{t('cancel')}</Button>
-          <Button
-            variant="contained"
-            color={confirm === 'run' ? 'warning' : 'error'}
-            onClick={() => {
-              const c = confirm;
-              setConfirm(null);
-              if (c === 'run' && lastPlan) void start('run', lastPlan.id);
-              if (c === 'rollback' && lastRun) void start('rollback', lastRun.id);
-            }}>
-            {confirm === 'run' ? t('proceed') : t('rollback')}
-          </Button>
-        </DialogActions>
-      </Dialog>
-
-      <Dialog open={askDelete} onClose={() => setAskDelete(false)}>
-        <DialogTitle>{t('pb.deleteTitle', { name: pb?.name })}</DialogTitle>
-        <DialogContent>
-          <Typography variant="body2">{t('pb.deleteText')}</Typography>
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setAskDelete(false)}>{t('cancel')}</Button>
-          <Button
-            variant="contained"
-            color="error"
-            disabled={deleting.isLoading}
-            onClick={async () => {
-              setAskDelete(false);
-              try {
-                if (pb) await del(pb.id).unwrap();
-                setPid(0);
-              } catch (e) {
-                toast.error(errText(e, t));
-              }
-            }}>
-            {t('pb.delete')}
-          </Button>
-        </DialogActions>
-      </Dialog>
+      {dialogs}
     </Box>
   );
 };

@@ -136,6 +136,9 @@ func crawl(ctx context.Context, req Request) (*Infra, []*Node) {
 	}
 	queue := req.Hosts
 	clientConns := map[string]*ClientHost{}
+	// pg_mantra's own address as the machines see it (SSH client, often the NAT gateway such as 192.168.122.1)
+	// and their default gateways: our own probes connect from there, so they are not part of the setup
+	self := map[string]bool{}
 	for round := 0; len(queue) > 0 && round < 8; round++ {
 		hosts := make([]*HostInfo, len(queue))
 		var wg sync.WaitGroup
@@ -162,6 +165,11 @@ func crawl(ctx context.Context, req Request) (*Infra, []*Node) {
 			ih := queue[i]
 			for _, ip := range h.IPs {
 				seen[ip] = true
+			}
+			for _, a := range h.selfAddrs {
+				if !seen[a] {
+					self[a] = true
+				}
 			}
 			if ih.Client && !runsStack(h) {
 				continue // an application server: listed as a client, not followed
@@ -197,7 +205,7 @@ func crawl(ctx context.Context, req Request) (*Infra, []*Node) {
 		next := map[string]*InvHost{}
 		var order []string
 		for _, p := range found {
-			if !publicIP(p.addr) || seen[p.addr] {
+			if !publicIP(p.addr) || seen[p.addr] || self[p.addr] {
 				continue
 			}
 			if x := next[p.addr]; x != nil {
@@ -230,7 +238,7 @@ func crawl(ctx context.Context, req Request) (*Infra, []*Node) {
 		}
 	}
 	for addr, c := range clientConns {
-		if !known[addr] && publicIP(addr) {
+		if !known[addr] && publicIP(addr) && !self[addr] {
 			inf.Clients = append(inf.Clients, *c)
 		}
 	}
@@ -245,6 +253,16 @@ func crawl(ctx context.Context, req Request) (*Infra, []*Node) {
 			}
 			inf.SSHNeeded = append(inf.SSHNeeded, SSHNeed{Address: h.Address, Name: h.Name, Roles: h.Roles, Reason: reason, Via: h.FoundVia})
 		}
+	}
+	// lines to / from pg_mantra's own address are our probes, not the setup's traffic
+	if len(self) > 0 {
+		links := inf.Links[:0]
+		for _, l := range inf.Links {
+			if !self[l.From] && !self[l.To] {
+				links = append(links, l)
+			}
+		}
+		inf.Links = links
 	}
 	return inf, nodes
 }

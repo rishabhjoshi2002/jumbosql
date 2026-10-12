@@ -559,7 +559,28 @@ func describe(res *Result) {
 			plural(c.Databases, "database", "databases"), bytesText(c.SizeBytes)))
 	}
 	if c.Reachable < c.Nodes {
-		lines = append(lines, fmt.Sprintf("%d of %d servers could not be reached.", c.Nodes-c.Reachable, c.Nodes))
+		// why, so the fix is clear (e.g. "give the database password")
+		why := map[string][]string{}
+		var order []string
+		for _, n := range res.Nodes {
+			if n.Reachable {
+				continue
+			}
+			e := n.Error
+			if e == "" {
+				e = "no answer"
+			}
+			if why[e] == nil {
+				order = append(order, e)
+			}
+			why[e] = append(why[e], n.Name)
+		}
+		parts := make([]string, 0, len(order))
+		for _, e := range order {
+			parts = append(parts, fmt.Sprintf("%s (%s)", e, strings.Join(why[e], ", ")))
+		}
+		lines = append(lines, fmt.Sprintf("PostgreSQL: %d of %d servers could not be reached: %s.", c.Nodes-c.Reachable, c.Nodes,
+			strings.Join(parts, "; ")))
 	}
 	res.Summary = lines
 	findings(res)

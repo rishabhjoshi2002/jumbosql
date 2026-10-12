@@ -18,6 +18,7 @@ import { selectCurrentProject } from '@app/redux/slices/projectSlice/projectSele
 import { useAppDispatch, useAppSelector } from '@app/redux/store/hooks.ts';
 import { useTranslation } from 'react-i18next';
 import Button from '@mui/material/Button';
+import TerminalIcon from '@mui/icons-material/Terminal';
 import SystemUpdateAltIcon from '@mui/icons-material/SystemUpdateAlt';
 import { Link } from 'react-router-dom';
 import RouterPaths from '@app/router/routerPathsConfig';
@@ -90,21 +91,29 @@ const Header: FC = () => {
             </TextField>
           </Stack>
           <Stack direction="row" alignItems="center" gap="8px" pr="4px">
-            {canAny(['upgrade.run'], undefined, user) ? (
-              <Button
-                component={Link}
-                to={RouterPaths.upgrade.absolutePath}
-                startIcon={<SystemUpdateAltIcon />}
-                sx={{
-                  color: BRAND.chromeText,
-                  border: '1px solid rgba(255,255,255,0.18)',
-                  textTransform: 'none',
-                  fontWeight: 600,
-                  '&:hover': { borderColor: BRAND.sky, bgcolor: 'rgba(255,255,255,0.06)' },
-                }}>
-                {t('button', { ns: 'upgrade' })}
-              </Button>
-            ) : null}
+            {canAny(['upgrade.run'], undefined, user)
+              ? (
+                  [
+                    [RouterPaths.playbooks.absolutePath, <TerminalIcon key="i" />, t('pb.button', { ns: 'upgrade' })],
+                    [RouterPaths.upgrade.absolutePath, <SystemUpdateAltIcon key="i" />, t('button', { ns: 'upgrade' })],
+                  ] as const
+                ).map(([to, icon, label]) => (
+                  <Button
+                    key={to}
+                    component={Link}
+                    to={to}
+                    startIcon={icon}
+                    sx={{
+                      color: BRAND.chromeText,
+                      border: '1px solid rgba(255,255,255,0.18)',
+                      textTransform: 'none',
+                      fontWeight: 600,
+                      '&:hover': { borderColor: BRAND.sky, bgcolor: 'rgba(255,255,255,0.06)' },
+                    }}>
+                    {label}
+                  </Button>
+                ))
+              : null}
             <ThemeToggle />
             <UserMenu />
           </Stack>

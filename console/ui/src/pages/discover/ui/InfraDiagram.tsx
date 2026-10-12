@@ -1,8 +1,8 @@
 import { FC, useMemo, useState } from 'react';
-import { Box, FormControlLabel, Stack, Switch, Typography, useTheme } from '@mui/material';
+import { Box, Chip, Stack, Typography, useTheme } from '@mui/material';
 import { useTranslation } from 'react-i18next';
 import { DInfra, DNode } from '@shared/api/api/discover.ts';
-import { IBOX, infraLayout } from '../lib/infraLayout.ts';
+import { IBOX, infraLayout, LINK_GROUP } from '../lib/infraLayout.ts';
 import { useRoleColors } from './Topology.tsx';
 
 const M = 20;
@@ -51,7 +51,10 @@ const InfraDiagram: FC<{ infra: DInfra; nodes: DNode[]; selected?: string; onSel
   const lane = useLaneColors();
   const role = useRoleColors();
   const [hover, setHover] = useState<string | null>(null);
-  const [showLinks, setShowLinks] = useState(true);
+  // groups of connections shown; pointing at (or selecting) a machine always shows all of its own connections
+  const [groups, setGroups] = useState<Set<string>>(new Set(['data']));
+  const focus = hover ?? selected ?? null;
+  const groupOf = (k: string) => LINK_GROUP[k] ?? 'data';
   const linkColor = useLinkColors();
   const lay = useMemo(() => infraLayout(infra, nodes), [infra, nodes]);
   const ink = theme.palette.text.primary;
@@ -127,27 +130,42 @@ const InfraDiagram: FC<{ infra: DInfra; nodes: DNode[]; selected?: string; onSel
                 />
               );
             })}
-            {showLinks
-              ? lay.links.map((l, i) => {
-                  const active = hover && l.hosts.includes(hover);
-                  const c = linkColor[l.kind] ?? muted;
-                  return (
-                    <path
-                      key={`k${i}`}
-                      d={l.d}
-                      fill="none"
-                      stroke={c}
-                      strokeWidth={active ? 2.2 : 1.3}
-                      strokeDasharray={l.kind === 'metrics' || l.kind === 'backup' ? '5 4' : undefined}
-                      opacity={hover ? (active ? 0.95 : 0.12) : 0.55}
-                      markerEnd={`url(#ilink-${l.kind in linkColor ? l.kind : 'postgres'})`}>
-                      <title>
-                        {t(`link_${l.kind}`, { defaultValue: l.kind })}
-                        {l.port ? ` :${l.port}` : ''}
-                      </title>
-                    </path>
-                  );
-                })
+            {lay.links.map((l, i) => {
+              const mine = !!focus && l.hosts.includes(focus);
+              if (!mine && !groups.has(groupOf(l.kind))) return null;
+              const c = linkColor[l.kind] ?? muted;
+              return (
+                <path
+                  key={`k${i}`}
+                  d={l.d}
+                  fill="none"
+                  stroke={c}
+                  strokeWidth={mine ? 2.4 : 1.4}
+                  strokeDasharray={groupOf(l.kind) === 'monitoring' || l.kind === 'backup' ? '5 4' : undefined}
+                  opacity={focus ? (mine ? 0.95 : 0.1) : 0.7}
+                  markerEnd={`url(#ilink-${l.kind in linkColor ? l.kind : 'postgres'})`}>
+                  <title>
+                    {t(`link_${l.kind}`, { defaultValue: l.kind })}
+                    {l.port ? ` :${l.port}` : ''}
+                  </title>
+                </path>
+              );
+            })}
+            {focus
+              ? lay.links
+                  .filter((l) => l.hosts.includes(focus))
+                  .map((l, i) => {
+                    const label = `${t(`link_${l.kind}`, { defaultValue: l.kind })}${l.port ? ` :${l.port}` : ''}`;
+                    const w = label.length * 6 + 14;
+                    return (
+                      <g key={`kl${i}`} transform={`translate(${l.lx - w / 2},${l.ly - 9})`}>
+                        <rect width={w} height={18} rx={9} fill={surface} stroke={linkColor[l.kind] ?? muted} />
+                        <text x={w / 2} y={13} fontSize={10} textAnchor="middle" fill={ink}>
+                          {label}
+                        </text>
+                      </g>
+                    );
+                  })
               : null}
             {lay.edges
               .filter((e) => e.label)
@@ -231,29 +249,47 @@ const InfraDiagram: FC<{ infra: DInfra; nodes: DNode[]; selected?: string; onSel
         </Typography>
         {lay.links.length ? (
           <>
-            {[...new Set(lay.links.map((l) => l.kind))].map((k) => (
-              <Stack key={k} direction="row" gap={0.75} alignItems="center">
-                <svg width="22" height="8">
-                  <line
-                    x1="0"
-                    y1="4"
-                    x2="22"
-                    y2="4"
-                    stroke={linkColor[k] ?? muted}
-                    strokeWidth="2"
-                    strokeDasharray={k === 'metrics' || k === 'backup' ? '5 3' : undefined}
+            <Typography variant="caption" color="text.secondary" fontWeight={700}>
+              {t('i_connections')}
+            </Typography>
+            {(['data', 'control', 'monitoring', 'backup'] as const)
+              .filter((g) => lay.links.some((l) => groupOf(l.kind) === g))
+              .map((g) => {
+                const kinds = [...new Set(lay.links.filter((l) => groupOf(l.kind) === g).map((l) => l.kind))];
+                const on = groups.has(g);
+                return (
+                  <Chip
+                    key={g}
+                    size="small"
+                    variant={on ? 'filled' : 'outlined'}
+                    onClick={() =>
+                      setGroups((s) => {
+                        const n = new Set(s);
+                        if (n.has(g)) n.delete(g);
+                        else n.add(g);
+                        return n;
+                      })
+                    }
+                    icon={
+                      <svg width="18" height="8" style={{ marginLeft: 8 }}>
+                        <line
+                          x1="0"
+                          y1="4"
+                          x2="18"
+                          y2="4"
+                          stroke={linkColor[kinds[0]] ?? muted}
+                          strokeWidth="2.5"
+                          strokeDasharray={g === 'monitoring' || g === 'backup' ? '4 3' : undefined}
+                        />
+                      </svg>
+                    }
+                    label={`${t(`lg_${g}`)} (${lay.links.filter((l) => groupOf(l.kind) === g).length})`}
                   />
-                </svg>
-                <Typography variant="caption" color="text.secondary">
-                  {t(`link_${k}`, { defaultValue: k })}
-                </Typography>
-              </Stack>
-            ))}
-            <FormControlLabel
-              sx={{ ml: 0 }}
-              control={<Switch size="small" checked={showLinks} onChange={(e) => setShowLinks(e.target.checked)} />}
-              label={<Typography variant="caption">{t('i_showLinks')}</Typography>}
-            />
+                );
+              })}
+            <Typography variant="caption" color="text.secondary">
+              {t('i_pointHint')}
+            </Typography>
           </>
         ) : null}
       </Stack>

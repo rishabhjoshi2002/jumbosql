@@ -132,6 +132,7 @@ type HostInfo struct {
 	pgPort     int
 	declaredDB bool
 	conns      []tcpConn         // established TCP connections (SSH)
+	selfAddrs  []string          // how this machine sees pg_mantra (the SSH client address) and its default gateway
 	proxyPorts []int             // ports that looked like PostgreSQL but forward to another server
 	raw        map[string]string // SSH sections (configs), not returned
 }
@@ -510,6 +511,8 @@ R() { if [ "$(id -u)" = 0 ]; then "$@" 2>/dev/null; else sudo -n "$@" 2>/dev/nul
 echo "@@host"
 echo "hostname=$(hostname -f 2>/dev/null || hostname)"
 echo "ips=$(hostname -I 2>/dev/null || hostname -i 2>/dev/null)"
+echo "sshfrom=${SSH_CLIENT%% *}"
+echo "gateway=$(ip route show default 2>/dev/null | awk '/default/ {print $3; exit}')"
 if [ -r /etc/os-release ]; then . /etc/os-release; echo "os=$PRETTY_NAME"; fi
 echo "kernel=$(uname -r)"; echo "arch=$(uname -m)"
 echo "cpus=$(nproc 2>/dev/null || grep -c ^processor /proc/cpuinfo)"
@@ -640,6 +643,10 @@ func parseProbe(h *HostInfo, out string) {
 				if p := net.ParseIP(ip); p != nil && !p.IsLoopback() && !p.IsLinkLocalUnicast() {
 					h.IPs = appendOnce(h.IPs, ip)
 				}
+			}
+		case "sshfrom", "gateway":
+			if p := net.ParseIP(strings.TrimSpace(v)); p != nil {
+				h.selfAddrs = appendOnce(h.selfAddrs, p.String())
 			}
 		case "os":
 			h.OS = v
