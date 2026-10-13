@@ -28,6 +28,10 @@ export type Playbook = {
   files_name: string;
   files_size: number;
   has_rollback: boolean;
+  git_url?: string;
+  git_ref?: string;
+  git_commit?: string;
+  git_pulled_at?: string | null;
   created_by: string;
   created_at: string;
   updated_at: string;
@@ -46,6 +50,10 @@ export type PlaybookRequest = {
   files_base64?: string;
   files_name?: string;
   files_keep?: boolean;
+  git_url?: string;
+  git_ref?: string;
+  git_token?: string;
+  git_pull?: boolean;
 };
 
 export type PHostResult = {

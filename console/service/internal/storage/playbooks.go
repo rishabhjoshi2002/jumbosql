@@ -11,31 +11,36 @@ import (
 )
 
 type Playbook struct {
-	ID           int64     `json:"id"`
-	Name         string    `json:"name"`
-	Description  string    `json:"description"`
-	Playbook     string    `json:"playbook"`
-	PlaybookPath string    `json:"playbook_path"`
-	Rollback     string    `json:"rollback"`
-	RollbackPath string    `json:"rollback_path"`
-	Requirements string    `json:"requirements"`
-	Variables    []byte    `json:"-"`
-	Groups       []byte    `json:"-"`
-	Files        []byte    `json:"-"`
-	FilesName    string    `json:"files_name"`
-	FilesSize    int64     `json:"files_size"`
-	CreatedBy    string    `json:"created_by"`
-	CreatedAt    time.Time `json:"created_at"`
-	UpdatedAt    time.Time `json:"updated_at"`
+	ID           int64      `json:"id"`
+	Name         string     `json:"name"`
+	Description  string     `json:"description"`
+	Playbook     string     `json:"playbook"`
+	PlaybookPath string     `json:"playbook_path"`
+	Rollback     string     `json:"rollback"`
+	RollbackPath string     `json:"rollback_path"`
+	Requirements string     `json:"requirements"`
+	Variables    []byte     `json:"-"`
+	Groups       []byte     `json:"-"`
+	Files        []byte     `json:"-"`
+	FilesName    string     `json:"files_name"`
+	FilesSize    int64      `json:"files_size"`
+	GitURL       string     `json:"git_url"`
+	GitRef       string     `json:"git_ref"`
+	GitCommit    string     `json:"git_commit"`
+	GitPulledAt  *time.Time `json:"git_pulled_at,omitempty"`
+	CreatedBy    string     `json:"created_by"`
+	CreatedAt    time.Time  `json:"created_at"`
+	UpdatedAt    time.Time  `json:"updated_at"`
 }
 
 const playbookCols = `playbook_id, name, description, playbook, playbook_path, rollback, rollback_path, requirements,
-	variables, groups, files_name, coalesce(length(files), 0), created_by, created_at, updated_at`
+	variables, groups, files_name, coalesce(length(files), 0), git_url, git_ref, git_commit, git_pulled_at,
+	created_by, created_at, updated_at`
 
 func scanPlaybook(row pgx.Row, withFiles bool) (*Playbook, error) {
 	var p Playbook
 	dest := []any{&p.ID, &p.Name, &p.Description, &p.Playbook, &p.PlaybookPath, &p.Rollback, &p.RollbackPath, &p.Requirements,
-		&p.Variables, &p.Groups, &p.FilesName, &p.FilesSize, &p.CreatedBy, &p.CreatedAt, &p.UpdatedAt}
+		&p.Variables, &p.Groups, &p.FilesName, &p.FilesSize, &p.GitURL, &p.GitRef, &p.GitCommit, &p.GitPulledAt, &p.CreatedBy, &p.CreatedAt, &p.UpdatedAt}
 	if withFiles {
 		dest = append(dest, &p.Files)
 	}
@@ -78,18 +83,20 @@ func (s *dbStorage) GetPlaybook(ctx context.Context, id int64, withFiles bool) (
 func (s *dbStorage) SavePlaybook(ctx context.Context, p *Playbook, keepFiles bool) (*Playbook, error) {
 	if p.ID == 0 {
 		return scanPlaybook(s.db.QueryRow(ctx, `insert into custom_playbooks (name, description, playbook, playbook_path, rollback,
-			rollback_path, requirements, variables, groups, files, files_name, created_by)
-			values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) returning `+playbookCols,
+			rollback_path, requirements, variables, groups, files, files_name, created_by, git_url, git_ref, git_commit, git_pulled_at)
+			values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16) returning `+playbookCols,
 			p.Name, p.Description, p.Playbook, p.PlaybookPath, p.Rollback, p.RollbackPath, p.Requirements, p.Variables, p.Groups,
-			p.Files, p.FilesName, p.CreatedBy), false)
+			p.Files, p.FilesName, p.CreatedBy, p.GitURL, p.GitRef, p.GitCommit, p.GitPulledAt), false)
 	}
 	return scanPlaybook(s.db.QueryRow(ctx, `update custom_playbooks set name = $2, description = $3, playbook = $4, playbook_path = $5,
 			rollback = $6, rollback_path = $7, requirements = $8, variables = $9, groups = $10,
 			files = case when $13 then files else $11 end, files_name = case when $13 then files_name else $12 end,
+			git_url = $14, git_ref = $15, git_commit = case when $13 then git_commit else $16 end,
+			git_pulled_at = case when $13 then git_pulled_at else $17 end,
 			updated_at = now()
 		where playbook_id = $1 returning `+playbookCols,
 		p.ID, p.Name, p.Description, p.Playbook, p.PlaybookPath, p.Rollback, p.RollbackPath, p.Requirements, p.Variables, p.Groups,
-		p.Files, p.FilesName, keepFiles), false)
+		p.Files, p.FilesName, keepFiles, p.GitURL, p.GitRef, p.GitCommit, p.GitPulledAt), false)
 }
 
 func (s *dbStorage) DeletePlaybook(ctx context.Context, id int64) error {

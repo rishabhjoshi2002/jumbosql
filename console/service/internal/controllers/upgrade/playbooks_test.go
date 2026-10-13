@@ -34,7 +34,7 @@ func TestPlaybookFrom(t *testing.T) {
 		Variables: []any{map[string]any{"name": "target_version", "type": "text", "required": true},
 			map[string]any{"name": "repo_pass", "type": "password", "default": "x"}},
 		Groups: []any{map[string]any{"group": "pgbouncer", "from": "pgbouncer"}}}
-	pb, _, err := playbookFrom(ok, nil)
+	pb, _, err := playbookFrom(ok, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -53,7 +53,7 @@ func TestPlaybookFrom(t *testing.T) {
 		{Name: &name, Playbook: "- hosts: all", Groups: []any{map[string]any{"group": "db"}}},
 	}
 	for i, b := range bad {
-		if _, _, err := playbookFrom(b, nil); err == nil {
+		if _, _, err := playbookFrom(b, nil, nil); err == nil {
 			t.Errorf("request %d must be refused", i)
 		}
 	}
@@ -61,7 +61,7 @@ func TestPlaybookFrom(t *testing.T) {
 	arch := tgz(t, map[string]string{"up/site.yml": "- hosts: all\n", "up/roles/r/tasks/main.yml": "[]", "up/rollback.yml": "- hosts: all\n"})
 	withFiles := &models.RequestPlaybook{Name: &name, PlaybookPath: "site.yml", RollbackPath: "./rollback.yml",
 		FilesBase64: base64.StdEncoding.EncodeToString(arch), FilesName: "up.tar.gz"}
-	pb, _, err = playbookFrom(withFiles, nil)
+	pb, _, err = playbookFrom(withFiles, nil, nil)
 	if err != nil || pb.RollbackPath != "rollback.yml" {
 		t.Fatalf("%v %+v", err, pb)
 	}

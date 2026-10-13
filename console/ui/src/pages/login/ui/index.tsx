@@ -80,7 +80,7 @@ const Login: FC = () => {
             <Box sx={{ width: 62, height: 44, display: 'flex' }}>
               <img src={logoIcon} alt="" style={{ width: 62, height: 44 }} data-logo="true" />
             </Box>
-            <Typography sx={{ fontWeight: 800, fontSize: '1.25rem', letterSpacing: '-0.01em' }}>pg_mantra</Typography>
+            <Typography sx={{ fontWeight: 800, fontSize: '1.25rem', letterSpacing: '-0.01em' }}>pg_MANTRA</Typography>
           </Stack>
           <Box>
             <Typography sx={{ color: BRAND.sky, fontWeight: 700, letterSpacing: '0.14em', fontSize: '0.78rem', mb: 2 }}>
@@ -121,7 +121,7 @@ const Login: FC = () => {
           sx={{ width: '100%', maxWidth: '380px', position: 'relative', zIndex: 1 }}>
           <Stack gap="20px">
             <Box textAlign="center">
-              <img src={logo} alt="pg_mantra" style={{ width: 310, height: 221 }} data-logo="true" />
+              <img src={logo} alt="pg_MANTRA" style={{ width: 310, height: 221 }} data-logo="true" />
             </Box>
             <Box>
               <Typography variant="h5">{t('signIn')}</Typography>
@@ -170,7 +170,7 @@ const Login: FC = () => {
               {isLoading ? t('signingIn') : t('signIn')}
             </Button>
             <Typography variant="caption" color="text.secondary" textAlign="center">
-              pg_mantra v{version} · {t('productLine')}
+              pg_MANTRA v{version} · {t('productLine')}
             </Typography>
           </Stack>
         </Box>

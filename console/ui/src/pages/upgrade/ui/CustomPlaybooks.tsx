@@ -38,6 +38,8 @@ import FactCheckIcon from '@mui/icons-material/FactCheckOutlined';
 import PlayArrowIcon from '@mui/icons-material/PlayArrow';
 import UndoIcon from '@mui/icons-material/Undo';
 import ReplayIcon from '@mui/icons-material/Replay';
+import GitHubIcon from '@mui/icons-material/GitHub';
+import SyncIcon from '@mui/icons-material/Sync';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'react-toastify';
 import { useGetDiscoveryQuery } from '@shared/api/api/discover.ts';
@@ -52,6 +54,7 @@ import {
   useGetPlaybookRunsQuery,
   useGetPlaybooksQuery,
   usePostPlaybookRunMutation,
+  usePutPlaybookMutation,
 } from '@shared/api/api/playbooks.ts';
 import { UTarget } from '@shared/api/api/upgrade.ts';
 import Card from '@pages/discover/ui/Card.tsx';
@@ -92,6 +95,38 @@ const CustomPlaybooks: FC = () => {
   const [editor, setEditor] = useState<{ open: boolean; edit?: Playbook | null }>({ open: false });
   const [del, deleting] = useDeletePlaybookMutation();
   const [askDelete, setAskDelete] = useState(false);
+  // pull the latest from GitHub (a token only for a private repository, never saved)
+  const [pullOpen, setPullOpen] = useState(false);
+  const [pullToken, setPullToken] = useState('');
+  const [putPb, putting] = usePutPlaybookMutation();
+  const pullLatest = async () => {
+    if (!pb) return;
+    try {
+      await putPb({
+        id: pb.id,
+        body: {
+          name: pb.name,
+          description: pb.description,
+          playbook: pb.playbook,
+          playbook_path: pb.playbook_path,
+          rollback: pb.rollback,
+          rollback_path: pb.rollback_path,
+          requirements: pb.requirements,
+          variables: pb.variables ?? [],
+          groups: pb.groups ?? [],
+          git_url: pb.git_url,
+          git_ref: pb.git_ref,
+          git_token: pullToken.trim() || undefined,
+          git_pull: true,
+        },
+      }).unwrap();
+      toast.success(t('pb.pulled'));
+      setPullOpen(false);
+      setPullToken('');
+    } catch (e) {
+      toast.error(errText(e, t));
+    }
+  };
   useEffect(() => {
     if (!pb && playbooks.data?.length) setPid(playbooks.data[0].id);
   }, [pb, playbooks.data]);
@@ -480,6 +515,37 @@ const CustomPlaybooks: FC = () => {
           </Button>
         </DialogActions>
       </Dialog>
+      <Dialog open={pullOpen} onClose={() => setPullOpen(false)} maxWidth="xs" fullWidth>
+        <DialogTitle>{t('pb.pullTitle')}</DialogTitle>
+        <DialogContent>
+          <Typography variant="body2" mb={2}>
+            {t('pb.pullText', {
+              repo: pb?.git_url?.replace('https://', ''),
+              ref: pb?.git_ref || t('pb.defaultBranch'),
+            })}
+          </Typography>
+          <TextField
+            fullWidth
+            size="small"
+            type="password"
+            autoComplete="new-password"
+            label={t('pb.gitToken')}
+            value={pullToken}
+            onChange={(e) => setPullToken(e.target.value)}
+            helperText={t('pb.gitTokenHelp')}
+          />
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setPullOpen(false)}>{t('cancel')}</Button>
+          <Button
+            variant="contained"
+            startIcon={putting.isLoading ? <CircularProgress size={16} color="inherit" /> : <SyncIcon />}
+            disabled={putting.isLoading}
+            onClick={() => void pullLatest()}>
+            {t('pb.pullLatest')}
+          </Button>
+        </DialogActions>
+      </Dialog>
       <Dialog open={askDelete} onClose={() => setAskDelete(false)}>
         <DialogTitle>{t('pb.deleteTitle', { name: pb?.name })}</DialogTitle>
         <DialogContent>
@@ -570,6 +636,9 @@ const CustomPlaybooks: FC = () => {
               <Stack direction="row" gap={0.5} mt={0.5} flexWrap="wrap">
                 <Chip size="small" variant="outlined" label={t('pb.inputsN', { n: p.variables?.length ?? 0 })} />
                 {p.has_rollback ? <Chip size="small" variant="outlined" label={t('pb.hasRollback')} /> : null}
+                {p.git_url ? (
+                  <Chip size="small" variant="outlined" icon={<GitHubIcon />} label={t('pb.github')} />
+                ) : null}
               </Stack>
             </Box>
           ))}
@@ -588,9 +657,18 @@ const CustomPlaybooks: FC = () => {
           {stepper}
           <Card
             title={pb.name}
-            subtitle={pb.description}
+            subtitle={
+              pb.git_url
+                ? `${pb.description ? `${pb.description} · ` : ''}${pb.git_url.replace('https://', '')} @ ${pb.git_ref || t('pb.defaultBranch')} · ${pb.git_commit || ''}`
+                : pb.description
+            }
             action={
-              <Stack direction="row">
+              <Stack direction="row" alignItems="center">
+                {pb.git_url ? (
+                  <Button size="small" startIcon={<SyncIcon />} onClick={() => setPullOpen(true)} sx={{ mr: 1 }}>
+                    {t('pb.pullLatest')}
+                  </Button>
+                ) : null}
                 <Tooltip title={t('pb.edit')}>
                   <IconButton size="small" onClick={() => setEditor({ open: true, edit: pb })}>
                     <EditIcon fontSize="small" />

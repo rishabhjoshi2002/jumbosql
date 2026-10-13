@@ -3,6 +3,7 @@ import {
   Box,
   Button,
   Checkbox,
+  FormControlLabel,
   Dialog,
   DialogActions,
   DialogContent,
@@ -19,6 +20,7 @@ import {
 import AddIcon from '@mui/icons-material/Add';
 import DeleteIcon from '@mui/icons-material/DeleteOutline';
 import UploadIcon from '@mui/icons-material/UploadFile';
+import GitHubIcon from '@mui/icons-material/GitHub';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'react-toastify';
 import {
@@ -95,6 +97,9 @@ const PlaybookEditor: FC<{ open: boolean; edit?: Playbook | null; onClose: (save
   const [groups, setGroups] = useState<PGroup[]>([]);
   const [file, setFile] = useState<File | null>(null);
   const [keepFile, setKeepFile] = useState(true);
+  // where the files come from: an uploaded archive or a GitHub repository
+  const [filesFrom, setFilesFrom] = useState<'upload' | 'github'>('upload');
+  const [git, setGit] = useState({ url: '', ref: '', token: '', pull: false });
   const [add, adding] = usePostPlaybookMutation();
   const [put, putting] = usePutPlaybookMutation();
 
@@ -114,9 +119,12 @@ const PlaybookEditor: FC<{ open: boolean; edit?: Playbook | null; onClose: (save
     setGroups(edit?.groups ?? []);
     setFile(null);
     setKeepFile(true);
+    setFilesFrom(edit?.git_url ? 'github' : 'upload');
+    setGit({ url: edit?.git_url ?? '', ref: edit?.git_ref ?? '', token: '', pull: false });
   }, [open, edit]);
 
-  const hasArchive = !!file || (!!edit?.files_name && keepFile);
+  const hasArchive =
+    filesFrom === 'github' ? !!git.url.trim() : !!file || (!!edit?.files_name && !edit?.git_url && keepFile);
   const set = (k: keyof Form) => (e: { target: { value: string } }) => setForm((f) => ({ ...f, [k]: e.target.value }));
   const setVar = (i: number, v: Partial<PVariable>) => setVars((l) => l.map((x, j) => (j === i ? { ...x, ...v } : x)));
   const setGroup = (i: number, v: Partial<PGroup>) => setGroups((l) => l.map((x, j) => (j === i ? { ...x, ...v } : x)));
@@ -135,9 +143,14 @@ const PlaybookEditor: FC<{ open: boolean; edit?: Playbook | null; onClose: (save
           .filter((v) => v.name.trim())
           .map((v) => ({ ...v, name: v.name.trim(), default: v.default === '' ? undefined : v.default })),
         groups: groups.filter((g) => g.group.trim()),
-        files_keep: !file && keepFile,
+        files_keep: filesFrom === 'upload' && !file && keepFile && !edit?.git_url,
       };
-      if (file) {
+      if (filesFrom === 'github') {
+        body.git_url = git.url.trim();
+        body.git_ref = git.ref.trim();
+        body.git_token = git.token.trim() || undefined;
+        body.git_pull = git.pull;
+      } else if (file) {
         body.files_base64 = await toBase64(file);
         body.files_name = file.name;
       }
@@ -222,39 +235,101 @@ const PlaybookEditor: FC<{ open: boolean; edit?: Playbook | null; onClose: (save
           </Stack>
 
           <Box>
-            <Typography fontWeight={700} variant="body2" mb={0.75}>
-              {t('pb.archive')}
-            </Typography>
-            <Stack direction="row" gap={1.5} alignItems="center" flexWrap="wrap">
-              <Button component="label" variant="outlined" size="small" startIcon={<UploadIcon />}>
-                {t('pb.upload')}
-                <input
-                  hidden
-                  type="file"
-                  accept=".tar.gz,.tgz,.tar,.zip"
-                  onChange={(e) => setFile(e.target.files?.[0] ?? null)}
-                />
-              </Button>
-              <Typography variant="body2" sx={mono}>
-                {file
-                  ? `${file.name} (${Math.ceil(file.size / 1024)} KB)`
-                  : edit?.files_name && keepFile
-                    ? `${edit.files_name} (${Math.ceil(edit.files_size / 1024)} KB)`
-                    : t('pb.noArchive')}
+            <Stack direction="row" alignItems="center" justifyContent="space-between" mb={0.75}>
+              <Typography fontWeight={700} variant="body2">
+                {t('pb.archive')}
               </Typography>
-              {file || (edit?.files_name && keepFile) ? (
-                <IconButton
-                  size="small"
-                  onClick={() => {
-                    setFile(null);
-                    setKeepFile(false);
-                  }}>
-                  <DeleteIcon fontSize="small" />
-                </IconButton>
-              ) : null}
+              <ToggleButtonGroup exclusive size="small" value={filesFrom} onChange={(_, v) => v && setFilesFrom(v)}>
+                <ToggleButton value="upload">{t('pb.fromUpload')}</ToggleButton>
+                <ToggleButton value="github">
+                  <GitHubIcon fontSize="small" sx={{ mr: 0.75 }} />
+                  {t('pb.fromGithub')}
+                </ToggleButton>
+              </ToggleButtonGroup>
             </Stack>
-            <Typography variant="caption" color="text.secondary">
-              {t('pb.archiveHelp')}
+            {filesFrom === 'github' ? (
+              <Stack gap={1.25}>
+                <Stack direction={{ xs: 'column', md: 'row' }} gap={1.25}>
+                  <TextField
+                    size="small"
+                    fullWidth
+                    label={t('pb.gitUrl')}
+                    placeholder="https://github.com/your-org/postgres-playbooks"
+                    value={git.url}
+                    onChange={(e) => setGit((g) => ({ ...g, url: e.target.value }))}
+                    InputProps={{ sx: mono }}
+                  />
+                  <TextField
+                    size="small"
+                    label={t('pb.gitRef')}
+                    placeholder="main"
+                    value={git.ref}
+                    onChange={(e) => setGit((g) => ({ ...g, ref: e.target.value }))}
+                    sx={{ minWidth: 200 }}
+                  />
+                </Stack>
+                <TextField
+                  size="small"
+                  type="password"
+                  autoComplete="new-password"
+                  label={t('pb.gitToken')}
+                  value={git.token}
+                  onChange={(e) => setGit((g) => ({ ...g, token: e.target.value }))}
+                  helperText={t('pb.gitTokenHelp')}
+                />
+                {edit?.git_url ? (
+                  <Stack direction="row" alignItems="center" gap={1} flexWrap="wrap">
+                    <Typography variant="body2" sx={mono}>
+                      {t('pb.gitPulled', {
+                        commit: edit.git_commit || '—',
+                        when: edit.git_pulled_at ? new Date(edit.git_pulled_at).toLocaleString() : '—',
+                      })}
+                    </Typography>
+                    <FormControlLabel
+                      control={
+                        <Checkbox
+                          size="small"
+                          checked={git.pull}
+                          onChange={(e) => setGit((g) => ({ ...g, pull: e.target.checked }))}
+                        />
+                      }
+                      label={<Typography variant="body2">{t('pb.gitPullNow')}</Typography>}
+                    />
+                  </Stack>
+                ) : null}
+              </Stack>
+            ) : (
+              <Stack direction="row" gap={1.5} alignItems="center" flexWrap="wrap">
+                <Button component="label" variant="outlined" size="small" startIcon={<UploadIcon />}>
+                  {t('pb.upload')}
+                  <input
+                    hidden
+                    type="file"
+                    accept=".tar.gz,.tgz,.tar,.zip"
+                    onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+                  />
+                </Button>
+                <Typography variant="body2" sx={mono}>
+                  {file
+                    ? `${file.name} (${Math.ceil(file.size / 1024)} KB)`
+                    : edit?.files_name && keepFile && !edit.git_url
+                      ? `${edit.files_name} (${Math.ceil(edit.files_size / 1024)} KB)`
+                      : t('pb.noArchive')}
+                </Typography>
+                {file || (edit?.files_name && keepFile && !edit.git_url) ? (
+                  <IconButton
+                    size="small"
+                    onClick={() => {
+                      setFile(null);
+                      setKeepFile(false);
+                    }}>
+                    <DeleteIcon fontSize="small" />
+                  </IconButton>
+                ) : null}
+              </Stack>
+            )}
+            <Typography variant="caption" color="text.secondary" display="block" mt={0.5}>
+              {filesFrom === 'github' ? t('pb.gitHelp') : t('pb.archiveHelp')}
             </Typography>
           </Box>
 

@@ -77,7 +77,8 @@ func playbookView(p *storage.Playbook) map[string]any {
 		"playbook_path": p.PlaybookPath, "rollback": p.Rollback, "rollback_path": p.RollbackPath, "requirements": p.Requirements,
 		"variables": vars, "groups": groups, "files_name": p.FilesName, "files_size": p.FilesSize,
 		"has_rollback": p.Rollback != "" || p.RollbackPath != "",
-		"created_by":   p.CreatedBy, "created_at": p.CreatedAt, "updated_at": p.UpdatedAt}
+		"git_url":      p.GitURL, "git_ref": p.GitRef, "git_commit": p.GitCommit, "git_pulled_at": p.GitPulledAt,
+		"created_by": p.CreatedBy, "created_at": p.CreatedAt, "updated_at": p.UpdatedAt}
 }
 
 /* ------------------------------------------------------------ playbooks: list, one, add, change, remove */
@@ -123,7 +124,14 @@ func (h pbOne) Handle(p ops.GetCustomPlaybooksIDParams) middleware.Responder {
 }
 
 func (h pbAdd) Handle(p ops.PostCustomPlaybooksParams) middleware.Responder {
-	pb, keep, err := playbookFrom(p.Body, nil)
+	var src *pulled
+	if p.Body != nil && strings.TrimSpace(p.Body.GitURL) != "" {
+		var err error
+		if src, err = pullRepo(p.HTTPRequest.Context(), p.Body.GitURL, p.Body.GitRef, p.Body.GitToken); err != nil {
+			return pbBad(err)
+		}
+	}
+	pb, keep, err := playbookFrom(p.Body, nil, src)
 	if err != nil {
 		return pbBad(err)
 	}
@@ -143,7 +151,22 @@ func (h pbChange) Handle(p ops.PutCustomPlaybooksIDParams) middleware.Responder 
 	if err != nil || old == nil {
 		return pbBad(fmt.Errorf("playbook %d not found", p.ID))
 	}
-	pb, keep, err := playbookFrom(p.Body, old)
+	var src *pulled
+	if b := p.Body; b != nil && strings.TrimSpace(b.GitURL) != "" {
+		// pull again when asked, when the repository or branch changed, or when nothing was pulled yet
+		same := false
+		if host, owner, repo, err := parseRepo(b.GitURL); err == nil {
+			same = old.GitURL == fmt.Sprintf("https://%s/%s/%s", host, owner, repo) && old.GitRef == strings.TrimSpace(b.GitRef)
+		}
+		if b.GitPull || !same || len(old.Files) == 0 {
+			if src, err = pullRepo(ctx, b.GitURL, b.GitRef, b.GitToken); err != nil {
+				return pbBad(err)
+			}
+		} else {
+			b.FilesKeep, b.FilesBase64 = true, ""
+		}
+	}
+	pb, keep, err := playbookFrom(p.Body, old, src)
 	if err != nil {
 		return pbBad(err)
 	}
@@ -183,7 +206,7 @@ func (h pbRemove) Handle(p ops.DeleteCustomPlaybooksIDParams) middleware.Respond
 }
 
 // playbookFrom checks a request and makes the stored playbook. old: the playbook being changed (with its archive).
-func playbookFrom(b *models.RequestPlaybook, old *storage.Playbook) (*storage.Playbook, bool, error) {
+func playbookFrom(b *models.RequestPlaybook, old *storage.Playbook, src *pulled) (*storage.Playbook, bool, error) {
 	if b == nil || b.Name == nil || strings.TrimSpace(*b.Name) == "" {
 		return nil, false, errors.New("give the playbook a name")
 	}
@@ -192,6 +215,13 @@ func playbookFrom(b *models.RequestPlaybook, old *storage.Playbook) (*storage.Pl
 		Requirements: b.Requirements}
 	keep := false
 	switch {
+	case src != nil: // pulled from GitHub
+		pb.Files, pb.FilesName = src.data, src.name
+		pb.GitURL, pb.GitRef, pb.GitCommit = src.url, src.ref, src.commit
+		pb.GitPulledAt = &src.at
+	case strings.TrimSpace(b.GitURL) != "" && old != nil && len(old.Files) > 0: // from GitHub, not pulled again
+		keep, pb.Files, pb.FilesName = true, old.Files, old.FilesName
+		pb.GitURL, pb.GitRef, pb.GitCommit, pb.GitPulledAt = old.GitURL, old.GitRef, old.GitCommit, old.GitPulledAt
 	case b.FilesBase64 != "":
 		data, err := base64.StdEncoding.DecodeString(b.FilesBase64)
 		if err != nil {
@@ -266,7 +296,7 @@ func playbookFrom(b *models.RequestPlaybook, old *storage.Playbook) (*storage.Pl
 		case !nameRe.MatchString(v.Name):
 			return nil, false, fmt.Errorf("input %q: a variable name (letters, digits, _)", v.Name)
 		case v.Name == "pgm" || strings.HasPrefix(v.Name, "ansible_"):
-			return nil, false, fmt.Errorf("input %q: this name is used by pg_mantra / Ansible", v.Name)
+			return nil, false, fmt.Errorf("input %q: this name is used by pg_MANTRA / Ansible", v.Name)
 		case seen[v.Name]:
 			return nil, false, fmt.Errorf("input %q is there twice", v.Name)
 		case !varTypes[v.Type]:

@@ -1869,6 +1869,18 @@ definitions:
       files_keep:
         type: boolean
         description: "change: keep the stored archive"
+      git_url:
+        type: string
+        description: "the files come from this GitHub repository (https://github.com/owner/repo, owner/repo, or a GitHub Enterprise address)"
+      git_ref:
+        type: string
+        description: "branch, tag or commit (empty: the default branch)"
+      git_token:
+        type: string
+        description: "access token for a private repository; used for this pull only, never saved"
+      git_pull:
+        type: boolean
+        description: "change: pull the repository again (latest of the branch)"
 
   Request.PlaybookRun:
     type: object

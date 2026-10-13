@@ -54,11 +54,11 @@ const Header: FC = () => {
               boxSizing="border-box"
               paddingLeft="16px">
               <Box sx={{ width: 56, height: 40, flexShrink: 0, display: 'flex' }}>
-                <img src={logoIcon} alt="pg_mantra" style={{ width: '56px', height: '40px' }} data-logo="true" />
+                <img src={logoIcon} alt="pg_MANTRA" style={{ width: '56px', height: '40px' }} data-logo="true" />
               </Box>
               <Box sx={{ lineHeight: 1 }}>
                 <Typography sx={{ color: BRAND.chromeText, fontWeight: 800, fontSize: '1.05rem', lineHeight: 1.15 }}>
-                  pg_mantra
+                  pg_MANTRA
                 </Typography>
                 <Typography sx={{ color: BRAND.sky, fontSize: '0.74rem', fontWeight: 600, lineHeight: 1.2 }}>
                   {t('productLine')}
