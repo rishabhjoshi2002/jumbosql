@@ -31,6 +31,12 @@ import {
   Typography,
 } from '@mui/material';
 import AddIcon from '@mui/icons-material/Add';
+import ArrowDropDownIcon from '@mui/icons-material/ArrowDropDown';
+import EditNoteIcon from '@mui/icons-material/EditNote';
+import UploadFileIcon from '@mui/icons-material/UploadFile';
+import ListItemIcon from '@mui/material/ListItemIcon';
+import ListItemText from '@mui/material/ListItemText';
+import Menu from '@mui/material/Menu';
 import EditIcon from '@mui/icons-material/EditOutlined';
 import DeleteIcon from '@mui/icons-material/DeleteOutline';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
@@ -58,7 +64,7 @@ import {
 } from '@shared/api/api/playbooks.ts';
 import { UTarget } from '@shared/api/api/upgrade.ts';
 import Card from '@pages/discover/ui/Card.tsx';
-import PlaybookEditor from './PlaybookEditor.tsx';
+import PlaybookEditor, { AddMode } from './PlaybookEditor.tsx';
 import FlowStepper, { flowSteps } from './FlowStepper.tsx';
 import RunView from './RunView.tsx';
 import TargetSelect, { useTargetNames } from './TargetSelect.tsx';
@@ -92,7 +98,8 @@ const CustomPlaybooks: FC = () => {
   const playbooks = useGetPlaybooksQuery();
   const [pid, setPid] = useState(0);
   const pb: Playbook | undefined = playbooks.data?.find((p) => p.id === pid);
-  const [editor, setEditor] = useState<{ open: boolean; edit?: Playbook | null }>({ open: false });
+  const [editor, setEditor] = useState<{ open: boolean; edit?: Playbook | null; mode?: AddMode }>({ open: false });
+  const [addMenu, setAddMenu] = useState<HTMLElement | null>(null);
   const [del, deleting] = useDeletePlaybookMutation();
   const [askDelete, setAskDelete] = useState(false);
   // pull the latest from GitHub (a token only for a private repository, never saved)
@@ -481,6 +488,7 @@ const CustomPlaybooks: FC = () => {
       <PlaybookEditor
         open={editor.open}
         edit={editor.edit}
+        mode={editor.mode}
         onClose={(saved) => {
           setEditor({ open: false });
           if (saved) setPid(saved.id);
@@ -608,9 +616,35 @@ const CustomPlaybooks: FC = () => {
       <Card
         title={t('pb.list')}
         action={
-          <Button size="small" startIcon={<AddIcon />} onClick={() => setEditor({ open: true, edit: null })}>
-            {t('pb.add')}
-          </Button>
+          <>
+            <Button
+              size="small"
+              variant="contained"
+              startIcon={<AddIcon />}
+              endIcon={<ArrowDropDownIcon />}
+              onClick={(e) => setAddMenu(e.currentTarget)}>
+              {t('pb.add')}
+            </Button>
+            <Menu anchorEl={addMenu} open={!!addMenu} onClose={() => setAddMenu(null)}>
+              {(
+                [
+                  ['text', <EditNoteIcon key="i" fontSize="small" />],
+                  ['archive', <UploadFileIcon key="i" fontSize="small" />],
+                  ['github', <GitHubIcon key="i" fontSize="small" />],
+                ] as const
+              ).map(([m, icon]) => (
+                <MenuItem
+                  key={m}
+                  onClick={() => {
+                    setAddMenu(null);
+                    setEditor({ open: true, edit: null, mode: m });
+                  }}>
+                  <ListItemIcon>{icon}</ListItemIcon>
+                  <ListItemText primary={t(`pb.addAs_${m}`)} secondary={t(`pb.addAs_${m}Help`)} />
+                </MenuItem>
+              ))}
+            </Menu>
+          </>
         }>
         <Stack divider={<Box sx={{ borderTop: 1, borderColor: 'divider' }} />}>
           {(playbooks.data ?? []).map((p) => (

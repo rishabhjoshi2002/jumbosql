@@ -329,7 +329,8 @@ The runner's log is shown live, and each node's result (before / after versions,
 **Playbooks** (a button in the header) is a separate page for **your own** Ansible playbooks, saved by name and
 run in the same runner container on any machines you choose.
 
-**Add a playbook** (saved in the console):
+**Add a playbook** (saved in the console) with the **Add Playbook** drop-down: **Write Or Paste YAML**, **Upload An
+Archive**, or **From GitHub**:
 - the **upgrade playbook** and, optionally, the **rollback playbook**: paste the YAML, or upload an archive
   (`.tar.gz` / `.tgz` / `.zip` with roles, templates, files, group_vars...) and give the playbooks' paths in it;
 - the **inputs** pg_MANTRA asks before each run (target version, repository, a password...). Each input becomes
@@ -448,9 +449,9 @@ OS user through the automation's wrapper, which backs up only when Patroni repor
 timers (`systemctl list-timers | grep jumbosql-backup` on the repository VM). If your `group_vars` set
 `backrest_backup_schedule`, yours is used instead. Check with `pgbackrest info` on the repository VM.
 
-### Backups page (admins)
+### Backup & Restore page (admins)
 
-**Backups** (sidebar and header) manages pgBackRest for **any** cluster: one created by pg_MANTRA (its saved SSH
+**Backup & Restore** (sidebar and header) manages pgBackRest for **any** cluster: one created by pg_MANTRA (its saved SSH
 secret is used) or one found by Discover (give an SSH login; it is used for that call only and never saved). It
 reads every node with pgBackRest over SSH (root, `sudo -n`, or `sudo` with the SSH password) and shows:
 

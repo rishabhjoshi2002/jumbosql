@@ -77,11 +77,14 @@ const toBase64 = (f: File) =>
   });
 
 /** Add / change a custom playbook: the upgrade playbook, its rollback, files, and the inputs asked at each run. */
-const PlaybookEditor: FC<{ open: boolean; edit?: Playbook | null; onClose: (saved?: Playbook) => void }> = ({
-  open,
-  edit,
-  onClose,
-}) => {
+export type AddMode = 'text' | 'archive' | 'github';
+
+const PlaybookEditor: FC<{
+  open: boolean;
+  edit?: Playbook | null;
+  mode?: AddMode;
+  onClose: (saved?: Playbook) => void;
+}> = ({ open, edit, mode = 'text', onClose }) => {
   const { t } = useTranslation('upgrade');
   const [form, setForm] = useState<Form>({
     name: '',
@@ -114,14 +117,19 @@ const PlaybookEditor: FC<{ open: boolean; edit?: Playbook | null; onClose: (save
       rollback_path: edit?.rollback_path ?? '',
       requirements: edit?.requirements ?? '',
     });
-    setSrc({ up: edit?.playbook_path ? 'archive' : 'text', rb: edit?.rollback_path ? 'archive' : 'text' });
+    // a new playbook starts the way it was chosen in the Add Playbook menu
+    const fromFiles = !edit && mode !== 'text';
+    setSrc({
+      up: edit?.playbook_path || fromFiles ? 'archive' : 'text',
+      rb: edit?.rollback_path || fromFiles ? 'archive' : 'text',
+    });
     setVars(edit?.variables ?? []);
     setGroups(edit?.groups ?? []);
     setFile(null);
     setKeepFile(true);
-    setFilesFrom(edit?.git_url ? 'github' : 'upload');
+    setFilesFrom(edit?.git_url || (!edit && mode === 'github') ? 'github' : 'upload');
     setGit({ url: edit?.git_url ?? '', ref: edit?.git_ref ?? '', token: '', pull: false });
-  }, [open, edit]);
+  }, [open, edit, mode]);
 
   const hasArchive =
     filesFrom === 'github' ? !!git.url.trim() : !!file || (!!edit?.files_name && !edit?.git_url && keepFile);

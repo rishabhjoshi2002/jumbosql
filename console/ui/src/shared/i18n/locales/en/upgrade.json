@@ -212,7 +212,13 @@
     "pulled": "Pulled the latest from GitHub",
     "pullTitle": "Pull Latest From GitHub",
     "pullText": "Download {{repo}} @ {{ref}} again. The next runs use the new files.",
-    "defaultBranch": "default branch"
+    "defaultBranch": "default branch",
+    "addAs_text": "Write Or Paste YAML",
+    "addAs_textHelp": "A single playbook, typed or pasted",
+    "addAs_archive": "Upload An Archive",
+    "addAs_archiveHelp": ".tar.gz / .zip with roles and files",
+    "addAs_github": "From GitHub",
+    "addAs_githubHelp": "Pull a repository, branch or tag"
   },
   "sshTitle": "SSH Login",
   "rollbackNow": "Roll Back Now",
