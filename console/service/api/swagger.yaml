@@ -2131,6 +2131,12 @@ definitions:
       config:
         type: string
         description: "config: the new pgbackrest.conf"
+      file:
+        type: string
+        description: "config: the file to write - the main pgbackrest.conf (default) or a conf.d/*.conf file, by name"
+      config_kind:
+        type: string
+        description: "config: write it on the database nodes (db) or on the repository servers (repo); empty = all"
       keep_local:
         type: boolean
         x-nullable: true

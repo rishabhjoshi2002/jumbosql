@@ -85,19 +85,41 @@ def q(s):
 # ---------------------------------------------------------------- pgBackRest config
 
 def conf_path():
-    for f in ("/etc/pgbackrest/pgbackrest.conf", "/etc/pgbackrest.conf"):
-        if os.path.exists(f):
+    for f in (os.environ.get("PGBACKREST_CONFIG"), "/etc/pgbackrest/pgbackrest.conf", "/etc/pgbackrest.conf"):
+        if f and os.path.isfile(f):
             return f
     return "/etc/pgbackrest/pgbackrest.conf"
 
 
-def read_conf(path):
+def include_dirs(path):
+    """where pgBackRest also reads *.conf files (its config-include-path, /etc/pgbackrest/conf.d by default)"""
+    dirs = [os.environ.get("PGBACKREST_CONFIG_INCLUDE_PATH") or "/etc/pgbackrest/conf.d",
+            os.path.join(os.path.dirname(path), "conf.d")]
+    out = []
+    for d in dirs:
+        if d and os.path.isdir(d) and os.path.realpath(d) not in [os.path.realpath(x) for x in out]:
+            out.append(d)
+    return out
+
+
+def conf_files(path=None):
+    """the main config and the included ones, in the order pgBackRest reads them"""
+    path = path or conf_path()
+    files = [path] if os.path.isfile(path) else []
+    for d in include_dirs(path):
+        files += sorted(f for f in glob.glob(os.path.join(d, "*.conf")) if os.path.isfile(f))
+    return files
+
+
+def read_conf(path, only=False):
+    """pgBackRest's config as it sees it: the main file merged with conf.d/*.conf (only=True: that one file)"""
     cp = configparser.RawConfigParser(strict=False, interpolation=None)
     cp.optionxform = str
-    try:
-        cp.read_string(open(path, errors="ignore").read())
-    except (OSError, configparser.Error) as e:
-        OUT["warnings"].append(f"{path}: {e}")
+    for f in ([path] if only else conf_files(path)):
+        try:
+            cp.read_string(open(f, errors="ignore").read(), source=f)
+        except (OSError, configparser.Error) as e:
+            OUT["warnings"].append(f"{f}: {e}")
     return cp
 
 
@@ -112,6 +134,41 @@ def conf_get(cp, stanza, key, default=""):
     return default
 
 
+HINT = {}
+
+
+def stanza_hint():
+    """the stanza when the config files do not name one: from the repository, archive_command, cron or systemd"""
+    if "v" in HINT:
+        return HINT["v"]
+    found = ""
+    exe = which("pgbackrest")
+    if exe:
+        rc, o, _ = as_postgres(f"{exe} --output=json info", timeout=120)
+        try:
+            names = [x.get("name") for x in json.loads(o)] if rc == 0 else []
+            found = next((n for n in names if n), "")
+        except ValueError:
+            pass
+    if not found:
+        ok, rows = psql({"port": 5432}, "select current_setting('archive_command')")
+        texts = [rows[0][0]] if ok and rows and rows[0] else []
+        _, o, _ = sh("ps -eo args")
+        texts.append(o)
+        for f in [*glob.glob("/etc/cron.d/*"), "/etc/crontab", *glob.glob("/etc/systemd/system/*.service")]:
+            try:
+                texts.append(open(f, errors="ignore").read())
+            except OSError:
+                pass
+        for t in texts:
+            m = re.search(r"--stanza[= ]['\"]?([A-Za-z0-9_.-]+)", t or "")
+            if m:
+                found = m.group(1)
+                break
+    HINT["v"] = found
+    return found
+
+
 def pick_stanza(spec, cp):
     st = spec.get("stanza") or ""
     names = stanzas(cp)
@@ -119,14 +176,42 @@ def pick_stanza(spec, cp):
         return st
     if len(names) >= 1:
         return names[0]
-    return ""
+    return stanza_hint()
+
+
+def need_stanza(st):
+    if not st:
+        fail("no stanza found: none in the pgBackRest config (or conf.d) and none in the repository. "
+             "Give the stanza name, or add a [stanza] section in Configuration and create it")
+    return st
 
 
 def pg_of(cp, stanza):
-    """this node's PostgreSQL as pgBackRest sees it (pg1-*)"""
-    return {"data_dir": conf_get(cp, stanza, "pg1-path"), "port": int(conf_get(cp, stanza, "pg1-port", "5432") or 5432),
-            "socket": conf_get(cp, stanza, "pg1-socket-path"), "host": conf_get(cp, stanza, "pg1-host"),
-            "user": conf_get(cp, stanza, "pg1-user", "postgres") or "postgres"}
+    """this node's PostgreSQL as pgBackRest sees it (pg1-*); the data directory found elsewhere when not set"""
+    pg = {"data_dir": conf_get(cp, stanza, "pg1-path"), "port": int(conf_get(cp, stanza, "pg1-port", "5432") or 5432),
+          "socket": conf_get(cp, stanza, "pg1-socket-path"), "host": conf_get(cp, stanza, "pg1-host"),
+          "user": conf_get(cp, stanza, "pg1-user", "postgres") or "postgres"}
+    if not pg["data_dir"] and not pg["host"]:
+        pg["data_dir"] = local_data_dir()
+    return pg
+
+
+def local_data_dir():
+    """the local PostgreSQL data directory: from a running postmaster (-D), else from Patroni's config"""
+    _, o, _ = sh("ps -eo args")
+    for line in o.splitlines():
+        m = re.search(r"(?:^|/)(?:postgres|postmaster)\s.*?-D\s+(\S+)", line)
+        if m and os.path.isdir(m.group(1)):
+            return m.group(1)
+    try:
+        conf = patroni_conf()
+        if conf:
+            m = re.search(r"^\s+data_dir:\s*['\"]?([^'\"\s]+)", patroni_text(conf), re.M)
+            if m:
+                return m.group(1)
+    except Exception:  # noqa: BLE001
+        pass
+    return ""
 
 
 def pg_tool(name):
@@ -198,22 +283,35 @@ def pending_wal(current, archived, in_seg, seg_size):
 # ---------------------------------------------------------------- Patroni
 
 def patroni_conf():
+    """Patroni's config: a file, or a directory of *.yml files (Patroni accepts both)"""
     _, o, _ = sh("ps -eo args")
     for line in o.splitlines():
         f = line.split()
-        if f and "patroni" in line and "patronictl" not in line and f[-1].endswith((".yml", ".yaml")) and os.path.exists(f[-1]):
+        if len(f) > 1 and any(os.path.basename(x) in ("patroni", "patroni.py") for x in f[:3]) and os.path.exists(f[-1]):
             return f[-1]
-    for f in ("/etc/patroni/patroni.yml", "/etc/patroni.yml", "/etc/patroni/config.yml", *sorted(glob.glob("/etc/patroni/*.yml"))):
-        if os.path.exists(f):
+    for f in ("/etc/patroni/patroni.yml", "/etc/patroni.yml", "/etc/patroni/config.yml", *sorted(glob.glob("/etc/patroni/*.yml")),
+              *sorted(glob.glob("/etc/patroni/*.yaml"))):
+        if os.path.isfile(f) or (os.path.isdir(f) and glob.glob(os.path.join(f, "*.y*ml"))):
             return f
     return None
+
+
+def patroni_text(conf):
+    files = sorted(glob.glob(os.path.join(conf, "*.yml")) + glob.glob(os.path.join(conf, "*.yaml"))) if os.path.isdir(conf) else [conf]
+    out = []
+    for f in files:
+        try:
+            out.append(open(f, errors="ignore").read())
+        except OSError:
+            pass
+    return "\n".join(out)
 
 
 def patroni_state():
     conf = patroni_conf()
     if not conf:
         return None
-    txt = open(conf, errors="ignore").read()
+    txt = patroni_text(conf)
     scope = re.search(r"^scope:\s*['\"]?([^'\"\s]+)", txt, re.M)
     name = re.search(r"^name:\s*['\"]?([^'\"\s]+)", txt, re.M)
     api = re.search(r"^restapi:\s*\n(?:\s+.*\n)*?\s+connect_address:\s*['\"]?([^'\"\s]+)", txt, re.M)
@@ -310,10 +408,50 @@ def pgbackrest(args, timeout=86400):
     return rc, o, e
 
 
+def systemd_timers():
+    """backup jobs kept as systemd timers (e.g. by the HA automation), shown with the cron entries"""
+    rc, o, _ = sh(["systemctl", "list-timers", "--all", "--no-legend", "--plain"], timeout=30)
+    out = []
+    if rc != 0:
+        return out
+    for line in o.splitlines():
+        toks = line.split()
+        timer = next((t for t in toks if t.endswith(".timer")), None)
+        if not timer:
+            continue
+        svc = next((t for t in toks if t.endswith(".service")), timer[:-6] + ".service")
+        _, s1, _ = sh(["systemctl", "cat", svc], timeout=30)
+        if "backrest" not in s1.lower() and "backrest" not in timer.lower() and "backup" not in timer.lower():
+            continue
+        _, t1, _ = sh(["systemctl", "cat", timer], timeout=30)
+        cal = [c.strip() for c in re.findall(r"^OnCalendar=(.+)$", t1, re.M) if c.strip()]
+        exe = re.findall(r"^ExecStart=(.+)$", s1, re.M)
+        tp = re.search(r"--type[= ](full|diff|incr)", s1) or re.search(r"(full|diff|incr)", timer)
+        out.append({"file": f"systemd {timer}", "line": f"{' / '.join(cal) or '?'}  {tp.group(1) if tp else ''}  "
+                    f"{(exe[-1].strip() if exe else svc)[:300]}", "ours": False, "timer": True,
+                    "type": tp.group(1) if tp else "", "calendar": cal})
+    return out
+
+
+def section(name, fn):
+    """one part of the status: an error there is reported, the rest still runs"""
+    try:
+        fn()
+    except Exception as e:  # noqa: BLE001
+        OUT["warnings"].append(f"{name}: {type(e).__name__}: {e}")
+
+
 def status(spec):
     path = conf_path()
+    files = conf_files(path)
     OUT["config_path"] = path
-    OUT["config"] = open(path, errors="ignore").read() if os.path.exists(path) else ""
+    OUT["config"] = open(path, errors="ignore").read() if os.path.isfile(path) else ""
+    OUT["config_files"] = []
+    for f in files:
+        try:
+            OUT["config_files"].append({"path": f, "content": open(f, errors="ignore").read()})
+        except OSError:
+            pass
     exe = which("pgbackrest")
     OUT["installed"] = bool(exe)
     if exe:
@@ -323,23 +461,32 @@ def status(spec):
     st = pick_stanza(spec, cp)
     OUT["stanzas"] = stanzas(cp)
     OUT["stanza"] = st
+    OUT["stanza_in_config"] = bool(st and cp.has_section(st))
     pg = pg_of(cp, st)
+    # a repository server backs up remote PostgreSQL servers (pg1-host...); a database node may itself use a
+    # remote repository (repo1-host)
     OUT["pg_conf"] = pg
-    OUT["repo_host"] = bool(pg.get("host"))  # this node backs up a remote PostgreSQL (a repository server)
-    OUT["repos"] = [{"key": k.split("-")[0], "type": conf_get(cp, st, f"{k.split('-')[0]}-type", "posix"),
-                     "path": conf_get(cp, st, k), "retention_full": conf_get(cp, st, f"{k.split('-')[0]}-retention-full"),
-                     "retention_diff": conf_get(cp, st, f"{k.split('-')[0]}-retention-diff"),
-                     "host": conf_get(cp, st, f"{k.split('-')[0]}-host"),
-                     "bucket": conf_get(cp, st, f"{k.split('-')[0]}-s3-bucket") or conf_get(cp, st, f"{k.split('-')[0]}-gcs-bucket")
-                     or conf_get(cp, st, f"{k.split('-')[0]}-azure-container")}
-                    for k in sorted({k for s in ["global", st] if cp.has_section(s) for k in cp.options(s)
-                                     if re.fullmatch(r"repo\d+-path", k)})]
-    for r in OUT["repos"]:
-        if r["type"] == "posix" and r["path"] and os.path.isdir(r["path"]):
-            s = os.statvfs(r["path"])
-            r["free_bytes"] = s.f_bavail * s.f_frsize
-            r["total_bytes"] = s.f_blocks * s.f_frsize
-    if exe:
+    OUT["repo_host"] = bool(pg.get("host"))
+    OUT["remote_repo"] = conf_get(cp, st, "repo1-host")
+
+    def repos():
+        OUT["repos"] = [{"key": k.split("-")[0], "type": conf_get(cp, st, f"{k.split('-')[0]}-type", "posix"),
+                         "path": conf_get(cp, st, k), "retention_full": conf_get(cp, st, f"{k.split('-')[0]}-retention-full"),
+                         "retention_diff": conf_get(cp, st, f"{k.split('-')[0]}-retention-diff"),
+                         "host": conf_get(cp, st, f"{k.split('-')[0]}-host"),
+                         "bucket": conf_get(cp, st, f"{k.split('-')[0]}-s3-bucket") or conf_get(cp, st, f"{k.split('-')[0]}-gcs-bucket")
+                         or conf_get(cp, st, f"{k.split('-')[0]}-azure-container")}
+                        for k in sorted({k for sec in ["global", st] if sec and cp.has_section(sec) for k in cp.options(sec)
+                                         if re.fullmatch(r"repo\d+-path", k)})]
+        for r in OUT["repos"]:
+            if r["type"] == "posix" and r["path"] and not r["host"] and os.path.isdir(r["path"]):
+                v = os.statvfs(r["path"])
+                r["free_bytes"] = v.f_bavail * v.f_frsize
+                r["total_bytes"] = v.f_blocks * v.f_frsize
+    OUT["repos"] = []
+    section("repositories", repos)
+
+    def info():
         rc, o, e = as_postgres(f"{exe} --output=json info", timeout=120)
         try:
             OUT["info"] = json.loads(o) if rc == 0 else []
@@ -347,40 +494,55 @@ def status(spec):
             OUT["info"] = []
         if rc != 0:
             OUT["info_error"] = (e or o).strip()[-800:]
-    if exe and st and OUT.get("info"):
-        cur = next((x for x in OUT["info"] if x.get("name") == st), None)
-        if cur:
-            OUT["usable_sets"], OUT["timeline"] = usable_sets(st, cur)
-    OUT["pg"] = pg_state(pg) if not pg.get("host") else {"running": False, "remote": pg["host"]}
-    # a stopped replica: which slot it streams from, read from its config (a restore recreates it)
-    data = pg.get("data_dir") or ""
-    if not pg.get("host") and data and not OUT["pg"].get("primary_slot_name"):
-        for f in ("postgresql.auto.conf", "postgresql.conf"):
-            v = conf_file_value(os.path.join(data, f), "primary_slot_name")
-            if v:
-                OUT["pg"]["primary_slot_name"] = v
-                break
-    OUT["patroni"] = patroni_state()
-    cron = []
-    for f in [CRON_FILE, *glob.glob("/etc/cron.d/*"), "/etc/crontab"]:
-        if os.path.isfile(f):
-            for line in open(f, errors="ignore"):
-                if "pgbackrest" in line and not line.strip().startswith("#"):
-                    cron.append({"file": f, "line": line.strip(), "ours": f == CRON_FILE})
-    rc, o, _ = sh(["crontab", "-l", "-u", "postgres"])
-    if rc == 0:
-        cron += [{"file": "crontab -u postgres", "line": line.strip(), "ours": False} for line in o.splitlines()
-                 if "pgbackrest" in line and not line.strip().startswith("#")]
-    seen, OUT["cron"] = set(), []
-    for c in cron:
-        if (c["file"], c["line"]) not in seen:
-            seen.add((c["file"], c["line"]))
-            OUT["cron"].append(c)
+        if st and OUT.get("info"):
+            cur = next((x for x in OUT["info"] if x.get("name") == st), None)
+            if cur:
+                OUT["usable_sets"], OUT["timeline"] = usable_sets(st, cur)
+    if exe:
+        section("pgbackrest info", info)
+
+    def pgs():
+        OUT["pg"] = pg_state(pg) if not pg.get("host") else {"running": False, "remote": pg["host"]}
+        # a stopped replica: which slot it streams from, read from its config (a restore recreates it)
+        data = pg.get("data_dir") or ""
+        if not pg.get("host") and data and not OUT["pg"].get("primary_slot_name"):
+            for f in ("postgresql.auto.conf", "postgresql.conf"):
+                v = conf_file_value(os.path.join(data, f), "primary_slot_name")
+                if v:
+                    OUT["pg"]["primary_slot_name"] = v
+                    break
+    OUT["pg"] = {}
+    section("PostgreSQL", pgs)
+    OUT["patroni"] = None
+
+    def pat():
+        OUT["patroni"] = patroni_state()
+    section("Patroni", pat)
+
+    def crons():
+        cron = []
+        for f in [CRON_FILE, *glob.glob("/etc/cron.d/*"), "/etc/crontab"]:
+            if os.path.isfile(f):
+                for line in open(f, errors="ignore"):
+                    if "pgbackrest" in line and not line.strip().startswith("#"):
+                        cron.append({"file": f, "line": line.strip(), "ours": f == CRON_FILE})
+        rc, o, _ = sh(["crontab", "-l", "-u", "postgres"])
+        if rc == 0:
+            cron += [{"file": "crontab -u postgres", "line": line.strip(), "ours": False} for line in o.splitlines()
+                     if "pgbackrest" in line and not line.strip().startswith("#")]
+        cron += systemd_timers()
+        seen = set()
+        for c in cron:
+            if (c["file"], c["line"]) not in seen:
+                seen.add((c["file"], c["line"]))
+                OUT["cron"].append(c)
+    OUT["cron"] = []
+    section("schedule", crons)
 
 
 def backup(spec):
     cp = read_conf(conf_path())
-    st = pick_stanza(spec, cp)
+    st = need_stanza(pick_stanza(spec, cp))
     t = spec.get("type", "incr")
     if t not in ("full", "diff", "incr"):
         fail(f"unknown backup type {t}")
@@ -404,16 +566,15 @@ def backup(spec):
 
 def check(spec, create=False):
     cp = read_conf(conf_path())
-    st = pick_stanza(spec, cp)
-    if not st:
-        fail("no stanza in the pgBackRest config")
+    st = need_stanza(pick_stanza(spec, cp))
     if create:
         rc, o, e = pgbackrest(f"--stanza={q(st)} stanza-create", timeout=600)
         if rc != 0:
             fail(f"stanza-create failed: {(e or o).strip()[-1200:]}")
+        OUT["created"] = st
     rc, o, e = pgbackrest(f"--stanza={q(st)} check", timeout=600)
     if rc != 0:
-        fail(f"check failed: {(e or o).strip()[-1200:]}")
+        fail((f"stanza {st} was created, but " if create else "") + f"check failed: {(e or o).strip()[-1200:]}")
     OUT["checked"] = st
 
 
@@ -439,6 +600,19 @@ def merge_local(new_text, cp_old):
     return buf.getvalue().rstrip() + "\n", kept
 
 
+def target_file(spec):
+    """the config file to write: the main one, or one of conf.d/*.conf (by its name)"""
+    main = conf_path()
+    want = (spec.get("file") or "").strip()
+    if not want or want == main or os.path.basename(want) == os.path.basename(main):
+        return main
+    name = os.path.basename(want)
+    if not re.fullmatch(r"[A-Za-z0-9_.-]+\.conf", name):
+        fail(f"not a pgBackRest config file name: {want}")
+    dirs = include_dirs(main) or ["/etc/pgbackrest/conf.d"]
+    return os.path.join(dirs[0], name)
+
+
 def config_apply(spec):
     text = base64.b64decode(spec.get("content_b64", "")).decode()
     try:
@@ -446,17 +620,28 @@ def config_apply(spec):
         test.read_string(text)
     except configparser.Error as e:
         fail(f"the new config is not valid: {e}")
-    if not stanzas(test):
-        fail("the new config has no stanza section (e.g. [main])")
-    path = conf_path()
+    path = target_file(spec)
+    # with the other files (conf.d) there must still be a stanza
+    others = [f for f in conf_files() if os.path.realpath(f) != os.path.realpath(path)]
+    allc = configparser.RawConfigParser(strict=False, interpolation=None)
+    for f in others:
+        try:
+            allc.read_string(open(f, errors="ignore").read(), source=f)
+        except (OSError, configparser.Error):
+            pass
+    if not stanzas(test) and not stanzas(allc):
+        fail("no stanza section (e.g. [main]) in the new config or in conf.d")
+    OUT["path"] = path
     old = open(path, errors="ignore").read() if os.path.exists(path) else ""
     if spec.get("keep_local", True) and old:
-        text, kept = merge_local(text, read_conf(path))
+        text, kept = merge_local(text, read_conf(path, only=True))
         OUT["kept_local"] = kept
     saved = f"{path}.pgm-{spec.get('run_id', 0)}"
     if old and not os.path.exists(saved):
         shutil.copy2(path, saved)
     OUT["saved"] = saved if old else ""
+    if not old:
+        open(new_marker(path, spec), "w").close()  # remember it was new: undo removes it
     st = os.stat(path) if os.path.exists(path) else None
     os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path + ".pgm-new", "w") as f:
@@ -475,9 +660,21 @@ def config_apply(spec):
     OUT["config"] = text
 
 
+def new_marker(path, spec):
+    os.makedirs(STATE_DIR, exist_ok=True)
+    return os.path.join(STATE_DIR, f"new-{spec.get('run_id', 0)}-{os.path.basename(path)}")
+
+
 def config_undo(spec):
-    path = conf_path()
+    path = target_file(spec)
     saved = f"{path}.pgm-{spec.get('run_id', 0)}"
+    marker = new_marker(path, spec)
+    if os.path.exists(marker):
+        if os.path.exists(path):
+            os.remove(path)
+        os.remove(marker)
+        OUT["removed"] = path
+        return
     if not os.path.exists(saved):
         OUT["warnings"].append("no saved config for this run (nothing to put back)")
         return
@@ -505,7 +702,7 @@ def schedule(spec):
         OUT["removed"] = True
         return
     cp = read_conf(conf_path())
-    st = pick_stanza(spec, cp)
+    st = need_stanza(pick_stanza(spec, cp))
     pg = pg_of(cp, st)
     exe = which("pgbackrest") or "pgbackrest"
     psql_exe = pg_tool("psql") or "psql"
@@ -656,7 +853,7 @@ def auto_conf_value(data_dir, key):
 
 def restore(spec):
     cp = read_conf(conf_path())
-    st = pick_stanza(spec, cp)
+    st = need_stanza(pick_stanza(spec, cp))
     pg = pg_of(cp, st)
     if pg_state(pg).get("running"):
         fail("PostgreSQL is still running on this node: stop it first")

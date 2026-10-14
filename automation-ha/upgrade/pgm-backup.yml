@@ -160,10 +160,12 @@
   gather_facts: false
   become: true
   vars:
-    pgm_spec: "{{ pgm_spec_fact | combine({'content_b64': pgm.content_b64 | default(''), 'keep_local': pgm.keep_local | default(true)}) }}"
+    pgm_spec: "{{ pgm_spec_fact | combine({'content_b64': pgm.content_b64 | default(''), 'keep_local': pgm.keep_local | default(true), 'file': pgm.file | default('')}) }}"
+    # a config goes to the nodes of the same kind: database nodes, or repository servers
+    pgm_cfg_here: "{{ pgm.config_kind | default('') == '' or ((pgm_st.repo_host | default(false)) | bool) == (pgm.config_kind == 'repo') }}"
   tasks:
     - name: Write the config
-      when: pgm.action == 'config'
+      when: pgm.action == 'config' and pgm_cfg_here | bool
       block:
         - name: Write the config
           ansible.builtin.script:
@@ -212,8 +214,9 @@
   gather_facts: false
   become: true
   vars:
-    pgm_spec: "{{ pgm_spec_fact }}"
-    pgm_failed_check: "{{ pgm.action == 'config' and groups['pgm_runner'] | default([]) | length > 0 and not (hostvars[groups['pgm_runner'][0]].pgm_check_ok | default(true)) }}"
+    pgm_spec: "{{ pgm_spec_fact | combine({'file': pgm.file | default('')}) }}"
+    pgm_cfg_here: "{{ pgm.config_kind | default('') == '' or ((pgm_st.repo_host | default(false)) | bool) == (pgm.config_kind == 'repo') }}"
+    pgm_failed_check: "{{ pgm.action == 'config' and pgm_cfg_here | bool and groups['pgm_runner'] | default([]) | length > 0 and not (hostvars[groups['pgm_runner'][0]].pgm_check_ok | default(true)) }}"
   tasks:
     - name: Put the old config back
       ansible.builtin.script:
@@ -230,7 +233,7 @@
     - name: The new config did not pass the check
       ansible.builtin.fail:
         msg: "pgbackrest check failed with the new config, so every node has its old config again: {{ hostvars[groups['pgm_runner'][0]].pgm_check_error }}"
-      when: pgm_failed_check | bool
+      when: pgm.action == 'config' and groups['pgm_runner'] | default([]) | length > 0 and not (hostvars[groups['pgm_runner'][0]].pgm_check_ok | default(true))
       run_once: true
 
 # ------------------------------------------------------------------ schedule

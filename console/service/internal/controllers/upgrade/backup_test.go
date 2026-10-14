@@ -65,3 +65,28 @@ func TestSummarize(t *testing.T) {
 }
 
 func sprint(v any) string { b, _ := json.Marshal(v); return string(b) }
+
+// a repository with no stanza yet: the page offers Create Stanza
+func TestSummarizeNoStanza(t *testing.T) {
+	now := time.Unix(1_800_000_000, 0)
+	repo := map[string]any{"ok": true, "installed": true, "stanza": "", "repo_host": true, "config": "[global]\nrepo1-path=/r\n",
+		"config_files": []any{map[string]any{"path": "/etc/pgbackrest/pgbackrest.conf", "content": "[global]\nrepo1-path=/r\n"},
+			map[string]any{"path": "/etc/pgbackrest/conf.d/jumbo.conf", "content": "[jumbo]\npg1-host=10.0.0.1\npg1-path=/d\n"}},
+		"info": []any{}}
+	db := map[string]any{"ok": true, "installed": true, "stanza": "jumbo", "pg": map[string]any{"role": "primary", "archive_mode": "on",
+		"archive_command": "pgbackrest --stanza=jumbo archive-push %p", "archive_timeout": "60"},
+		"cron": []any{map[string]any{"file": "systemd jumbosql-backup-full.timer", "line": "Sun 01:00 full", "ours": false}}}
+	out := summarize([]BackupNodeStatus{{Name: "r", Address: "10.0.0.9", OK: true, Raw: repo},
+		{Name: "a", Address: "10.0.0.1", OK: true, Raw: db}}, now)
+	if out["runner"] != "10.0.0.9" || out["stanza"] != "jumbo" || out["can_create_stanza"] != true {
+		t.Fatalf("runner %v stanza %v create %v", out["runner"], out["stanza"], out["can_create_stanza"])
+	}
+	is := sprint(out["issues"])
+	if !strings.Contains(is, "Create Stanza") || strings.Contains(is, "no backup schedule") {
+		t.Fatalf("issues: %s", is)
+	}
+	// a repository server and a database node have different configs on purpose: not compared
+	if d := sprint(out["config_diff"]); d != "[]" {
+		t.Fatalf("diff between different kinds: %s", d)
+	}
+}

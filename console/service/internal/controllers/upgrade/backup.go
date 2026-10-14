@@ -375,6 +375,9 @@ func summarize(nodes []BackupNodeStatus, now time.Time) map[string]any {
 		if n.Raw["installed"] != true {
 			add("warning", "%s: pgBackRest is not installed", n.Address)
 		}
+		for _, w := range anySlice(n.Raw["warnings"]) {
+			add("info", "%s: %s", n.Address, str(w))
+		}
 		pg := mapOf(n.Raw["pg"])
 		if n.Raw["repo_host"] == true && runner == nil {
 			runner = n
@@ -396,6 +399,11 @@ func summarize(nodes []BackupNodeStatus, now time.Time) map[string]any {
 	}
 	if runner != nil {
 		stanza = str(runner.Raw["stanza"])
+	}
+	for i := range nodes {
+		if stanza == "" && nodes[i].OK {
+			stanza = str(nodes[i].Raw["stanza"])
+		}
 	}
 
 	// the backups, from the repository the runner sees
@@ -461,6 +469,11 @@ func summarize(nodes []BackupNodeStatus, now time.Time) map[string]any {
 	}
 
 	// checks
+	canCreate := false
+	if stanza == "" && len(nodes) > 0 {
+		add("error", "no stanza found on any node (not in pgbackrest.conf or conf.d, not in the repository): "+
+			"give its name in Stanza, or add a [stanza] section with pg1-path in Configuration, then Create Stanza")
+	}
 	if runner == nil && len(nodes) > 0 {
 		add("error", "no node answered with a running primary or a repository server")
 	}
@@ -473,12 +486,17 @@ func summarize(nodes []BackupNodeStatus, now time.Time) map[string]any {
 		} else if age := now.Sub(newest); age > 26*time.Hour {
 			add("warning", "the last backup is %s old", age.Round(time.Hour))
 		}
+		// missing stanza path / data: the stanza can be created
+		if code := num(stanzaStatus["code"]); code == 1 || code == 3 {
+			canCreate = stanza != ""
+		}
 	} else if runner != nil {
 		if e := str(runner.Raw["info_error"]); e != "" {
 			add("error", "pgbackrest info: %s", e)
-		} else {
-			add("error", "no stanza in the repository: create it (Stanza Create)")
+		} else if stanza != "" {
+			add("error", "stanza %s is not in the repository yet: create it (Create Stanza)", stanza)
 		}
+		canCreate = stanza != ""
 	}
 	if primary != nil {
 		pg := mapOf(primary.Raw["pg"])
@@ -500,14 +518,27 @@ func summarize(nodes []BackupNodeStatus, now time.Time) map[string]any {
 	type diff struct {
 		Section string            `json:"section"`
 		Key     string            `json:"key"`
+		Kind    string            `json:"kind"`
 		Values  map[string]string `json:"values"`
 	}
 	var diffs []diff
-	confs := map[string]map[string]map[string]string{}
-	keys := map[[2]string]bool{}
-	for _, n := range nodes {
-		if n.OK {
-			c := parseINI(str(n.Raw["config"]))
+	// compared between nodes of the same kind only: database nodes, and repository servers
+	for _, kind := range []string{"db", "repo"} {
+		confs := map[string]map[string]map[string]string{}
+		keys := map[[2]string]bool{}
+		for _, n := range nodes {
+			if !n.OK || (n.Raw["repo_host"] == true) != (kind == "repo") {
+				continue
+			}
+			text := str(n.Raw["config"])
+			if files := anySlice(n.Raw["config_files"]); len(files) > 0 {
+				var b strings.Builder
+				for _, f := range files {
+					b.WriteString(str(mapOf(f)["content"]) + "\n")
+				}
+				text = b.String()
+			}
+			c := parseINI(text)
 			confs[n.Address] = c
 			for sec, kv := range c {
 				for k := range kv {
@@ -517,8 +548,9 @@ func summarize(nodes []BackupNodeStatus, now time.Time) map[string]any {
 				}
 			}
 		}
-	}
-	if len(confs) > 1 {
+		if len(confs) < 2 {
+			continue
+		}
 		ordered := make([][2]string, 0, len(keys))
 		for k := range keys {
 			ordered = append(ordered, k)
@@ -541,12 +573,12 @@ func summarize(nodes []BackupNodeStatus, now time.Time) map[string]any {
 				distinct[v] = true
 			}
 			if len(distinct) > 1 {
-				diffs = append(diffs, diff{k[0], k[1], vals})
+				diffs = append(diffs, diff{k[0], k[1], kind, vals})
 			}
 		}
-		if len(diffs) > 0 {
-			add("warning", "the pgBackRest config differs between nodes (%d settings)", len(diffs))
-		}
+	}
+	if len(diffs) > 0 {
+		add("warning", "the pgBackRest config differs between nodes of the same kind (%d settings)", len(diffs))
 	}
 	// the schedule
 	hasCron := false
@@ -556,7 +588,7 @@ func summarize(nodes []BackupNodeStatus, now time.Time) map[string]any {
 		}
 	}
 	if !hasCron && len(backups) > 0 {
-		add("warning", "no backup schedule (cron) on any node")
+		add("warning", "no backup schedule (cron or systemd timer) on any node")
 	}
 	run := ""
 	if runner != nil {
@@ -577,7 +609,7 @@ func summarize(nodes []BackupNodeStatus, now time.Time) map[string]any {
 	}
 	return map[string]any{"nodes": nodes, "primary": prim, "runner": run, "stanza": stanza, "stanza_status": stanzaStatus,
 		"backups": backups, "window": window, "repo_bytes": totalRepo, "issues": issues, "config_diff": diffs,
-		"checked_at": now}
+		"can_create_stanza": canCreate, "checked_at": now}
 }
 
 func anySlice(v any) []any {
@@ -601,6 +633,8 @@ type backupOpts struct {
 	KeepLocal   bool             `json:"keep_local,omitempty"`
 	Verify      bool             `json:"verify,omitempty"`
 	ConfigBytes int              `json:"config_bytes,omitempty"`
+	File        string           `json:"file,omitempty"`
+	ConfigKind  string           `json:"config_kind,omitempty"`
 	Entries     []map[string]any `json:"entries,omitempty"`
 	Remove      bool             `json:"remove,omitempty"`
 	SSHUser     string           `json:"ssh_user,omitempty"`
@@ -647,6 +681,18 @@ func (h *Handlers) startBackupJob(ctx context.Context, bt *backupTarget, b *mode
 		o.KeepLocal, o.Verify, o.ConfigBytes = boolOr(b.KeepLocal, true), boolOr(b.Verify, true), len(b.Config)
 		pgm["content_b64"] = base64.StdEncoding.EncodeToString([]byte(b.Config))
 		pgm["keep_local"], pgm["verify"] = o.KeepLocal, o.Verify
+		if f := strings.TrimSpace(b.File); f != "" {
+			if !regexp.MustCompile(`^[A-Za-z0-9_./-]+\.conf$`).MatchString(f) {
+				return nil, errors.New("not a pgBackRest config file")
+			}
+			pgm["file"], o.File = f, f
+		}
+		switch b.ConfigKind {
+		case "", "db", "repo":
+			pgm["config_kind"], o.ConfigKind = b.ConfigKind, b.ConfigKind
+		default:
+			return nil, errors.New("config_kind must be db or repo")
+		}
 	case "schedule":
 		for _, e := range b.Entries {
 			m, _ := e.(map[string]any)

@@ -461,12 +461,18 @@ reads every node with pgBackRest over SSH (root, `sudo -n`, or `sudo` with the S
   restore, backups left on the old timeline are marked **Old Timeline** and never used;
 - issues: archiving off or failing, no stanza, no recent backup, no schedule, config different between nodes.
 
+It reads pgBackRest's config the way pgBackRest does: `pgbackrest.conf` **and** `conf.d/*.conf` (where the HA
+automation keeps the stanza on the repository server). If no file names a stanza, it is taken from the repository or
+from `archive_command`. A Patroni config given as a directory is read too, and backup jobs kept as **systemd timers**
+count as a schedule. If the stanza is not in the repository yet, the page shows **Create Stanza**.
+
 Actions (run in the runner container with `automation-ha/upgrade/pgm-backup.yml`, kept in **History** with their
 log, shown live next to the Ansible log):
 
 - **Backup Now** (full, differential, incremental) on the primary (or the repository server), **Check**,
   **Create Stanza**;
-- **Configuration**: edit `pgbackrest.conf` from one node and **Apply To All Nodes**. Each node keeps its own
+- **Configuration**: edit `pgbackrest.conf` (or a `conf.d` file) from one node and apply it to every node of the same
+  kind (database nodes, or the repository server - their configs differ on purpose). Each node keeps its own
   `pg1-path`, port, socket and host; the old file is saved next to it (`pgbackrest.conf.pgm-<job>`), the new one is
   checked with `pgbackrest check`, and if that fails the old config is put back on every node;
 - **Schedule**: full / differential / incremental cron times, written to `/etc/cron.d/pg_mantra_pgbackrest` on every

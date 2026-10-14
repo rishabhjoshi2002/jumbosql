@@ -245,7 +245,8 @@ const Backups: FC = () => {
   const start = async (body: BJobRequest) => {
     if (!target) return;
     try {
-      const j = await post({ target, body: { ...login, stanza: stanza.trim() || undefined, ...body } }).unwrap();
+      const st = stanza.trim() || status?.stanza || undefined;
+      const j = await post({ target, body: { ...login, stanza: st, ...body } }).unwrap();
       toast.success(t('jobStarted', { id: j.id }));
       setSelected(j.id);
       setView('run');
@@ -432,8 +433,8 @@ const StatusView: FC<{
         />
         <Stat
           label={t('c_risk')}
-          value={risk === undefined || risk === null ? ago(w.data_loss_s) : bytes(risk)}
-          sub={t('c_riskSub', { age: ago(w.data_loss_s) })}
+          value={risk === undefined || risk === null ? t('unknown') : bytes(risk)}
+          sub={t(risk === undefined || risk === null ? 'c_riskUnknown' : 'c_riskSub', { age: ago(w.data_loss_s) })}
           tone={risk !== undefined && risk !== null && risk > 64 * 1024 * 1024 ? 'warning' : undefined}
         />
         <Stat
@@ -448,6 +449,22 @@ const StatusView: FC<{
         />
       </Box>
 
+      {status.can_create_stanza ? (
+        <Alert
+          severity="error"
+          action={
+            <Button
+              color="inherit"
+              variant="outlined"
+              size="small"
+              disabled={busy}
+              onClick={() => void start({ action: 'stanza-create' })}>
+              {t('stanzaCreate')}
+            </Button>
+          }>
+          {t('stanzaMissing', { stanza: status.stanza })}
+        </Alert>
+      ) : null}
       {status.issues.map((i, n) => (
         <Alert key={n} severity={i.severity} sx={{ py: 0 }}>
           {i.text}
@@ -503,7 +520,7 @@ type TabProps = { status: BStatus; busy: boolean; start: (b: BJobRequest) => Pro
 
 const BackupsTab: FC<TabProps & { onRestore: (b: BBackup) => void }> = ({ status, busy, start, onRestore }) => {
   const { t } = useTranslation('backup');
-  const noStanza = status.issues.some((i) => i.text.includes('Stanza Create'));
+  const noStanza = !!status.can_create_stanza || !status.stanza;
   const list = [...status.backups].reverse();
   return (
     <Card
@@ -528,7 +545,7 @@ const BackupsTab: FC<TabProps & { onRestore: (b: BBackup) => void }> = ({ status
             onClick={() => void start({ action: 'check' })}>
             {t('check')}
           </Button>
-          {noStanza ? (
+          {status.can_create_stanza ? (
             <Button
               size="small"
               variant="contained"
@@ -747,15 +764,31 @@ const RestoreTab: FC<TabProps & { set: string; setSet: (s: string) => void }> = 
   );
 };
 
+const kindOf = (n: BStatus['nodes'][number]) => (n.status?.repo_host ? 'repo' : 'db') as 'db' | 'repo';
+const base = (p: string) => p.split('/').pop() ?? p;
+
 const ConfigTab: FC<TabProps> = ({ status, busy, start }) => {
   const { t } = useTranslation('backup');
   const nodes = status.nodes.filter((n) => n.ok && n.status?.installed);
   const [from, setFrom] = useState(nodes.find((n) => n.address === status.primary)?.name ?? nodes[0]?.name ?? '');
-  const original = nodes.find((n) => n.name === from)?.status?.config ?? '';
+  const node = nodes.find((n) => n.name === from);
+  const files = useMemo(
+    () =>
+      node?.status?.config_files?.length
+        ? node.status.config_files
+        : [{ path: node?.status?.config_path ?? 'pgbackrest.conf', content: node?.status?.config ?? '' }],
+    [node],
+  );
+  const [file, setFile] = useState('');
+  useEffect(() => setFile(files[0]?.path ?? ''), [files]);
+  const original = files.find((f) => f.path === file)?.content ?? '';
   const [text, setText] = useState(original);
   useEffect(() => setText(original), [original]);
   const [keepLocal, setKeepLocal] = useState(true);
   const [verify, setVerify] = useState(true);
+  const kind = node ? kindOf(node) : 'db';
+  const same = nodes.filter((n) => kindOf(n) === kind);
+  const kinds = new Set(nodes.map(kindOf));
   const nodeAddrs = nodes.map((n) => n.address);
 
   return (
@@ -768,8 +801,17 @@ const ConfigTab: FC<TabProps> = ({ status, busy, start }) => {
             variant="contained"
             startIcon={<SaveIcon />}
             disabled={busy || !text.trim() || text === original}
-            onClick={() => void start({ action: 'config', config: text, keep_local: keepLocal, verify })}>
-            {t('cfg_apply')}
+            onClick={() =>
+              void start({
+                action: 'config',
+                config: text,
+                file: base(file),
+                config_kind: kinds.size > 1 ? kind : undefined,
+                keep_local: keepLocal,
+                verify,
+              })
+            }>
+            {t('cfg_apply', { n: same.length })}
           </Button>
         }>
         <Stack gap={1.5}>
@@ -782,10 +824,28 @@ const ConfigTab: FC<TabProps> = ({ status, busy, start }) => {
             sx={{ maxWidth: 340 }}>
             {nodes.map((n) => (
               <MenuItem key={n.name} value={n.name}>
-                {n.address} · {n.status?.config_path}
+                {n.address} · {kindOf(n) === 'repo' ? t('repoHost') : t('dbNode')}
               </MenuItem>
             ))}
           </TextField>
+          <Stack direction="row" gap={1.5} flexWrap="wrap" alignItems="center">
+            <TextField
+              select
+              size="small"
+              label={t('cfg_file')}
+              value={file}
+              onChange={(e) => setFile(e.target.value)}
+              sx={{ minWidth: 340 }}>
+              {files.map((f) => (
+                <MenuItem key={f.path} value={f.path} sx={mono}>
+                  {f.path}
+                </MenuItem>
+              ))}
+            </TextField>
+            <Typography variant="caption" color="text.secondary">
+              {t('cfg_goesTo', { nodes: same.map((n) => n.address).join(', ') })}
+            </Typography>
+          </Stack>
           <TextField
             multiline
             minRows={12}
@@ -822,7 +882,7 @@ const ConfigTab: FC<TabProps> = ({ status, busy, start }) => {
               </TableHead>
               <TableBody>
                 {status.config_diff.map((d) => (
-                  <TableRow key={`${d.section}/${d.key}`}>
+                  <TableRow key={`${d.kind}/${d.section}/${d.key}`}>
                     <TableCell sx={mono}>
                       [{d.section}] {d.key}
                     </TableCell>
@@ -871,6 +931,7 @@ const ScheduleTab: FC<TabProps> = ({ status, busy, start }) => {
     [status],
   );
   const [rows, setRows] = useState(() => cronFrom(lines));
+  const others = all.filter((c) => !c.ours);
   const set = (i: number, k: keyof BCron | 'on', v: string | boolean) =>
     setRows(rows.map((r, n) => (n === i ? { ...r, [k]: v } : r)));
   const entries = rows
@@ -900,6 +961,7 @@ const ScheduleTab: FC<TabProps> = ({ status, busy, start }) => {
           </Stack>
         }>
         <Stack gap={1.25}>
+          {others.length ? <Alert severity="warning">{t('s_othersWarn', { n: others.length })}</Alert> : null}
           {rows.map((r, i) => (
             <Stack key={r.type} direction="row" gap={1} alignItems="center" flexWrap="wrap">
               <FormControlLabel

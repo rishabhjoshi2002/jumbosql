@@ -11,12 +11,14 @@ export type BNodeRaw = {
   version?: string;
   config_path?: string;
   config?: string;
+  config_files?: { path: string; content: string }[];
   stanza?: string;
   stanzas?: string[];
+  remote_repo?: string;
   repo_host?: boolean;
   repos?: { key: string; type: string; path?: string; free_bytes?: number }[];
   timeline?: string;
-  cron?: { file: string; line: string; ours: boolean }[];
+  cron?: { file: string; line: string; ours: boolean; timer?: boolean }[];
   pg?: {
     running?: boolean;
     role?: 'primary' | 'replica';
@@ -66,7 +68,8 @@ export type BStatus = {
   };
   repo_bytes: number;
   issues: BIssue[];
-  config_diff: { section: string; key: string; values: Record<string, string> }[];
+  config_diff: { section: string; key: string; kind: 'db' | 'repo'; values: Record<string, string> }[];
+  can_create_stanza?: boolean;
   checked_at: string;
 };
 
@@ -90,6 +93,8 @@ export type BJobRequest = BSSH & {
   post_backup?: boolean;
   confirm?: string;
   config?: string;
+  file?: string;
+  config_kind?: 'db' | 'repo';
   keep_local?: boolean;
   verify?: boolean;
   entries?: BCron[];
