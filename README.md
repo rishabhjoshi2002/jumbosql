@@ -448,6 +448,36 @@ OS user through the automation's wrapper, which backs up only when Patroni repor
 timers (`systemctl list-timers | grep jumbosql-backup` on the repository VM). If your `group_vars` set
 `backrest_backup_schedule`, yours is used instead. Check with `pgbackrest info` on the repository VM.
 
+### Backups page (admins)
+
+**Backups** (sidebar and header) manages pgBackRest for **any** cluster: one created by pg_MANTRA (its saved SSH
+secret is used) or one found by Discover (give an SSH login; it is used for that call only and never saved). It
+reads every node with pgBackRest over SSH (root, `sudo -n`, or `sudo` with the SSH password) and shows:
+
+- **Recoverable Window**: from the end of the oldest backup that can still be restored to the last archived WAL;
+  **Data At Risk**: WAL written on the primary but not archived yet (set `archive_timeout`, e.g. 60s);
+  last backup, backups and repository size, free space in the repository;
+- the **Recovery Timeline** (backups as dots, the window as a band) and the backups list. After a point-in-time
+  restore, backups left on the old timeline are marked **Old Timeline** and never used;
+- issues: archiving off or failing, no stanza, no recent backup, no schedule, config different between nodes.
+
+Actions (run in the runner container with `automation-ha/upgrade/pgm-backup.yml`, kept in **History** with their
+log, shown live next to the Ansible log):
+
+- **Backup Now** (full, differential, incremental) on the primary (or the repository server), **Check**,
+  **Create Stanza**;
+- **Configuration**: edit `pgbackrest.conf` from one node and **Apply To All Nodes**. Each node keeps its own
+  `pg1-path`, port, socket and host; the old file is saved next to it (`pgbackrest.conf.pgm-<job>`), the new one is
+  checked with `pgbackrest check`, and if that fails the old config is put back on every node;
+- **Schedule**: full / differential / incremental cron times, written to `/etc/cron.d/pg_mantra_pgbackrest` on every
+  node. Only the node that is primary at that moment backs up, so the schedule follows a failover;
+- **Restore** to **Latest**, a **Point In Time** inside the window, or a **Backup Set** as it was taken. Type the
+  cluster name to confirm. Optionally a backup first; replicas are stopped, the primary is restored and promoted
+  (with Patroni: Patroni is stopped, the old cluster state is removed from the DCS, then started again), the
+  replicas are rebuilt from the same backup, replication slots are created again, and a new **full backup** is
+  taken (on by default) so the next restore has a base on the new timeline. Each node keeps its own
+  `postgresql.conf`, `pg_hba.conf` and replication settings.
+
 ## Run the cluster (Patroni console)
 
 | Button | patronictl | What it does |

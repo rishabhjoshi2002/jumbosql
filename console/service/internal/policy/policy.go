@@ -44,6 +44,7 @@ const (
 	AuditView           = "audit.view"
 	DiscoverRun         = "discover.run"
 	UpgradeRun          = "upgrade.run"
+	BackupRun           = "backup.run"
 )
 
 type PermissionInfo struct {
@@ -71,6 +72,7 @@ var Catalog = []PermissionInfo{
 	{AuditView, "Read the audit log", false},
 	{DiscoverRun, "Discover: connect to any PostgreSQL servers the console can reach and map their architecture", false},
 	{UpgradeRun, "Upgrades: plan, run and roll back package upgrades of a cluster (PostgreSQL minor, Patroni, etcd, HAProxy, ...)", true},
+	{BackupRun, "Backups: pgBackRest status, backup now, config, schedule and restore (latest, point in time, a backup set)", true},
 }
 
 var clusterScoped = func() map[string]bool {

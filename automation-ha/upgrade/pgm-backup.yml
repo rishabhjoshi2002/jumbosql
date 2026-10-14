@@ -1,0 +1,399 @@
+---
+# pg_MANTRA backups - pgBackRest on the nodes of group pgm_backup (every node that has pgBackRest):
+#   backup         full / diff / incr, on the repository server if there is one, else on the primary
+#   check          pgbackrest check (archiving + repository)       stanza-create   create the stanza, then check
+#   config         write the new pgbackrest.conf on every node (each keeps its own pg1-path / port / socket / host),
+#                  then check it; if the check fails, every node gets its old config back
+#   schedule       the backup times (cron) on the node(s) that run backups; removed from the others
+#   restore        latest / to a time (PITR) / a backup set: stop the replicas, then the primary; restore the
+#                  primary and let it recover and promote (with Patroni: clear the DCS, start Patroni); then
+#                  rebuild each replica from the repository as a standby and start it
+# Extra vars: pgm = {id, action, run_id, stanza, type, target_time, set, restore_host, pre_backup, content_b64,
+#                    keep_local, verify, entries, remove}
+# Every step reports a task "pgm_result" per node (the console reads them from the JSON log).
+
+- name: pg_MANTRA backup | nodes with pgBackRest
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  tasks:
+    - name: Check the request
+      ansible.builtin.assert:
+        that:
+          - pgm is defined
+          - pgm.action in ['backup', 'check', 'stanza-create', 'config', 'schedule', 'restore']
+        fail_msg: "bad request: {{ pgm | default({}) }}"
+
+    - name: No node
+      ansible.builtin.fail:
+        msg: "no node with pgBackRest in the inventory (group pgm_backup)"
+      when: groups['pgm_backup'] | default([]) | length == 0
+
+    - name: Group them
+      ansible.builtin.add_host:
+        name: "{{ item }}"
+        groups: pgm_all
+      loop: "{{ groups['pgm_backup'] }}"
+      changed_when: false
+
+- name: pg_MANTRA backup | look at every node
+  hosts: pgm_all
+  gather_facts: false
+  become: true
+  vars:
+    pgm_spec: "{{ {'stanza': pgm.stanza | default(''), 'run_id': pgm.run_id | default(pgm.id)} }}"
+  tasks:
+    - name: Status
+      ansible.builtin.script:
+        cmd: "pgm_backup.py status {{ pgm_spec | to_json | b64encode }}"
+        executable: python3
+      register: pgm_status_raw
+      changed_when: false
+      failed_when: false
+      ignore_unreachable: true
+
+    - name: Read it
+      ansible.builtin.set_fact:
+        pgm_st: "{{ (pgm_status_raw.stdout_lines | last | from_json) if (pgm_status_raw.stdout_lines | default([])) else {'ok': false, 'error': pgm_status_raw.msg | default('node not reachable')} }}"
+        pgm_spec_fact: "{{ pgm_spec }}"
+
+- name: pg_MANTRA backup | roles
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  tasks:
+    - name: Primary, replicas, repository server
+      ansible.builtin.set_fact:
+        pgm_roles: >-
+          {%- set r = {'primary': [], 'replicas': [], 'repo': [], 'down': []} -%}
+          {%- for h in groups['pgm_all'] -%}
+            {%- set st = hostvars[h].pgm_st | default({}) -%}
+            {%- set prole = ((st.patroni | default({}) or {}).role | default('')) -%}
+            {%- set role = (st.pg | default({})).role | default('') -%}
+            {%- if st.repo_host | default(false) -%}{{ r.repo.append(h) or '' }}
+            {%- elif role == 'primary' or prole in ['leader', 'master', 'primary'] -%}{{ r.primary.append(h) or '' }}
+            {%- elif role == 'replica' or prole in ['replica', 'sync_standby', 'standby_leader'] -%}{{ r.replicas.append(h) or '' }}
+            {%- else -%}{{ r.down.append(h) or '' }}{%- endif -%}
+          {%- endfor -%}
+          {{ r }}
+
+    - name: The node that restores (the primary, or the one chosen)
+      ansible.builtin.set_fact:
+        pgm_restore_host: "{{ pgm.restore_host | default('') or (pgm_roles.primary | first | default('')) }}"
+
+    - name: Nothing to work on
+      ansible.builtin.fail:
+        msg: >-
+          {{ 'no running primary was found (and no repository server): start PostgreSQL first'
+             if pgm.action != 'restore' else 'choose the node to restore (no running primary was found)' }}
+      when: >-
+        (pgm.action != 'restore' and pgm.action not in ['config', 'schedule'] and not (pgm_roles.repo or pgm_roles.primary))
+        or (pgm.action == 'restore' and not pgm_restore_host)
+
+    - name: The node that runs backups
+      ansible.builtin.add_host:
+        name: "{{ (pgm_roles.repo + pgm_roles.primary) | first }}"
+        groups: pgm_runner
+      when: (pgm_roles.repo + pgm_roles.primary) | length > 0
+      changed_when: false
+
+    - name: The node to restore
+      ansible.builtin.add_host:
+        name: "{{ pgm_restore_host }}"
+        groups: pgm_primary
+      when: pgm.action == 'restore'
+      changed_when: false
+
+    - name: The node that backs up after the restore
+      ansible.builtin.add_host:
+        name: "{{ (pgm_roles.repo | first) if pgm_roles.repo else pgm_restore_host }}"
+        groups: pgm_postbackup
+      when: pgm.action == 'restore' and pgm.post_backup | default(true)
+      changed_when: false
+
+    - name: The replicas to rebuild
+      ansible.builtin.add_host:
+        name: "{{ item }}"
+        groups: pgm_replicas
+      loop: "{{ (pgm_roles.primary + pgm_roles.replicas + pgm_roles.down) | reject('equalto', pgm_restore_host) | list }}"
+      when: pgm.action == 'restore'
+      changed_when: false
+
+    - name: The nodes that keep the schedule
+      ansible.builtin.add_host:
+        name: "{{ item }}"
+        groups: pgm_cron
+      loop: "{{ pgm_roles.repo if pgm_roles.repo else (pgm_roles.primary + pgm_roles.replicas + pgm_roles.down) }}"
+      when: pgm.action == 'schedule'
+      changed_when: false
+
+# ------------------------------------------------------------------ backup / check / stanza-create
+- name: pg_MANTRA backup | {{ pgm.action }}
+  hosts: pgm_runner
+  gather_facts: false
+  become: true
+  vars:
+    pgm_spec: "{{ pgm_spec_fact | combine({'type': pgm.type | default('incr')}) }}"
+  tasks:
+    - name: Run it
+      when: pgm.action in ['backup', 'check', 'stanza-create']
+      block:
+        - name: "{{ {'backup': 'Back up', 'check': 'Check', 'stanza-create': 'Create the stanza'}[pgm.action] }}"
+          ansible.builtin.script:
+            cmd: "pgm_backup.py {{ pgm.action }} {{ pgm_spec | to_json | b64encode }}"
+            executable: python3
+          register: pgm_out
+        - name: pgm_result
+          ansible.builtin.debug:
+            msg: "{{ {'host': inventory_hostname, 'phase': pgm.action, 'status': 'success', 'detail': pgm_out.stdout_lines | last | from_json} }}"
+      rescue:
+        - name: pgm_result
+          ansible.builtin.debug:
+            msg: "{{ {'host': inventory_hostname, 'phase': pgm.action, 'status': 'failed', 'task': ansible_failed_task.name, 'error': ((ansible_failed_result.stdout_lines | default(['{}']) | last | from_json).error | default('') if (ansible_failed_result.stdout_lines | default([])) else '') or ansible_failed_result.msg | default('failed')} }}"
+        - name: Stop here
+          ansible.builtin.fail:
+            msg: "{{ pgm.action }} failed on {{ inventory_hostname }}"
+
+# ------------------------------------------------------------------ config
+- name: pg_MANTRA backup | write the config
+  hosts: pgm_all
+  gather_facts: false
+  become: true
+  vars:
+    pgm_spec: "{{ pgm_spec_fact | combine({'content_b64': pgm.content_b64 | default(''), 'keep_local': pgm.keep_local | default(true)}) }}"
+  tasks:
+    - name: Write the config
+      when: pgm.action == 'config'
+      block:
+        - name: Write the config
+          ansible.builtin.script:
+            cmd: "pgm_backup.py config-apply {{ pgm_spec | to_json | b64encode }}"
+            executable: python3
+          register: pgm_out
+        - name: pgm_result
+          ansible.builtin.debug:
+            msg: "{{ {'host': inventory_hostname, 'phase': 'config', 'status': 'success', 'detail': pgm_out.stdout_lines | last | from_json} }}"
+      rescue:
+        - name: pgm_result
+          ansible.builtin.debug:
+            msg: "{{ {'host': inventory_hostname, 'phase': 'config', 'status': 'failed', 'task': 'Write the config', 'error': ((ansible_failed_result.stdout_lines | default(['{}']) | last | from_json).error | default('') if (ansible_failed_result.stdout_lines | default([])) else '') or ansible_failed_result.msg | default('failed')} }}"
+        - name: Stop here
+          ansible.builtin.fail:
+            msg: "the config could not be written on {{ inventory_hostname }}"
+
+- name: pg_MANTRA backup | check the new config
+  hosts: pgm_runner
+  gather_facts: false
+  become: true
+  vars:
+    pgm_spec: "{{ pgm_spec_fact }}"
+  tasks:
+    - name: Check the new config
+      ansible.builtin.script:
+        cmd: "pgm_backup.py check {{ pgm_spec | to_json | b64encode }}"
+        executable: python3
+      register: pgm_check
+      failed_when: false
+      when: pgm.action == 'config' and pgm.verify | default(true)
+
+    - name: Keep the outcome
+      ansible.builtin.set_fact:
+        pgm_check_ok: "{{ pgm_check.skipped | default(false) or pgm_check.rc | default(1) == 0 }}"
+        pgm_check_error: "{{ ((pgm_check.stdout_lines | default(['{}']) | last | from_json).error | default('')) if (pgm_check.stdout_lines | default([])) else '' }}"
+      when: pgm.action == 'config'
+
+    - name: pgm_result
+      ansible.builtin.debug:
+        msg: "{{ {'host': inventory_hostname, 'phase': 'config-check', 'status': 'success' if pgm_check_ok else 'failed', 'error': pgm_check_error, 'skipped': pgm_check.skipped | default(false)} }}"
+      when: pgm.action == 'config'
+
+- name: pg_MANTRA backup | put the old config back if the check failed
+  hosts: pgm_all
+  gather_facts: false
+  become: true
+  vars:
+    pgm_spec: "{{ pgm_spec_fact }}"
+    pgm_failed_check: "{{ pgm.action == 'config' and groups['pgm_runner'] | default([]) | length > 0 and not (hostvars[groups['pgm_runner'][0]].pgm_check_ok | default(true)) }}"
+  tasks:
+    - name: Put the old config back
+      ansible.builtin.script:
+        cmd: "pgm_backup.py config-undo {{ pgm_spec | to_json | b64encode }}"
+        executable: python3
+      register: pgm_undo
+      when: pgm_failed_check | bool
+
+    - name: pgm_result
+      ansible.builtin.debug:
+        msg: "{{ {'host': inventory_hostname, 'phase': 'config-undo', 'status': 'success', 'detail': pgm_undo.stdout_lines | last | from_json} }}"
+      when: pgm_failed_check | bool
+
+    - name: The new config did not pass the check
+      ansible.builtin.fail:
+        msg: "pgbackrest check failed with the new config, so every node has its old config again: {{ hostvars[groups['pgm_runner'][0]].pgm_check_error }}"
+      when: pgm_failed_check | bool
+      run_once: true
+
+# ------------------------------------------------------------------ schedule
+- name: pg_MANTRA backup | schedule
+  hosts: pgm_all
+  gather_facts: false
+  become: true
+  vars:
+    keeps: "{{ inventory_hostname in groups['pgm_cron'] | default([]) }}"
+    pgm_spec: "{{ pgm_spec_fact | combine({'entries': pgm.entries | default([]) if keeps else [], 'remove': (pgm.remove | default(false)) or not keeps}) }}"
+  tasks:
+    - name: Write the schedule
+      when: pgm.action == 'schedule'
+      block:
+        - name: Write the schedule
+          ansible.builtin.script:
+            cmd: "pgm_backup.py schedule {{ pgm_spec | to_json | b64encode }}"
+            executable: python3
+          register: pgm_out
+        - name: pgm_result
+          ansible.builtin.debug:
+            msg: "{{ {'host': inventory_hostname, 'phase': 'schedule', 'status': 'success', 'detail': pgm_out.stdout_lines | last | from_json} }}"
+      rescue:
+        - name: pgm_result
+          ansible.builtin.debug:
+            msg: "{{ {'host': inventory_hostname, 'phase': 'schedule', 'status': 'failed', 'error': ((ansible_failed_result.stdout_lines | default(['{}']) | last | from_json).error | default('') if (ansible_failed_result.stdout_lines | default([])) else '') or ansible_failed_result.msg | default('failed')} }}"
+        - name: Stop here
+          ansible.builtin.fail:
+            msg: "the schedule could not be written on {{ inventory_hostname }}"
+
+# ------------------------------------------------------------------ restore
+- name: pg_MANTRA restore | back up first
+  hosts: pgm_runner
+  gather_facts: false
+  become: true
+  vars:
+    pgm_spec: "{{ pgm_spec_fact | combine({'type': 'incr'}) }}"
+  tasks:
+    - name: Back up first
+      ansible.builtin.script:
+        cmd: "pgm_backup.py backup {{ pgm_spec | to_json | b64encode }}"
+        executable: python3
+      register: pgm_pre
+      when: pgm.action == 'restore' and pgm.pre_backup | default(false)
+    - name: pgm_result
+      ansible.builtin.debug:
+        msg: "{{ {'host': inventory_hostname, 'phase': 'pre-backup', 'status': 'success', 'detail': pgm_pre.stdout_lines | last | from_json} }}"
+      when: pgm.action == 'restore' and pgm.pre_backup | default(false)
+
+- name: pg_MANTRA restore | stop the replicas
+  hosts: pgm_replicas
+  gather_facts: false
+  become: true
+  vars:
+    pgm_spec: "{{ pgm_spec_fact }}"
+  any_errors_fatal: true
+  tasks:
+    - name: Stop this replica
+      block:
+        - name: Stop
+          ansible.builtin.script:
+            cmd: "pgm_backup.py stop {{ pgm_spec | to_json | b64encode }}"
+            executable: python3
+          register: pgm_stop
+        - name: pgm_result
+          ansible.builtin.debug:
+            msg: "{{ {'host': inventory_hostname, 'phase': 'stop', 'status': 'success', 'detail': pgm_stop.stdout_lines | last | from_json} }}"
+      rescue:
+        - name: pgm_result
+          ansible.builtin.debug:
+            msg: "{{ {'host': inventory_hostname, 'phase': 'stop', 'status': 'failed', 'task': 'Stop', 'error': ((ansible_failed_result.stdout_lines | default(['{}']) | last | from_json).error | default('') if (ansible_failed_result.stdout_lines | default([])) else '') or ansible_failed_result.msg | default('failed')} }}"
+        - name: Stop here
+          ansible.builtin.fail:
+            msg: "{{ inventory_hostname }} could not be stopped - nothing was restored"
+
+- name: pg_MANTRA restore | restore the primary
+  hosts: pgm_primary
+  gather_facts: false
+  become: true
+  any_errors_fatal: true
+  vars:
+    pgm_spec: "{{ pgm_spec_fact | combine({'type': pgm.type | default('latest'), 'target_time': pgm.target_time | default(''), 'set': pgm.set | default('')}) }}"
+  tasks:
+    - name: Restore the primary
+      block:
+        - name: Stop
+          ansible.builtin.script:
+            cmd: "pgm_backup.py stop {{ pgm_spec | to_json | b64encode }}"
+            executable: python3
+          register: pgm_stop
+        - name: Restore
+          ansible.builtin.script:
+            cmd: "pgm_backup.py restore {{ pgm_spec | to_json | b64encode }}"
+            executable: python3
+          register: pgm_restore
+        - name: Remember the backup set
+          ansible.builtin.set_fact:
+            pgm_restored_set: "{{ (pgm_restore.stdout_lines | last | from_json).set | default('') }}"
+        - name: Recover and promote
+          ansible.builtin.script:
+            cmd: "pgm_backup.py promote {{ pgm_spec | to_json | b64encode }}"
+            executable: python3
+          register: pgm_promote
+        - name: Recreate the replication slots
+          ansible.builtin.script:
+            cmd: "pgm_backup.py slots {{ pgm_spec | combine({'slots': groups['pgm_replicas'] | default([]) | map('extract', hostvars, ['pgm_st', 'pg', 'primary_slot_name']) | select('string') | select | list}) | to_json | b64encode }}"
+            executable: python3
+          register: pgm_slots
+          when: not (pgm_st.patroni | default(none))
+        - name: pgm_result
+          ansible.builtin.debug:
+            msg: "{{ {'host': inventory_hostname, 'phase': 'restore', 'status': 'success', 'role': 'primary', 'detail': {'restore': pgm_restore.stdout_lines | last | from_json, 'promote': pgm_promote.stdout_lines | last | from_json}} }}"
+      rescue:
+        - name: pgm_result
+          ansible.builtin.debug:
+            msg: "{{ {'host': inventory_hostname, 'phase': 'restore', 'status': 'failed', 'role': 'primary', 'task': ansible_failed_task.name, 'error': ((ansible_failed_result.stdout_lines | default(['{}']) | last | from_json).error | default('') if (ansible_failed_result.stdout_lines | default([])) else '') or ansible_failed_result.msg | default('failed')} }}"
+        - name: Stop here
+          ansible.builtin.fail:
+            msg: "the restore of the primary failed - the replicas are stopped and were not touched"
+
+- name: pg_MANTRA restore | rebuild the replicas
+  hosts: pgm_replicas
+  gather_facts: false
+  become: true
+  vars:
+    # the same backup set as the primary: a newer one could not follow the primary's new timeline
+    pgm_spec: "{{ pgm_spec_fact | combine({'type': 'standby', 'set': hostvars[groups['pgm_primary'][0]].pgm_restored_set | default('')}) }}"
+  tasks:
+    - name: Rebuild this replica
+      block:
+        - name: Restore standby
+          ansible.builtin.script:
+            cmd: "pgm_backup.py restore {{ pgm_spec | to_json | b64encode }}"
+            executable: python3
+          register: pgm_restore
+        - name: Start
+          ansible.builtin.script:
+            cmd: "pgm_backup.py start {{ pgm_spec | to_json | b64encode }}"
+            executable: python3
+          register: pgm_start
+        - name: pgm_result
+          ansible.builtin.debug:
+            msg: "{{ {'host': inventory_hostname, 'phase': 'restore', 'status': 'success', 'role': 'replica', 'detail': {'restore': pgm_restore.stdout_lines | last | from_json, 'start': pgm_start.stdout_lines | last | from_json}} }}"
+      rescue:
+        - name: pgm_result
+          ansible.builtin.debug:
+            msg: "{{ {'host': inventory_hostname, 'phase': 'restore', 'status': 'failed', 'role': 'replica', 'task': ansible_failed_task.name, 'error': ((ansible_failed_result.stdout_lines | default(['{}']) | last | from_json).error | default('') if (ansible_failed_result.stdout_lines | default([])) else '') or ansible_failed_result.msg | default('failed')} }}"
+        - name: Stop here
+          ansible.builtin.fail:
+            msg: "{{ inventory_hostname }} could not be rebuilt as a replica (the primary is restored and running)"
+
+- name: pg_MANTRA restore | a new full backup of the restored database
+  hosts: pgm_postbackup
+  gather_facts: false
+  become: true
+  vars:
+    pgm_spec: "{{ pgm_spec_fact | combine({'type': 'full'}) }}"
+  tasks:
+    - name: Full backup after the restore
+      ansible.builtin.script:
+        cmd: "pgm_backup.py backup {{ pgm_spec | to_json | b64encode }}"
+        executable: python3
+      register: pgm_post
+    - name: pgm_result
+      ansible.builtin.debug:
+        msg: "{{ {'host': inventory_hostname, 'phase': 'post-backup', 'status': 'success', 'detail': pgm_post.stdout_lines | last | from_json} }}"

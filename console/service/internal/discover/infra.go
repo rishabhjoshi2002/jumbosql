@@ -573,13 +573,31 @@ func prepareSSH(auth *SSHAuth) (dir, keyFile, askpass string, err error) {
 }
 
 func runSSH(ctx context.Context, host string, port int, auth *SSHAuth, keyFile, askpass string) (string, error) {
+	return runSSHScript(ctx, host, port, auth, keyFile, askpass, probeScript, "@@host", 45*time.Second)
+}
+
+// RunScript runs a shell script on a machine over SSH (the password or key are used for this call only) and returns
+// its output; marker must appear in the output, else the error says why (login refused, port closed, ...).
+func RunScript(ctx context.Context, host string, port int, auth *SSHAuth, script, marker string, timeout time.Duration) (string, error) {
+	dir, key, askpass, err := prepareSSH(auth)
+	if dir != "" {
+		defer os.RemoveAll(dir)
+	}
+	if err != nil {
+		return "", err
+	}
+	return runSSHScript(ctx, host, port, auth, key, askpass, script, marker, timeout)
+}
+
+func runSSHScript(ctx context.Context, host string, port int, auth *SSHAuth, keyFile, askpass, script, marker string,
+	timeout time.Duration) (string, error) {
 	if port == 0 {
 		port = 22
 	}
 	if _, err := exec.LookPath("ssh"); err != nil {
 		return "", fmt.Errorf("the ssh client is not installed in the console")
 	}
-	cctx, cancel := context.WithTimeout(ctx, 45*time.Second)
+	cctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	args := []string{"-p", strconv.Itoa(port), "-o", "StrictHostKeyChecking=no", "-o", "UserKnownHostsFile=/dev/null",
 		"-o", "LogLevel=ERROR", "-o", "ConnectTimeout=8", "-o", "ServerAliveInterval=10", "-o", "ServerAliveCountMax=2",
@@ -593,7 +611,7 @@ func runSSH(ctx context.Context, host string, port int, auth *SSHAuth, keyFile, 
 	}
 	args = append(args, auth.User+"@"+host, "sh -s")
 	cmd := exec.CommandContext(cctx, "ssh", args...)
-	cmd.Stdin = strings.NewReader(probeScript)
+	cmd.Stdin = strings.NewReader(script)
 	cmd.Env = append(os.Environ(), "LC_ALL=C")
 	if askpass != "" {
 		cmd.Env = append(cmd.Env, "SSH_ASKPASS="+askpass, "SSH_ASKPASS_REQUIRE=force", "DISPLAY=none", "PGMANTRA_SSH_SECRET="+auth.Password)
@@ -601,7 +619,7 @@ func runSSH(ctx context.Context, host string, port int, auth *SSHAuth, keyFile, 
 	var out, errb strings.Builder
 	cmd.Stdout, cmd.Stderr = &out, &errb
 	err := cmd.Run()
-	if !strings.Contains(out.String(), "@@host") {
+	if !strings.Contains(out.String(), marker) {
 		msg := strings.TrimSpace(errb.String())
 		switch {
 		case strings.Contains(msg, "Permission denied"):

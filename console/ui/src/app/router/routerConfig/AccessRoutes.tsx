@@ -9,6 +9,7 @@ const Insights = lazy(() => import('@pages/insights'));
 const Discover = lazy(() => import('@pages/discover'));
 const Upgrade = lazy(() => import('@pages/upgrade'));
 const Playbooks = lazy(() => import('@pages/playbooks'));
+const Backups = lazy(() => import('@pages/backups'));
 
 // pg_mantra: audit log (audit.view) and PostgreSQL server logs (logs.view)
 const AccessRoutes = () => [
@@ -59,6 +60,16 @@ const AccessRoutes = () => [
     element={
       <RequirePermission perms={['upgrade.run']}>
         <Playbooks />
+      </RequirePermission>
+    }
+  />,
+  <Route
+    key="backups"
+    path={RouterPaths.backups.absolutePath}
+    handle={{ breadcrumb: { label: 'title', ns: 'backup' } }}
+    element={
+      <RequirePermission perms={['backup.run']}>
+        <Backups />
       </RequirePermission>
     }
   />,

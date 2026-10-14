@@ -5,6 +5,7 @@
 # SSH_PRIVATE_KEY_CONTENT. It runs pgm-upgrade.yml - or, with PGM_MODE=playbook, your own playbook (Custom
 # playbooks): the console writes its files to PGM_DIR (playbook PGM_PLAYBOOK, inventory PGM_INVENTORY,
 # pgm-requirements.yml) and sets PGM_CHECK=1 for a dry run, PGM_LIMIT, PGM_VERBOSE, PGM_VAULT_PASSWORD (base64).
+# With PGM_MODE=backup it runs pgm-backup.yml (Backups: pgBackRest backup, config, schedule, restore).
 set -euo pipefail
 W=$(mktemp -d)
 is_base64() { [[ "$1" =~ ^[A-Za-z0-9+/=]+$ ]]; }
@@ -56,4 +57,6 @@ fi
 python3 /pgm/upgrade/pgm_inventory.py "$W/inventory.json" "$W/inventory.yml"
 cd /pgm/upgrade
 echo "[pg_MANTRA] $(python3 -c 'import json,sys; p=json.load(open(sys.argv[1])).get("pgm",{}); print(p.get("action"), p.get("component"))' "$W/extra-vars.json")"
-exec ansible-playbook -i "$W/inventory.yml" pgm-upgrade.yml -e @"$W/extra-vars.json"
+book=pgm-upgrade.yml
+[[ "${PGM_MODE:-}" == "backup" ]] && book=pgm-backup.yml
+exec ansible-playbook -i "$W/inventory.yml" "$book" -e @"$W/extra-vars.json"

@@ -10,6 +10,7 @@ import routerHomePathsConfig from '@app/router/routerPathsConfig/routerHomePaths
 import routerDiscoverPathsConfig from '@app/router/routerPathsConfig/routerDiscoverPathsConfig.ts';
 import routerUpgradePathsConfig from '@app/router/routerPathsConfig/routerUpgradePathsConfig.ts';
 import routerPlaybooksPathsConfig from '@app/router/routerPathsConfig/routerPlaybooksPathsConfig.ts';
+import routerBackupsPathsConfig from '@app/router/routerPathsConfig/routerBackupsPathsConfig.ts';
 
 /*
   Combines route paths into one config
@@ -33,6 +34,7 @@ const RouterPaths = {
   discover: routerDiscoverPathsConfig,
   upgrade: routerUpgradePathsConfig,
   playbooks: routerPlaybooksPathsConfig,
+  backups: routerBackupsPathsConfig,
 } as const;
 
 export default RouterPaths;

@@ -31,19 +31,20 @@ export const useTargetNames = () => {
 /**
  * One list of every cluster: created by pg_mantra or found by Discover (any setup, whoever built it).
  */
-const TargetSelect: FC<{ value: UTarget | null; onChange: (t: UTarget | null) => void; label?: string }> = ({
-  value,
-  onChange,
-  label,
-}) => {
+const TargetSelect: FC<{
+  value: UTarget | null;
+  onChange: (t: UTarget | null) => void;
+  label?: string;
+  perm?: string;
+}> = ({ value, onChange, label, perm = 'upgrade.run' }) => {
   const { t } = useTranslation('upgrade');
   const user = useSessionUser();
   const projectId = Number(useAppSelector(selectCurrentProject));
   const clusters = useGetClustersQuery({ projectId, offset: 0, limit: 999_999_999 }, { skip: !projectId });
   const discoveries = useGetDiscoveriesQuery();
   const created = useMemo(
-    () => (clusters.data?.data ?? []).filter((c) => c.id && can('upgrade.run', c.id, user)),
-    [clusters.data, user],
+    () => (clusters.data?.data ?? []).filter((c) => c.id && can(perm, c.id, user)),
+    [clusters.data, user, perm],
   );
   const found = useMemo(() => discoveries.data ?? [], [discoveries.data]);
   useEffect(() => {

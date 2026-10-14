@@ -255,6 +255,21 @@
     "step_restart": "Restart",
     "step_health": "Health check",
     "step_resume": "Resume Patroni",
-    "step_done": "Report"
+    "step_done": "Report",
+    "step_look": "Read every node",
+    "step_backup": "Back up",
+    "step_bcheck": "Check",
+    "step_stanza": "Create stanza",
+    "step_write": "Write config",
+    "step_verify": "Check config",
+    "step_undo": "Put old config back",
+    "step_schedule": "Write schedule",
+    "step_prebackup": "Backup first",
+    "step_stop": "Stop PostgreSQL",
+    "step_restore": "Restore",
+    "step_promote": "Recover and promote",
+    "step_slots": "Replication slots",
+    "step_start": "Start",
+    "step_postbackup": "Full backup after"
   }
 }

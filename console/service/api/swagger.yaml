@@ -1167,6 +1167,156 @@ paths:
           schema:
             $ref: "#/definitions/Response.Error"
 
+  /backups/discoveries/{id}/status:
+    post:
+      summary: "pg_MANTRA: pgBackRest of a setup found by Discover: backups, recovery window, config and schedule on every node (live, over SSH)"
+      tags: [backup]
+      parameters:
+        - {name: id, in: path, required: true, type: integer}
+        - name: body
+          in: body
+          required: true
+          schema:
+            $ref: "#/definitions/Request.BackupStatus"
+      responses:
+        '200':
+          description: OK
+          schema:
+            type: object
+        '400':
+          description: Error
+          schema:
+            $ref: "#/definitions/Response.Error"
+
+  /backups/discoveries/{id}/jobs:
+    get:
+      summary: "pg_MANTRA: backup / restore / config / schedule jobs of a setup found by Discover, newest first"
+      tags: [backup]
+      parameters:
+        - {name: id, in: path, required: true, type: integer}
+      responses:
+        '200':
+          description: OK
+          schema:
+            type: array
+            items:
+              type: object
+        '400':
+          description: Error
+          schema:
+            $ref: "#/definitions/Response.Error"
+    post:
+      summary: "pg_MANTRA: start a backup, check, config change, schedule or restore on a setup found by Discover"
+      tags: [backup]
+      parameters:
+        - {name: id, in: path, required: true, type: integer}
+        - name: body
+          in: body
+          required: true
+          schema:
+            $ref: "#/definitions/Request.BackupJob"
+      responses:
+        '200':
+          description: OK
+          schema:
+            type: object
+        '400':
+          description: Error
+          schema:
+            $ref: "#/definitions/Response.Error"
+
+  /backups/discoveries/{id}/jobs/{uid}:
+    get:
+      summary: "pg_MANTRA: one backup job with its log"
+      tags: [backup]
+      parameters:
+        - {name: id, in: path, required: true, type: integer}
+        - {name: uid, in: path, required: true, type: integer}
+      responses:
+        '200':
+          description: OK
+          schema:
+            type: object
+        '400':
+          description: Error
+          schema:
+            $ref: "#/definitions/Response.Error"
+
+  /backups/clusters/{id}/status:
+    post:
+      summary: "pg_MANTRA: pgBackRest of a console cluster: backups, recovery window, config and schedule on every node (live, over SSH)"
+      tags: [backup]
+      parameters:
+        - {name: id, in: path, required: true, type: integer}
+        - name: body
+          in: body
+          required: true
+          schema:
+            $ref: "#/definitions/Request.BackupStatus"
+      responses:
+        '200':
+          description: OK
+          schema:
+            type: object
+        '400':
+          description: Error
+          schema:
+            $ref: "#/definitions/Response.Error"
+
+  /backups/clusters/{id}/jobs:
+    get:
+      summary: "pg_MANTRA: backup / restore / config / schedule jobs of a console cluster, newest first"
+      tags: [backup]
+      parameters:
+        - {name: id, in: path, required: true, type: integer}
+      responses:
+        '200':
+          description: OK
+          schema:
+            type: array
+            items:
+              type: object
+        '400':
+          description: Error
+          schema:
+            $ref: "#/definitions/Response.Error"
+    post:
+      summary: "pg_MANTRA: start a backup, check, config change, schedule or restore on a console cluster"
+      tags: [backup]
+      parameters:
+        - {name: id, in: path, required: true, type: integer}
+        - name: body
+          in: body
+          required: true
+          schema:
+            $ref: "#/definitions/Request.BackupJob"
+      responses:
+        '200':
+          description: OK
+          schema:
+            type: object
+        '400':
+          description: Error
+          schema:
+            $ref: "#/definitions/Response.Error"
+
+  /backups/clusters/{id}/jobs/{uid}:
+    get:
+      summary: "pg_MANTRA: one backup job with its log"
+      tags: [backup]
+      parameters:
+        - {name: id, in: path, required: true, type: integer}
+        - {name: uid, in: path, required: true, type: integer}
+      responses:
+        '200':
+          description: OK
+          schema:
+            type: object
+        '400':
+          description: Error
+          schema:
+            $ref: "#/definitions/Response.Error"
+
   /discoveries/{id}/upgrades/{uid}:
     get:
       summary: "pg_mantra: one upgrade of a discovered setup, with its log"
@@ -1930,6 +2080,81 @@ definitions:
         description: "Ansible Vault password (never stored)"
       verbose:
         type: boolean
+
+  Request.BackupStatus:
+    type: object
+    properties:
+      stanza:
+        type: string
+      ssh_user:
+        type: string
+      ssh_password:
+        type: string
+        description: "used for this call only, never stored"
+      ssh_key:
+        type: string
+        description: "used for this call only, never stored"
+      ssh_port:
+        type: integer
+
+  Request.BackupJob:
+    type: object
+    required: [action]
+    properties:
+      action:
+        type: string
+        description: "backup | check | stanza-create | config | schedule | restore"
+      stanza:
+        type: string
+      type:
+        type: string
+        description: "backup: full | diff | incr; restore: latest | time | set"
+      target_time:
+        type: string
+        description: "restore to this time (PITR), e.g. 2026-10-14 10:30:00+05:30"
+      set:
+        type: string
+        description: "restore this backup set (label)"
+      restore_host:
+        type: string
+        description: "the node to restore as the primary (empty: the current primary)"
+      pre_backup:
+        type: boolean
+        description: "restore: take an incremental backup first"
+      post_backup:
+        type: boolean
+        x-nullable: true
+        description: "restore: take a full backup after it (default true)"
+      confirm:
+        type: string
+        description: "restore: the cluster name, typed by the user"
+      config:
+        type: string
+        description: "config: the new pgbackrest.conf"
+      keep_local:
+        type: boolean
+        x-nullable: true
+        description: "config: each node keeps its own pg*-path / port / socket / host (default true)"
+      verify:
+        type: boolean
+        x-nullable: true
+        description: "config: run pgbackrest check after writing; on failure every node gets its old config back (default true)"
+      entries:
+        type: array
+        description: "schedule: {type, minute, hour, dom, month, dow}"
+        items:
+          type: object
+      remove:
+        type: boolean
+        description: "schedule: remove the schedule"
+      ssh_user:
+        type: string
+      ssh_password:
+        type: string
+      ssh_key:
+        type: string
+      ssh_port:
+        type: integer
 
   Request.DiscoverQuery:
     type: object
