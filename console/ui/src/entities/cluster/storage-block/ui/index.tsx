@@ -31,12 +31,10 @@ const StorageBlock: FC = () => {
     setStorage(defaultVolume ?? {});
     setValue(STORAGE_BLOCK_FIELDS.STORAGE_AMOUNT, defaultVolume?.min_size ?? 1);
 
-    setVolumeTypes(
-      [
-        ...(volumes?.map((volume) => ({ label: volume?.volume_type, value: volume?.volume_type })) ?? []),
-        { label: t('localDisk'), value: LOCAL_VOLUME_TYPE },
-      ],
-    );
+    setVolumeTypes([
+      ...(volumes?.map((volume) => ({ label: volume?.volume_type, value: volume?.volume_type })) ?? []),
+      { label: t('localDisk'), value: LOCAL_VOLUME_TYPE },
+    ]);
 
     setValue(
       // imperatively set a volume type when user changes provider
@@ -73,88 +71,89 @@ const StorageBlock: FC = () => {
             if (amount === 0) {
               setValue(STORAGE_BLOCK_FIELDS.VOLUME_TYPE, LOCAL_VOLUME_TYPE);
             } else if (watchVolume === LOCAL_VOLUME_TYPE && amount >= (storage?.min_size ?? 1)) {
-              const defaultVolume = watchProvider?.volumes?.find((volume) => volume?.is_default) ?? watchProvider?.volumes?.[0];
+              const defaultVolume =
+                watchProvider?.volumes?.find((volume) => volume?.is_default) ?? watchProvider?.volumes?.[0];
               setValue(STORAGE_BLOCK_FIELDS.VOLUME_TYPE, defaultVolume?.volume_type);
             }
           };
 
           return (
-          <ClusterSliderBox
-            min={storage?.min_size ?? 1}
-            max={storage?.max_size ?? 100}
-            marksAdditionalLabel="GB"
-            marksAmount={10}
-            amount={value}
-            changeAmount={handleStorageChange}
-            unit="GB"
-            limitMax
-            allowZero
-            icon={<StorageIcon width="24px" height="24px" style={{ fill: theme.palette.text.primary }} />}
-            error={errors[STORAGE_BLOCK_FIELDS.STORAGE_AMOUNT]}
-            topRightElements={
-              IS_EXPERT_MODE ? (
-                <Stack direction="row" minWidth="350px" spacing={1}>
-                  {[
-                    {
-                      fieldName: STORAGE_BLOCK_FIELDS.FILE_SYSTEM_TYPE,
-                      label: t('fileSystemType'),
-                      options: fileSystemTypeOptions,
-                    },
-                    {
-                      fieldName: STORAGE_BLOCK_FIELDS.VOLUME_TYPE,
-                      label: t('volumeType'),
-                      options: volumeTypes,
-                    },
-                  ].map(({ fieldName, label, options }) => (
-                    <Controller
-                      key={fieldName}
-                      control={control}
-                      name={fieldName}
-                      render={({ field }) => (
-                        <FormControl
-                          fullWidth
-                          size="small"
-                          sx={
-                            isSystemDisk && fieldName === STORAGE_BLOCK_FIELDS.FILE_SYSTEM_TYPE
-                              ? { visibility: 'hidden' }
-                              : undefined
-                          }>
-                          <InputLabel>{label}</InputLabel>
-                          <Select
-                            {...field}
+            <ClusterSliderBox
+              min={storage?.min_size ?? 1}
+              max={storage?.max_size ?? 100}
+              marksAdditionalLabel="GB"
+              marksAmount={10}
+              amount={value}
+              changeAmount={handleStorageChange}
+              unit="GB"
+              limitMax
+              allowZero
+              icon={<StorageIcon width="24px" height="24px" style={{ fill: theme.palette.text.primary }} />}
+              error={errors[STORAGE_BLOCK_FIELDS.STORAGE_AMOUNT]}
+              topRightElements={
+                IS_EXPERT_MODE ? (
+                  <Stack direction="row" minWidth="350px" spacing={1}>
+                    {[
+                      {
+                        fieldName: STORAGE_BLOCK_FIELDS.FILE_SYSTEM_TYPE,
+                        label: t('fileSystemType'),
+                        options: fileSystemTypeOptions,
+                      },
+                      {
+                        fieldName: STORAGE_BLOCK_FIELDS.VOLUME_TYPE,
+                        label: t('volumeType'),
+                        options: volumeTypes,
+                      },
+                    ].map(({ fieldName, label, options }) => (
+                      <Controller
+                        key={fieldName}
+                        control={control}
+                        name={fieldName}
+                        render={({ field }) => (
+                          <FormControl
+                            fullWidth
                             size="small"
-                            label={label}
-                            onChange={(event) => {
-                              field.onChange(event);
-                              if (fieldName === STORAGE_BLOCK_FIELDS.VOLUME_TYPE) {
-                                const selectedVolume = watchProvider?.volumes?.find(
-                                  (volume) => volume?.volume_type === event.target.value,
-                                );
-                                setValue(STORAGE_BLOCK_FIELDS.STORAGE_AMOUNT, selectedVolume?.min_size ?? 0);
-                              }
-                            }}>
-                            {options.map(({ value, label }) => (
-                              <MenuItem key={value} value={value}>
-                                <Tooltip
-                                  title={
-                                    value === LOCAL_VOLUME_TYPE
-                                      ? t('localDiskDescription')
-                                      : watchProvider?.volumes?.find((volume) => volume?.volume_type === value)
-                                          ?.volume_description ?? ''
-                                  }>
-                                  {label}
-                                </Tooltip>
-                              </MenuItem>
-                            ))}
-                          </Select>
-                        </FormControl>
-                      )}
-                    />
-                  ))}
-                </Stack>
-              ) : null
-            }
-          />
+                            sx={
+                              isSystemDisk && fieldName === STORAGE_BLOCK_FIELDS.FILE_SYSTEM_TYPE
+                                ? { visibility: 'hidden' }
+                                : undefined
+                            }>
+                            <InputLabel>{label}</InputLabel>
+                            <Select
+                              {...field}
+                              size="small"
+                              label={label}
+                              onChange={(event) => {
+                                field.onChange(event);
+                                if (fieldName === STORAGE_BLOCK_FIELDS.VOLUME_TYPE) {
+                                  const selectedVolume = watchProvider?.volumes?.find(
+                                    (volume) => volume?.volume_type === event.target.value,
+                                  );
+                                  setValue(STORAGE_BLOCK_FIELDS.STORAGE_AMOUNT, selectedVolume?.min_size ?? 0);
+                                }
+                              }}>
+                              {options.map(({ value, label }) => (
+                                <MenuItem key={value} value={value}>
+                                  <Tooltip
+                                    title={
+                                      value === LOCAL_VOLUME_TYPE
+                                        ? t('localDiskDescription')
+                                        : (watchProvider?.volumes?.find((volume) => volume?.volume_type === value)
+                                            ?.volume_description ?? '')
+                                    }>
+                                    {label}
+                                  </Tooltip>
+                                </MenuItem>
+                              ))}
+                            </Select>
+                          </FormControl>
+                        )}
+                      />
+                    ))}
+                  </Stack>
+                ) : null
+              }
+            />
           );
         }}
       />

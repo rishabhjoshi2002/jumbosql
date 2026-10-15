@@ -7,9 +7,8 @@ describe('cluster form backup defaults', () => {
     vi.resetModules();
 
     const { getClusterFormDefaultValues } = await import('@widgets/cluster-form/model/constants.ts');
-    const { BACKUP_DEFAULTS, BACKUP_METHODS } = await import(
-      '@entities/cluster/expert-mode/backups-block/model/const.ts'
-    );
+    const { BACKUP_DEFAULTS, BACKUP_METHODS } =
+      await import('@entities/cluster/expert-mode/backups-block/model/const.ts');
     const values = getClusterFormDefaultValues();
 
     expect(values.backupStartTime).toBe(3);

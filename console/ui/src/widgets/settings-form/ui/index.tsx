@@ -42,7 +42,7 @@ const SettingsForm: FC = () => {
   useEffect(() => {
     if (settings.data?.data) {
       setIsResetting(true);
-      // eslint-disable-next-line @typescript-eslint/require-await
+       
       const resetForm = async () => {
         // sync function will result in form values setting error
         const settingsData = settings.data?.data?.find((value) => value.name === 'proxy_env')?.value;

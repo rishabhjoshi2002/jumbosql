@@ -60,4 +60,4 @@ export const themeSlice = createSlice({
 
 export const { setThemeMode, updateSystemTheme } = themeSlice.actions;
 
-export default themeSlice.reducer; 
+export default themeSlice.reducer;

@@ -1,0 +1,11 @@
+# pg_MANTRA: what the console and upgrader images do not need (build context = the repository root)
+.git
+**/node_modules
+**/__pycache__
+console/ui/dist
+console/secrets
+# the licensed HA collection and your vault stay out of these images
+automation-ha/bundle
+automation-ha/ha-bundle.tar.gz
+**/vault*.yml
+images

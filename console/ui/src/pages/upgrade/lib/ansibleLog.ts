@@ -25,7 +25,13 @@ export type LogProgress = {
 const RESULT = /^(ok|changed|skipping|fatal|failed|unreachable):\s*\[([^\]]+)\](.*)$/;
 const RECAP = /^(\S+)\s*:\s*ok=(\d+)\s+changed=(\d+)\s+unreachable=(\d+)\s+failed=(\d+)\s+skipped=(\d+)/;
 
-export const parseAnsibleLog = (log: string, known: string[] = []): LogProgress => {
+// terminal colour codes (an Ansible run with a TTY colours its output): removed for display and parsing
+// eslint-disable-next-line no-control-regex
+const ANSI = /\u001b\[[0-9;?]*[ -/]*[@-~]/g;
+export const stripAnsi = (s: string) => s.replace(ANSI, '').replace(/\r(?=\n)/g, '');
+
+export const parseAnsibleLog = (raw: string, known: string[] = []): LogProgress => {
+  const log = stripAnsi(raw);
   const out: LogProgress = { hosts: {}, order: [], play: '', task: '', finished: false };
   const host = (name: string) => {
     // "10.0.0.1 -> localhost" (delegated) counts for the first name

@@ -13,28 +13,29 @@ export const DatabaseServersBlockSchema = (t: TFunction) =>
       .mixed()
       .when(CLUSTER_FORM_FIELD_NAMES.PROVIDER, ([provider], schema) =>
         provider?.code === PROVIDERS.LOCAL
-          ? yup.array(
-              yup.object({
-                [DATABASE_SERVERS_FIELD_NAMES.DATABASE_HOSTNAME]: yup
-                  .string()
-                  .required(t('requiredField', { ns: 'validation' })),
-                [DATABASE_SERVERS_FIELD_NAMES.DATABASE_IP_ADDRESS]: yup
-                  .string()
-                  .required(t('requiredField', { ns: 'validation' }))
-                  .test('should be a correct IP', t('shouldBeACorrectV4Ip', { ns: 'validation' }), (value) =>
-                    ipRegex.v4({ exact: true }).test(value),
-                  ),
-                [DATABASE_SERVERS_FIELD_NAMES.DATABASE_SSH_PORT]: yup
-                  .string()
-                  .test('only numbers', t('onlyNumbers', { ns: 'validation' }), (value) =>
-                    value ? /^\d+$/.test(value) : true,
-                  )
-                  .test('valid ssh port', t('sshPortRange', { ns: 'validation' }), (value) =>
-                    value ? Number(value) >= 1 && Number(value) <= 65535 : true,
-                  ),
-                [DATABASE_SERVERS_FIELD_NAMES.DATABASE_LOCATION]: yup.string(),
-              }),
-            )
+          ? yup
+              .array(
+                yup.object({
+                  [DATABASE_SERVERS_FIELD_NAMES.DATABASE_HOSTNAME]: yup
+                    .string()
+                    .required(t('requiredField', { ns: 'validation' })),
+                  [DATABASE_SERVERS_FIELD_NAMES.DATABASE_IP_ADDRESS]: yup
+                    .string()
+                    .required(t('requiredField', { ns: 'validation' }))
+                    .test('should be a correct IP', t('shouldBeACorrectV4Ip', { ns: 'validation' }), (value) =>
+                      ipRegex.v4({ exact: true }).test(value),
+                    ),
+                  [DATABASE_SERVERS_FIELD_NAMES.DATABASE_SSH_PORT]: yup
+                    .string()
+                    .test('only numbers', t('onlyNumbers', { ns: 'validation' }), (value) =>
+                      value ? /^\d+$/.test(value) : true,
+                    )
+                    .test('valid ssh port', t('sshPortRange', { ns: 'validation' }), (value) =>
+                      value ? Number(value) >= 1 && Number(value) <= 65535 : true,
+                    ),
+                  [DATABASE_SERVERS_FIELD_NAMES.DATABASE_LOCATION]: yup.string(),
+                }),
+              )
               // pg_mantra: the roles must add up to a valid HA layout (odd etcd, 2+ Patroni, one pgBackRest repo, ...)
               .test('valid HA layout', (value, ctx) => {
                 const problems = validateHaLayout(formServersToHaServers(value ?? []));

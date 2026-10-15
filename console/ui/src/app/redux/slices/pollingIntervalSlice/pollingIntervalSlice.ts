@@ -15,7 +15,15 @@ const STORAGE_KEY_PREFIX = 'pollingInterval.';
 // The dropdown's allowed values. `0` means "Off" — polling is disabled but the
 // manual refresh button still works.
 export const POLLING_INTERVAL_OPTIONS: readonly number[] = Object.freeze([
-  0, 5_000, 10_000, 30_000, 60_000, 5 * 60_000, 15 * 60_000, 30 * 60_000, 60 * 60_000,
+  0,
+  5_000,
+  10_000,
+  30_000,
+  60_000,
+  5 * 60_000,
+  15 * 60_000,
+  30 * 60_000,
+  60 * 60_000,
 ]);
 
 // Snap an env-supplied interval to the nearest dropdown option. The Select
@@ -47,7 +55,7 @@ const readStored = (key: PollingContext, fallback: number): number => {
     if (Number.isFinite(parsed) && POLLING_INTERVAL_OPTIONS.includes(parsed)) {
       return parsed;
     }
-  } catch (e) {
+  } catch {
     // localStorage can throw in private browsing modes — fall through.
   }
   return fallback;
@@ -64,15 +72,12 @@ export const pollingIntervalSlice = createSlice({
   name: 'pollingInterval',
   initialState,
   reducers: {
-    setPollingInterval: (
-      state,
-      action: PayloadAction<{ context: PollingContext; intervalMs: number }>,
-    ) => {
+    setPollingInterval: (state, action: PayloadAction<{ context: PollingContext; intervalMs: number }>) => {
       const { context, intervalMs } = action.payload;
       state[context] = intervalMs;
       try {
         localStorage.setItem(STORAGE_KEY_PREFIX + context, String(intervalMs));
-      } catch (e) {
+      } catch {
         // Best-effort persistence; ignore quota / private-mode failures.
       }
     },

@@ -1,9 +1,9 @@
 # pg_mantra upgrade runner - the image the console starts for Upgrades (dry run, upgrade, rollback).
 # Plain Ansible (+ ansible.posix, community.general, community.postgresql), pg_mantra's own upgrade playbook and
 # your own playbooks (the Ansible Playbooks page): works for any setup (built by pg_mantra or found by Discover). Built by ./build.sh console (or ./build.sh upgrader):
-#     docker build -f upgrade/Dockerfile -t pg_mantra/upgrader:1.0 automation-ha
+#     docker build -f automation-ha/upgrade/Dockerfile -t pg_mantra/upgrader:1.0 .     (from the repository root)
 FROM registry.access.redhat.com/ubi9/ubi:latest
-LABEL org.opencontainers.image.title="pg_mantra-upgrader"
+LABEL org.opencontainers.image.title="pg_mantra-upgrader" org.opencontainers.image.licenses="MIT"
 
 ARG ANSIBLE_CORE_VERSION=2.14.18
 RUN dnf -y install python3 python3-pip openssh-clients \
@@ -14,12 +14,13 @@ RUN dnf -y install python3 python3-pip openssh-clients \
  && (ansible-galaxy collection install -p /usr/share/ansible/collections ansible.posix community.general community.postgresql \
      || echo "collections not installed: add them to the playbook's requirements")
 
-COPY json_log.py       /pgm/callback/json_log.py
-COPY inventory_to_ha.py /pgm/inventory_to_ha.py
-COPY upgrade/          /pgm/upgrade/
+COPY automation-ha/json_log.py       /pgm/callback/json_log.py
+COPY automation-ha/inventory_to_ha.py /pgm/inventory_to_ha.py
+COPY automation-ha/upgrade/          /pgm/upgrade/
+COPY LICENSE NOTICE THIRD_PARTY_NOTICES.md /usr/share/doc/pg_mantra/
 RUN chmod +x /pgm/upgrade/entrypoint.sh && rm -f /pgm/upgrade/Dockerfile \
- && printf '[defaults]\ncallback_plugins = /pgm/callback\ncallbacks_enabled = json_log\nhost_key_checking = False\nforks = 10\ntimeout = 60\ninterpreter_python = auto_silent\n[ssh_connection]\npipelining = True\n' > /pgm/ansible.cfg
+ && printf '[defaults]\ncallback_plugins = /pgm/callback\ncallbacks_enabled = json_log\nhost_key_checking = False\nforks = 10\ntimeout = 60\ninterpreter_python = auto_silent\nlocalhost_warning = False\n[inventory]\nhost_pattern_mismatch = ignore\n[ssh_connection]\npipelining = True\n' > /pgm/ansible.cfg
 
-ENV ANSIBLE_CONFIG=/pgm/ansible.cfg ANSIBLE_FORCE_COLOR=0 USER=root
+ENV ANSIBLE_CONFIG=/pgm/ansible.cfg ANSIBLE_FORCE_COLOR=0 ANSIBLE_NOCOLOR=1 USER=root
 WORKDIR /pgm/upgrade
 ENTRYPOINT ["/pgm/upgrade/entrypoint.sh"]

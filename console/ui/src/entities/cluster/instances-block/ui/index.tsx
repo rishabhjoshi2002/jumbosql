@@ -36,12 +36,12 @@ const CloudFormInstancesBlock: FC = () => {
     setInstances(instanceTypes);
   }, [watchProvider?.instance_types]);
 
-  const handleInstanceTypeChange = (onChange: (...event: any[]) => void) => (_: any, value: string) => {
+  const handleInstanceTypeChange = (onChange: (...event: unknown[]) => void) => (_: unknown, value: string) => {
     onChange(value);
     setValue(CLUSTER_FORM_FIELD_NAMES.INSTANCE_CONFIG, instances?.[value]?.[0]);
   };
 
-  const handleInstanceConfigChange = (onChange: (...event: any[]) => void, value: string) => () => {
+  const handleInstanceConfigChange = (onChange: (...event: unknown[]) => void, value: string) => () => {
     onChange(value);
   };
 

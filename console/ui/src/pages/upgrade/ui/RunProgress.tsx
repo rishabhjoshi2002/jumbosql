@@ -149,9 +149,9 @@ const RunProgress: FC<{
                             <CancelIcon sx={{ fontSize: 16, color: 'error.main' }} />
                           ) : now ? (
                             <CircularProgress size={13} sx={{ mx: '1.5px' }} />
-                          ) : done || h.state === 'ok' || h.state === 'changed' ? (
+                          ) : done ? (
                             <CheckCircleIcon sx={{ fontSize: 16, color: 'success.main' }} />
-                          ) : h.state === 'skipped' ? (
+                          ) : h.state === 'skipped' || (h.state !== 'waiting' && h.state !== 'working') ? (
                             <RemoveCircleOutlineIcon sx={{ fontSize: 16, color: 'text.disabled' }} />
                           ) : (
                             <RadioButtonUncheckedIcon sx={{ fontSize: 16, color: 'action.disabled' }} />

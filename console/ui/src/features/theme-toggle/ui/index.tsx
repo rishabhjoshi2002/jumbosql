@@ -68,4 +68,4 @@ const ThemeToggle: FC = () => {
   );
 };
 
-export default ThemeToggle; 
+export default ThemeToggle;

@@ -750,7 +750,8 @@ func (h *Handlers) startPlaybook(ctx context.Context, id int64, b *models.Reques
 		"PGM_CHECK="+map[bool]string{true: "1", false: "0"}[action == "plan"],
 		"PGM_LIMIT="+strings.Join(opt.Hosts, ","),
 		"PGM_VERBOSE="+map[bool]string{true: "1", false: "0"}[opt.Verbose],
-		fmt.Sprintf("ANSIBLE_JSON_LOG_FILE=%s/upgrade-%d.json", ansibleLogDir, up.ID))
+		fmt.Sprintf("ANSIBLE_JSON_LOG_FILE=%s/upgrade-%d.json", ansibleLogDir, up.ID), "ANSIBLE_NOCOLOR=1", "ANSIBLE_FORCE_COLOR=0",
+		"ANSIBLE_HOST_PATTERN_MISMATCH=ignore", "ANSIBLE_LOCALHOST_WARNING=False")
 	if b.VaultPassword != "" {
 		envs = append(envs, "PGM_VAULT_PASSWORD="+base64.StdEncoding.EncodeToString([]byte(b.VaultPassword)))
 	}

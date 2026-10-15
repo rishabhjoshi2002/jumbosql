@@ -51,6 +51,7 @@ import { bytes } from '@pages/insights/lib/format.ts';
 import Card from '@pages/discover/ui/Card.tsx';
 import TargetSelect, { targetKey } from '@pages/upgrade/ui/TargetSelect.tsx';
 import RunView from '@pages/upgrade/ui/RunView.tsx';
+import { apiErrorText } from '@shared/lib/apiError.ts';
 import Timeline, { when } from './Timeline.tsx';
 
 const mono = { fontFamily: '"JetBrains Mono", monospace', fontSize: 12.5 };
@@ -207,10 +208,16 @@ const Backups: FC = () => {
     if (!target?.id || needLogin) return;
     setStatusError('');
     try {
-      setStatus(await getStatus({ target, body: { ...login, stanza: stanza.trim() || undefined } }).unwrap());
+      const res = await getStatus({ target, body: { ...login, stanza: stanza.trim() || undefined } }).unwrap();
+      if (res.need_login) {
+        setStatus(null);
+        setStatusError('give the SSH');
+        return;
+      }
+      setStatus(res);
     } catch (e) {
       setStatus(null);
-      setStatusError((e as { data?: { message?: string } })?.data?.message ?? String(e));
+      setStatusError(apiErrorText(e));
     }
   }, [target, needLogin, getStatus, login, stanza]);
 
@@ -263,7 +270,7 @@ const Backups: FC = () => {
       setSelected(j.id);
       setView('run');
     } catch (e) {
-      toast.error((e as { data?: { message?: string } })?.data?.message ?? String(e));
+      toast.error(apiErrorText(e));
     }
   };
 

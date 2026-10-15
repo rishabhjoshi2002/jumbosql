@@ -448,7 +448,8 @@ func (h *Handlers) start(ctx context.Context, t *target, b *models.RequestUpgrad
 	extraJSON, _ := json.Marshal(extra)
 	envs = append(envs,
 		"ANSIBLE_INVENTORY_JSON="+base64.StdEncoding.EncodeToString(t.inventory),
-		fmt.Sprintf("ANSIBLE_JSON_LOG_FILE=%s/upgrade-%d.json", ansibleLogDir, up.ID))
+		fmt.Sprintf("ANSIBLE_JSON_LOG_FILE=%s/upgrade-%d.json", ansibleLogDir, up.ID), "ANSIBLE_NOCOLOR=1", "ANSIBLE_FORCE_COLOR=0",
+		"ANSIBLE_HOST_PATTERN_MISMATCH=ignore", "ANSIBLE_LOCALHOST_WARNING=False")
 	dockerID, err := h.docker.ManageCluster(ctx, &xdocker.ManageClusterConfig{Image: h.cfg.Docker.UpgradeImage, Envs: envs,
 		ExtraVars: string(extraJSON), Mounts: []xdocker.Mount{{DockerPath: ansibleLogDir, HostPath: h.cfg.Docker.LogDir}}})
 	if err != nil {

@@ -30,7 +30,7 @@ const SecretsTable: React.FC = () => {
     limit: pagination.pageSize,
   });
 
-  const columns = useMemo<MRT_ColumnDef<SecretsTableValues>[]>(() => secretsTableColumns(t), [i18n.language]);
+  const columns = useMemo<MRT_ColumnDef<SecretsTableValues>[]>(() => secretsTableColumns(t), [t, i18n.language]);
 
   const data = useGetSecretsTableData(secretsList.data?.data);
 

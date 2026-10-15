@@ -47,7 +47,8 @@ interface ClusterCloudProviderFormValues extends BackupsBlockValues, SshKeyBlock
 }
 
 interface ClusterLocalMachineProviderFormValues
-  extends Pick<
+  extends
+    Pick<
       typeof SECRET_MODAL_CONTENT_FORM_FIELD_NAMES,
       | [SECRET_MODAL_CONTENT_FORM_FIELD_NAMES.USERNAME]
       | [SECRET_MODAL_CONTENT_FORM_FIELD_NAMES.PASSWORD]
@@ -63,7 +64,8 @@ interface ClusterLocalMachineProviderFormValues
 }
 
 export interface ClusterFormValues
-  extends ClusterCloudProviderFormValues,
+  extends
+    ClusterCloudProviderFormValues,
     ClusterLocalMachineProviderFormValues,
     SecretFormValues,
     ExtensionsBlockValues,

@@ -14,14 +14,14 @@ export default defineConfig({
   },
   resolve: {
     alias: {
-      '@': resolve(__dirname, './src'),
-      '@app': resolve(__dirname, './src/app'),
-      '@assets': resolve(__dirname, './src/shared/assets'),
-      '@entities': resolve(__dirname, './src/entities'),
-      '@features': resolve(__dirname, './src/features'),
-      '@pages': resolve(__dirname, './src/pages'),
-      '@widgets': resolve(__dirname, './src/widgets'),
-      '@shared': resolve(__dirname, './src/shared'),
+      '@': resolve(import.meta.dirname, './src'),
+      '@app': resolve(import.meta.dirname, './src/app'),
+      '@assets': resolve(import.meta.dirname, './src/shared/assets'),
+      '@entities': resolve(import.meta.dirname, './src/entities'),
+      '@features': resolve(import.meta.dirname, './src/features'),
+      '@pages': resolve(import.meta.dirname, './src/pages'),
+      '@widgets': resolve(import.meta.dirname, './src/widgets'),
+      '@shared': resolve(import.meta.dirname, './src/shared'),
     },
   },
 });

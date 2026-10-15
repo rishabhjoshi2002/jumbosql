@@ -51,6 +51,7 @@ export type BBackup = {
 };
 export type BIssue = { severity: 'error' | 'warning' | 'info'; text: string };
 export type BStatus = {
+  need_login?: boolean;
   name: string;
   nodes: BNode[];
   primary: string;

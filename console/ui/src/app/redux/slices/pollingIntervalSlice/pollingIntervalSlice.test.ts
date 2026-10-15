@@ -42,10 +42,7 @@ describe('pollingIntervalSlice', () => {
   });
 
   it('setPollingInterval updates the requested context only', () => {
-    const next = mod.default(
-      baseState,
-      mod.setPollingInterval({ context: 'clusters', intervalMs: 5_000 }),
-    );
+    const next = mod.default(baseState, mod.setPollingInterval({ context: 'clusters', intervalMs: 5_000 }));
     expect(next.clusters).toBe(5_000);
     expect(next.clusterOverview).toBe(60_000);
     expect(next.operations).toBe(60_000);
@@ -58,10 +55,7 @@ describe('pollingIntervalSlice', () => {
   });
 
   it('setPollingInterval accepts 0 (Off) and persists it', () => {
-    const next = mod.default(
-      baseState,
-      mod.setPollingInterval({ context: 'operationLogs', intervalMs: 0 }),
-    );
+    const next = mod.default(baseState, mod.setPollingInterval({ context: 'operationLogs', intervalMs: 0 }));
     expect(next.operationLogs).toBe(0);
     expect(localStorage.getItem('pollingInterval.operationLogs')).toBe('0');
   });

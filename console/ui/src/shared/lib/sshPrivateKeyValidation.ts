@@ -174,8 +174,7 @@ const readDerChildren = (value: Uint8Array, parent: DerNode): DerNode[] | null =
 const isDerInteger = (value: Uint8Array, node: DerNode, allowedValues?: number[]): boolean =>
   node.tag === 0x02 &&
   node.endOffset > node.valueOffset &&
-  (!allowedValues ||
-    (node.endOffset === node.valueOffset + 1 && allowedValues.includes(value[node.valueOffset])));
+  (!allowedValues || (node.endOffset === node.valueOffset + 1 && allowedValues.includes(value[node.valueOffset])));
 
 const derNodeHex = (value: Uint8Array, node: DerNode): string =>
   Array.from(value.slice(node.valueOffset, node.endOffset), (byte) => byte.toString(16).padStart(2, '0')).join('');
@@ -194,11 +193,19 @@ const isValidDerKey = (label: string, value: Uint8Array): boolean => {
   }
 
   if (label === 'RSA PRIVATE KEY') {
-    return children.length >= 9 && isDerInteger(value, children[0], [0, 1]) && children.every((node) => isDerInteger(value, node));
+    return (
+      children.length >= 9 &&
+      isDerInteger(value, children[0], [0, 1]) &&
+      children.every((node) => isDerInteger(value, node))
+    );
   }
 
   if (label === 'DSA PRIVATE KEY') {
-    return children.length === 6 && isDerInteger(value, children[0], [0]) && children.every((node) => isDerInteger(value, node));
+    return (
+      children.length === 6 &&
+      isDerInteger(value, children[0], [0]) &&
+      children.every((node) => isDerInteger(value, node))
+    );
   }
 
   if (label === 'EC PRIVATE KEY') {
@@ -242,9 +249,7 @@ const isValidDerKey = (label: string, value: Uint8Array): boolean => {
 };
 
 export const isValidSshPrivateKey = (value: string): boolean => {
-  const match = value
-    .trim()
-    .match(/^-----BEGIN ([A-Z0-9 ]+)-----\r?\n([A-Za-z0-9+/=\r\n]+?)\r?\n-----END \1-----$/);
+  const match = value.trim().match(/^-----BEGIN ([A-Z0-9 ]+)-----\r?\n([A-Za-z0-9+/=\r\n]+?)\r?\n-----END \1-----$/);
 
   if (!match || !PEM_LABELS.has(match[1])) {
     return false;
@@ -257,7 +262,5 @@ export const isValidSshPrivateKey = (value: string): boolean => {
     return false;
   }
 
-  return match[1] === 'OPENSSH PRIVATE KEY'
-    ? isValidOpenSshKey(decodedKey)
-    : isValidDerKey(match[1], decodedKey);
+  return match[1] === 'OPENSSH PRIVATE KEY' ? isValidOpenSshKey(decodedKey) : isValidDerKey(match[1], decodedKey);
 };

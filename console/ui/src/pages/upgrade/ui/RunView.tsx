@@ -3,7 +3,7 @@ import { Box, Button, Chip, Stack, Typography } from '@mui/material';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import { useTranslation } from 'react-i18next';
 import Card from '@pages/discover/ui/Card.tsx';
-import { parseAnsibleLog } from '../lib/ansibleLog.ts';
+import { parseAnsibleLog, stripAnsi } from '../lib/ansibleLog.ts';
 import RunProgress from './RunProgress.tsx';
 
 const STATUS = { running: 'info', success: 'success', failed: 'error' } as const;
@@ -77,7 +77,7 @@ const RunView: FC<{
               whiteSpace: 'pre-wrap',
               wordBreak: 'break-word',
             }}>
-            {log.slice(-40000) || t('noLog')}
+            {stripAnsi(log.slice(-40000)) || t('noLog')}
           </Box>
         </Card>
       </Box>

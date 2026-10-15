@@ -47,7 +47,7 @@ const DcsBlock: FC = () => {
 
   useEffect(() => {
     setCorrectFields(getCorrectFields({ watchIsDeployToDcsCluster, watchIsDeployToDbServers, watchDcsType, t }));
-  }, [watchIsDeployToDcsCluster, watchIsDeployToDbServers, watchDcsType]);
+  }, [watchIsDeployToDcsCluster, watchIsDeployToDbServers, watchDcsType, t]);
 
   return (
     <Box>

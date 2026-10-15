@@ -27,6 +27,7 @@ COPY jumbosql-deploy.yml /ha/jumbosql-deploy.template.yml
 COPY make_deploy_playbook.py /ha/make_deploy_playbook.py
 COPY make_ansible_cfg.py /ha/make_ansible_cfg.py
 COPY entrypoint.sh       /ha/entrypoint.sh
+COPY LICENSE NOTICE      /usr/share/doc/pg_mantra/
 
 RUN set -e; \
     chmod +x /ha/entrypoint.sh; \

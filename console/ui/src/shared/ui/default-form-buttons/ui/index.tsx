@@ -34,8 +34,7 @@ const DefaultFormButtons: FC<DefaultFormButtonsProps> = ({
           variant="contained"
           disabled={isDisabled || isSubmitting}
           type="submit"
-          startIcon={isSubmitting ? <CircularProgress size={16} /> : undefined}
-        >
+          startIcon={isSubmitting ? <CircularProgress size={16} /> : undefined}>
           <span>{submitButtonLabel ?? t('save')}</span>
         </Button>
         <Button variant="outlined" onClick={cancelHandler} type="button">

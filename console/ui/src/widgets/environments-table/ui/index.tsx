@@ -24,7 +24,7 @@ const EnvironmentsTable: FC = () => {
     limit: pagination.pageSize,
   });
 
-  const columns = useMemo<MRT_ColumnDef<EnvironmentTableValues>[]>(() => environmentTableColumns(t), [i18n.language]);
+  const columns = useMemo<MRT_ColumnDef<EnvironmentTableValues>[]>(() => environmentTableColumns(t), [t, i18n.language]);
 
   const data = useGetEnvironmentsTableData(environmentsList.data?.data);
 

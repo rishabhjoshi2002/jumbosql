@@ -34,7 +34,9 @@ build_automation() {
     [[ -f ha-bundle.tar.gz ]] || { echo "automation-ha/ha-bundle.tar.gz missing - run pack-from-ansible-vm.sh on the Ansible VM first" >&2; exit 1; }
     tar xzf ha-bundle.tar.gz
   fi
+  cp ../LICENSE ../NOTICE .   # the notices go into the image too (removed again below)
   docker build -t "$AUTOMATION_IMAGE" .
+  rm -f LICENSE NOTICE
   cd ..
   echo "built $AUTOMATION_IMAGE (local only - it contains your vault, do not push it)"
 }
@@ -47,7 +49,7 @@ build_console() {
 
 # the Upgrades runner: plain Ansible + pg_mantra's upgrade playbook (no vendor bundle needed)
 build_upgrader() {
-  docker build -f automation-ha/upgrade/Dockerfile -t "$UPGRADER_IMAGE" automation-ha
+  docker build -f automation-ha/upgrade/Dockerfile -t "$UPGRADER_IMAGE" .
   echo "built $UPGRADER_IMAGE"
 }
 

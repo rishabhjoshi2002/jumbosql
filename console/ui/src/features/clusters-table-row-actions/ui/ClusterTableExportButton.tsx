@@ -17,33 +17,39 @@ const ClustersTableExportButton: FC<ClustersTableRemoveButtonProps> = ({ cluster
       const response = await getClusterTrigger({ id: clusterId }).unwrap();
 
       // extra_vars parsing
-      let vars: Record<string, any> = {};
+      let vars: Record<string, unknown> = {};
       if (typeof response.extra_vars === 'string' && response.extra_vars.trim() !== '') {
         try {
           vars = JSON.parse(response.extra_vars);
-        } catch (e) {
+        } catch {
+          // not JSON: export without extra vars
         }
       } else if (response.extra_vars && typeof response.extra_vars === 'object') {
-        vars = response.extra_vars as Record<string, any>;
+        vars = response.extra_vars as Record<string, unknown>;
       }
 
       // Only include valid servers (with ip and name)
       const validServers = (response.servers || []).filter(
-        server => server.ip && server.name &&
-          server.ip !== 'undefined' && server.name !== 'undefined' &&
-          server.ip !== null && server.name !== null &&
-          server.ip !== '' && server.name !== ''
+        (server) =>
+          server.ip &&
+          server.name &&
+          server.ip !== 'undefined' &&
+          server.name !== 'undefined' &&
+          server.ip !== null &&
+          server.name !== null &&
+          server.ip !== '' &&
+          server.name !== '',
       );
 
       // Prepare host groups
-      const masterHosts: Record<string, any> = {};
-      const replicaHosts: Record<string, any> = {};
-      const etcdHosts: Record<string, any> = {};
-      const balancerHosts: Record<string, any> = {};
+      const masterHosts: Record<string, unknown> = {};
+      const replicaHosts: Record<string, unknown> = {};
+      const etcdHosts: Record<string, unknown> = {};
+      const balancerHosts: Record<string, unknown> = {};
 
-      validServers.forEach(server => {
+      validServers.forEach((server) => {
         // Host details for master/replica
-        const hostData: Record<string, any> = {
+        const hostData: Record<string, unknown> = {
           hostname: server.name,
           ansible_host: server.ip,
           bind_address: server.ip,
@@ -66,33 +72,42 @@ const ClustersTableExportButton: FC<ClustersTableRemoveButtonProps> = ({ cluster
       // Special handling for ssh_public_keys:
       // always export as array of single-line strings, no extra quotes, preserve all characters
       if (typeof vars.ssh_public_keys === 'string') {
-        let keyStr = vars.ssh_public_keys.trim().replace(/^'+|'+$/g, '').replace(/\s+/g, ' ');
+        const keyStr = vars.ssh_public_keys
+          .trim()
+          .replace(/^'+|'+$/g, '')
+          .replace(/\s+/g, ' ');
         vars.ssh_public_keys = [keyStr];
       } else if (Array.isArray(vars.ssh_public_keys)) {
         vars.ssh_public_keys = vars.ssh_public_keys
-          .map(k =>
+          .map((k) =>
             typeof k === 'string'
-              ? k.trim().replace(/^'+|'+$/g, '').replace(/\s+/g, ' ')
-              : k
+              ? k
+                  .trim()
+                  .replace(/^'+|'+$/g, '')
+                  .replace(/\s+/g, ' ')
+              : k,
           )
-          .filter(k => typeof k === 'string' && k.length > 0);
+          .filter((k) => typeof k === 'string' && k.length > 0);
       }
 
       // Sorting vars by key in alphabetical order before exporting
-      const sortedVars: Record<string, any> = Object.keys(vars)
+      const sortedVars: Record<string, unknown> = Object.keys(vars)
         .sort((a, b) => a.localeCompare(b))
-        .reduce((acc, key) => {
-          acc[key] = vars[key];
-          return acc;
-        }, {} as Record<string, any>);
+        .reduce(
+          (acc, key) => {
+            acc[key] = vars[key];
+            return acc;
+          },
+          {} as Record<string, unknown>,
+        );
 
       // Force js-yaml to use plain style for ssh_public_keys (no quotes, no block/literal)
       const yamlOptions = {
         noRefs: true,
         lineWidth: -1,
         styles: {
-          '!!str': () => undefined
-        }
+          '!!str': () => undefined,
+        },
       };
 
       const inventory = {
@@ -105,12 +120,14 @@ const ClustersTableExportButton: FC<ClustersTableRemoveButtonProps> = ({ cluster
               children: {
                 master: {},
                 replica: {},
-              }
+              },
             },
             etcd_cluster: { hosts: Object.keys(etcdHosts).length ? etcdHosts : {} },
-            balancers: { hosts: (sortedVars.with_haproxy_load_balancing && Object.keys(balancerHosts).length) ? balancerHosts : {} },
-          }
-        }
+            balancers: {
+              hosts: sortedVars.with_haproxy_load_balancing && Object.keys(balancerHosts).length ? balancerHosts : {},
+            },
+          },
+        },
       };
 
       // Convert to YAML and download

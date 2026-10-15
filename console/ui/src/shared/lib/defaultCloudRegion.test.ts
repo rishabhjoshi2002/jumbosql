@@ -18,7 +18,10 @@ describe('getDefaultCloudRegionSelection', () => {
       ],
     };
 
-    expect(getDefaultCloudRegionSelection(provider)).toEqual({ regionCode: 'North America', datacenter: preferredDatacenter });
+    expect(getDefaultCloudRegionSelection(provider)).toEqual({
+      regionCode: 'North America',
+      datacenter: preferredDatacenter,
+    });
   });
 
   it('keeps the first available region when the preferred region is absent', () => {
@@ -36,9 +39,11 @@ describe('getDefaultCloudRegionSelection', () => {
 
   it('keeps the first region for providers without a preferred region', () => {
     const datacenter = { code: 'other-region' };
-    expect(getDefaultCloudRegionSelection({
-      code: 'unknown',
-      cloud_regions: [{ code: 'North America', datacenters: [datacenter] }],
-    })).toEqual({ regionCode: 'North America', datacenter });
+    expect(
+      getDefaultCloudRegionSelection({
+        code: 'unknown',
+        cloud_regions: [{ code: 'North America', datacenters: [datacenter] }],
+      }),
+    ).toEqual({ regionCode: 'North America', datacenter });
   });
 });

@@ -22,10 +22,12 @@ RUN yarn install --frozen-lockfile --network-timeout 1000000 && yarn vite build
 
 # Build the console image
 FROM nginx:1.29-bookworm
-LABEL maintainer="Autobase <info@autobase.tech>"
+LABEL maintainer="pg_MANTRA - Keen & Able Computers Pvt. Ltd." org.opencontainers.image.title="pg_mantra-console" org.opencontainers.image.licenses="MIT"
 
 COPY --from=api-builder /go/src/pg-console/pg-console /usr/local/bin/
 COPY console/db/migrations /etc/db/migrations
+# the licence and notices go with every copy (MIT: Autobase and pg_MANTRA)
+COPY LICENSE NOTICE THIRD_PARTY_NOTICES.md /usr/share/doc/pg_mantra/
 COPY --from=ui-builder /usr/src/pg-console/dist /usr/share/nginx/html/
 COPY console/ui/nginx/nginx.conf /etc/nginx/
 COPY console/ui/env.sh console/ui/.env console/ui/.env.production /usr/share/nginx/html/

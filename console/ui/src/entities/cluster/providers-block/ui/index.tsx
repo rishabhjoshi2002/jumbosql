@@ -14,6 +14,14 @@ import { STORAGE_BLOCK_FIELDS } from '@entities/cluster/storage-block/model/cons
 import { BACKUPS_BLOCK_FIELD_NAMES } from '@entities/cluster/expert-mode/backups-block/model/const.ts';
 import { getDefaultCloudRegionSelection } from '@shared/lib/defaultCloudRegion.ts';
 
+// what the form needs from a provider (the API sends more)
+type ProviderOption = ProvidersBlockProps['providers'][number] & {
+  instance_types?: Record<string, unknown[]>;
+  volumes?: { is_default?: boolean; min_size?: number }[];
+  cloud_regions?: { code?: string; datacenters?: { code?: string }[] | null }[] | null;
+};
+const defaultVolume = (p: ProviderOption) => p?.volumes?.find((volume) => volume?.is_default);
+
 const ClusterFormProvidersBlock: FC<ProvidersBlockProps> = ({ providers }) => {
   const { t } = useTranslation('clusters');
   const { control, reset } = useFormContext();
@@ -21,7 +29,7 @@ const ClusterFormProvidersBlock: FC<ProvidersBlockProps> = ({ providers }) => {
 
   const nameIconProvidersMap = useNameIconProvidersMap();
 
-  const handleProviderChange = (value: any) => () => {
+  const handleProviderChange = (value: ProviderOption) => () => {
     const { regionCode, datacenter } = getDefaultCloudRegionSelection(value);
     reset((values) => ({
       ...values,
@@ -31,9 +39,7 @@ const ClusterFormProvidersBlock: FC<ProvidersBlockProps> = ({ providers }) => {
       [INSTANCES_BLOCK_FIELD_NAMES.INSTANCE_TYPE]: 'small',
       [CLUSTER_FORM_FIELD_NAMES.INSTANCE_CONFIG]: value?.instance_types?.small?.[0],
       [STORAGE_BLOCK_FIELDS.STORAGE_AMOUNT]:
-        (value as any)?.volumes?.find((volume: any) => volume?.is_default)?.min_size < 100
-          ? 100
-          : (value as any)?.volumes?.find((volume: any) => volume?.is_default)?.min_size,
+        (defaultVolume(value)?.min_size ?? 0) < 100 ? 100 : defaultVolume(value)?.min_size,
       [BACKUPS_BLOCK_FIELD_NAMES.IS_BACKUPS_ENABLED]: value.code !== PROVIDERS.LOCAL,
     }));
   };
@@ -48,13 +54,17 @@ const ClusterFormProvidersBlock: FC<ProvidersBlockProps> = ({ providers }) => {
         name={CLUSTER_FORM_FIELD_NAMES.PROVIDER}
         render={({ field: { value } }) => (
           <Stack direction="row" spacing={2}>
-            {providers.map((provider: any) => (
+            {providers.map((provider: ProviderOption) => (
               <ClusterFormCloudProviderBox
                 key={provider.code}
                 isActive={value?.code === provider.code}
                 onClick={handleProviderChange(provider)}
                 name={provider.description}>
-                <img src={(nameIconProvidersMap as any)[provider.code]} width="100%" alt={provider.description} />
+                <img
+                  src={(nameIconProvidersMap as Record<string, string>)[provider.code ?? '']}
+                  width="100%"
+                  alt={provider.description}
+                />
               </ClusterFormCloudProviderBox>
             ))}
             <ClusterFormCloudProviderBox

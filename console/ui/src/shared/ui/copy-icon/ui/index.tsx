@@ -5,7 +5,7 @@ import CopyValueIcon from '@mui/icons-material/ContentCopyOutlined';
 import { Box, SxProps, Theme } from '@mui/material';
 
 const CopyIcon: FC<CopyIconProps & { sx?: SxProps<Theme> }> = ({ valueToCopy, sx }) => {
-  const [_, copyFunction] = useCopyToClipboard();
+  const [, copyFunction] = useCopyToClipboard();
 
   return (
     <Box onClick={() => copyFunction(valueToCopy)} sx={{ cursor: 'pointer', ...sx }}>

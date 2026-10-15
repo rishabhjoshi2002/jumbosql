@@ -131,8 +131,9 @@ const SettingsAddSecret: React.FC = () => {
                       variant="contained"
                       disabled={!isValid || isSubmitting || postSecretTriggerState.isLoading}
                       fullWidth={false}
-                      startIcon={isSubmitting || postSecretTriggerState.isLoading ? <CircularProgress size={16} /> : undefined}
-                    >
+                      startIcon={
+                        isSubmitting || postSecretTriggerState.isLoading ? <CircularProgress size={16} /> : undefined
+                      }>
                       {t('addSecret')}
                     </Button>
                   </Stack>

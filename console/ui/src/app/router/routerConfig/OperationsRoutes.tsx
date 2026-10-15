@@ -17,7 +17,7 @@ const OperationsRoutes = () => (
         path={RouterPaths.operations.log.relativePath}
         handle={{
           breadcrumb: {
-            label: (data: any) => `${data.operationId}`,
+            label: (data: { operationId?: string }) => `${data.operationId}`,
           },
         }}
         element={<OperationLog />}

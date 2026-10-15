@@ -170,13 +170,15 @@ func inventoryUser(inv []byte) string {
 	return u
 }
 
+var errNoLogin = errors.New("give the SSH user and password or key (used for this call only, never saved)")
+
 // sshLogin: the login given now, else the cluster's stored secret
 func (h *Handlers) sshLogin(ctx context.Context, bt *backupTarget, user, password, key string, port int64) (*discover.SSHAuth, error) {
 	if u := strings.TrimSpace(user); u != "" {
 		return &discover.SSHAuth{User: u, Password: password, Key: strings.TrimSpace(key), Port: int(port)}, nil
 	}
 	if bt.secretID == nil {
-		return nil, errors.New("give the SSH user and password or key (used for this call only, never saved)")
+		return nil, errNoLogin
 	}
 	envs, asExtra, err := clusterctl.SecretEnvs(ctx, h.db, *bt.secretID, h.cfg.EncryptionKey, bt.projectID)
 	if err != nil {
@@ -808,7 +810,8 @@ func (h *Handlers) startBackupJob(ctx context.Context, bt *backupTarget, b *mode
 	extraJSON, _ := json.Marshal(extra)
 	envs = append(envs, "PGM_MODE=backup",
 		"ANSIBLE_INVENTORY_JSON="+base64.StdEncoding.EncodeToString(inv),
-		fmt.Sprintf("ANSIBLE_JSON_LOG_FILE=%s/upgrade-%d.json", ansibleLogDir, up.ID))
+		fmt.Sprintf("ANSIBLE_JSON_LOG_FILE=%s/upgrade-%d.json", ansibleLogDir, up.ID), "ANSIBLE_NOCOLOR=1", "ANSIBLE_FORCE_COLOR=0",
+		"ANSIBLE_HOST_PATTERN_MISMATCH=ignore", "ANSIBLE_LOCALHOST_WARNING=False")
 	dockerID, err := h.docker.ManageCluster(ctx, &xdocker.ManageClusterConfig{Image: h.cfg.Docker.UpgradeImage, Envs: envs,
 		ExtraVars: string(extraJSON), Mounts: []xdocker.Mount{{DockerPath: ansibleLogDir, HostPath: h.cfg.Docker.LogDir}}})
 	if err != nil {
@@ -881,6 +884,10 @@ func (h *Handlers) statusFor(ctx context.Context, kind string, id int64, b *mode
 		b = &models.RequestBackupStatus{}
 	}
 	auth, err := h.sshLogin(ctx, bt, b.SSHUser, b.SSHPassword, b.SSHKey, b.SSHPort)
+	if errors.Is(err, errNoLogin) {
+		// not an error: the page asks for the login
+		return map[string]any{"need_login": true, "name": bt.name}, nil
+	}
 	if err != nil {
 		return nil, err
 	}

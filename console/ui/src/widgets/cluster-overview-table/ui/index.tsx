@@ -17,7 +17,7 @@ import RowActionsMenu from '@features/row-actions-menu/ui';
 const ClusterOverviewTable: FC<ClusterOverviewTableProps> = ({ clusterName = '', items, isLoading }) => {
   const { t, i18n } = useTranslation('clusters');
 
-  const columns = useMemo<MRT_ColumnDef<ClusterInfo>[]>(() => clusterOverviewTableColumns(t), [i18n.language]);
+  const columns = useMemo<MRT_ColumnDef<ClusterInfo>[]>(() => clusterOverviewTableColumns(t), [t, i18n.language]);
 
   const data = useGetOverviewClusterTableData(items);
 

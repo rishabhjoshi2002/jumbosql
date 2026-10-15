@@ -75,7 +75,11 @@ const OperationsTableButtons: FC<OperationsTableButtonsProps> = ({ refetch, star
         onClose={handleClose}
         slotProps={{ paper: { sx: { minWidth: 150 } } }}>
         {rangeOptions.map((option) => (
-          <MenuItem key={option.value} selected={option.value === startDate.name} onClick={handlePick(option.value)} dense>
+          <MenuItem
+            key={option.value}
+            selected={option.value === startDate.name}
+            onClick={handlePick(option.value)}
+            dense>
             {option.label}
           </MenuItem>
         ))}

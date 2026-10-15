@@ -24,7 +24,7 @@ const ProjectsTable: FC = () => {
     limit: pagination.pageSize,
   });
 
-  const columns = useMemo<MRT_ColumnDef<ProjectsTableValues>[]>(() => projectsTableColumns(t), [i18n.language]);
+  const columns = useMemo<MRT_ColumnDef<ProjectsTableValues>[]>(() => projectsTableColumns(t), [t, i18n.language]);
 
   const data = useGetProjectsTableData(projectsList.data?.data);
 
