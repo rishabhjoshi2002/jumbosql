@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"postgresql-cluster-console/pkg/tracer"
+	"reflect"
 	"strings"
 	"time"
 
@@ -107,11 +108,14 @@ func logQueryArgs(args []any) string {
 				a = fmt.Sprintf("%s (truncated %d bytes)", v[:64], len(v)-64)
 			}
 		}
-		if i != len(args)-1 {
+		if i > 0 {
 			paramsStr.WriteString(",")
 		}
 
-		if stringer, ok := a.(fmt.Stringer); ok {
+		// a nil pointer (e.g. a NULL *time.Time) must not be called: its String() panics
+		if rv := reflect.ValueOf(a); a == nil || (rv.Kind() == reflect.Pointer && rv.IsNil()) {
+			paramsStr.WriteString("NULL")
+		} else if stringer, ok := a.(fmt.Stringer); ok {
 			paramsStr.WriteString(stringer.String())
 		} else {
 			paramsStr.WriteString(render.Render(a))

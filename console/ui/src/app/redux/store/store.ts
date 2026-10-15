@@ -13,10 +13,30 @@ import { baseApi } from '@shared/api/baseApi.ts';
 import { toast } from 'react-toastify';
 import { setupListeners } from '@reduxjs/toolkit/query';
 
+// pg_mantra: these calls show their own error (inline or in a toast of the page), so no second toast here
+const SHOWN_BY_PAGE = new Set([
+  'postBackupStatus',
+  'postBackupJob',
+  'postUpgrade',
+  'postPlaybook',
+  'putPlaybook',
+  'deletePlaybook',
+  'postPlaybookRun',
+  'postDiscover',
+  'getLogFiles',
+  'getLogChunk',
+]);
+
 export const rtkQueryErrorLogger: Middleware = () => (next) => (action) => {
   if (isRejectedWithValue(action)) {
-    toast.error(action.payload?.data?.message || action.payload.data?.title);
-    console.error(action.payload?.data);
+    const endpoint = (action.meta as { arg?: { endpointName?: string } } | undefined)?.arg?.endpointName ?? '';
+    if (!SHOWN_BY_PAGE.has(endpoint)) {
+      const data = (action.payload as { data?: { message?: string; title?: string } } | undefined)?.data;
+      const msg = data?.message || data?.title;
+      // the same message only once at a time (polling can repeat a failure)
+      if (msg) toast.error(msg, { toastId: String(msg) });
+    }
+    console.error((action.payload as { data?: unknown } | undefined)?.data);
   }
   return next(action);
 };
@@ -54,9 +74,7 @@ export const makeStore = (preloadedState?: Partial<RootState>) => {
         settingsApi.middleware,
         otherApi.middleware,
       ];
-      const uniqueApiMiddlewares = apiMiddlewares.filter(
-        (mw, idx, arr) => arr.indexOf(mw) === idx,
-      );
+      const uniqueApiMiddlewares = apiMiddlewares.filter((mw, idx, arr) => arr.indexOf(mw) === idx);
       return getDefaultMiddleware().concat(uniqueApiMiddlewares, rtkQueryErrorLogger);
     },
     preloadedState,

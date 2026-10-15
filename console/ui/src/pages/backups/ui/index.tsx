@@ -56,6 +56,18 @@ import Timeline, { when } from './Timeline.tsx';
 const mono = { fontFamily: '"JetBrains Mono", monospace', fontSize: 12.5 };
 const STATUS = { running: 'info', success: 'success', failed: 'error' } as const;
 
+/** what a job did, in words: "Point In Time · 2026-10-14 05:34:01+00", "Full" ... */
+const jobKind = (j: BJob, t: (k: string) => string) =>
+  j.action === 'restore'
+    ? j.options?.set
+      ? `${t('r_set')} · ${j.options.set}`
+      : j.options?.target_time
+        ? `${t('r_time')} · ${j.options.target_time}`
+        : t('r_latest')
+    : j.action === 'backup' && j.options?.type
+      ? t(j.options.type)
+      : '';
+
 export const ago = (s?: number) => {
   if (s === undefined || s === null || !Number.isFinite(s)) return '—';
   const a = Math.max(0, s);
@@ -277,7 +289,7 @@ const Backups: FC = () => {
     ) as { detail?: { set?: string } } | undefined;
     return (
       <RunView
-        title={`#${current.id} · ${t(`a_${current.action}`)}${current.options?.type ? ` (${current.options.type})` : ''}`}
+        title={`#${current.id} · ${t(`a_${current.action}`)}${jobKind(current, t) ? ` · ${jobKind(current, t)}` : ''}`}
         status={current.status}
         log={detail.data?.id === current.id ? (detail.data?.log ?? '') : ''}
         knownHosts={status?.nodes.map((n) => n.name)}
@@ -363,7 +375,12 @@ const Backups: FC = () => {
 
       {loading.isLoading ? <Alert severity="info">{t('loading')}</Alert> : null}
       {needLogin && !status ? <Alert severity="info">{t('needLogin')}</Alert> : null}
-      {statusError ? <Alert severity="error">{statusError}</Alert> : null}
+      {statusError ? (
+        // no saved SSH secret for this cluster yet: a hint, not an error
+        <Alert severity={statusError.startsWith('give the SSH') ? 'info' : 'error'}>
+          {statusError.startsWith('give the SSH') ? t('needLogin') : statusError}
+        </Alert>
+      ) : null}
       {running && view === 'status' ? <Alert severity="info">{t('busy')}</Alert> : null}
 
       {status ? (
@@ -434,7 +451,13 @@ const StatusView: FC<{
         <Stat
           label={t('c_risk')}
           value={risk === undefined || risk === null ? t('unknown') : bytes(risk)}
-          sub={t(risk === undefined || risk === null ? 'c_riskUnknown' : 'c_riskSub', { age: ago(w.data_loss_s) })}
+          sub={
+            risk === undefined || risk === null
+              ? t('c_riskUnknown', { age: ago(w.data_loss_s) })
+              : w.wal_time_known === false
+                ? t('c_riskSubNoTime')
+                : t('c_riskSub', { age: ago(w.data_loss_s) })
+          }
           tone={risk !== undefined && risk !== null && risk > 64 * 1024 * 1024 ? 'warning' : undefined}
         />
         <Stat
@@ -1068,11 +1091,7 @@ const History: FC<{ jobs: BJob[]; openJob: (id: number) => void }> = ({ jobs, op
               <TableCell>
                 #{j.id} · {t(`a_${j.action}`)}
               </TableCell>
-              <TableCell sx={mono}>
-                {j.options?.type ?? ''}
-                {j.options?.target_time ? ` ${j.options.target_time}` : ''}
-                {j.options?.set ? ` ${j.options.set}` : ''}
-              </TableCell>
+              <TableCell>{jobKind(j, t)}</TableCell>
               <TableCell>
                 <Chip size="small" color={STATUS[j.status]} label={t(`st_${j.status}`, { ns: 'upgrade' })} />
               </TableCell>

@@ -287,7 +287,7 @@ Results can be saved (passwords never are), opened again, downloaded as JSON or 
 
 ## Upgrades (admins)
 
-**Upgrades** (a button in the header, `upgrade.run`, given to Administrators) upgrades one component at a time -
+**Upgrades** (in the sidebar, `upgrade.run`, given to Administrators) upgrades one component at a time -
 PostgreSQL (minor version), Patroni, etcd, HAProxy, keepalived, PgBouncer, pgBackRest, vip-manager, node_exporter,
 postgres_exporter, Prometheus, Alertmanager, Grafana - on **any cluster**. One **Cluster** list holds every cluster:
 those **Found By Discover** (any setup, whoever built it: the machines and what runs on each come from Discover)
@@ -326,7 +326,7 @@ The runner's log is shown live, and each node's result (before / after versions,
 
 ## Ansible Playbooks (admins)
 
-**Playbooks** (a button in the header) is a separate page for **your own** Ansible playbooks, saved by name and
+**Ansible Playbooks** (in the sidebar) is a separate page for **your own** Ansible playbooks, saved by name and
 run in the same runner container on any machines you choose.
 
 **Add a playbook** (saved in the console) with the **Add Playbook** drop-down: **Write Or Paste YAML**, **Upload An
@@ -451,7 +451,7 @@ timers (`systemctl list-timers | grep jumbosql-backup` on the repository VM). If
 
 ### Backup & Restore page (admins)
 
-**Backup & Restore** (sidebar and header) manages pgBackRest for **any** cluster: one created by pg_MANTRA (its saved SSH
+**Backup & Restore** (in the sidebar, `backup.run`) manages pgBackRest for **any** cluster: one created by pg_MANTRA (its saved SSH
 secret is used) or one found by Discover (give an SSH login; it is used for that call only and never saved). It
 reads every node with pgBackRest over SSH (root, `sudo -n`, or `sudo` with the SSH password) and shows:
 
@@ -549,5 +549,6 @@ cd console/service && make swagger && go test ./...   # auth, roles, Patroni cli
 
 ## Licence
 
-MIT, see [LICENSE](LICENSE) and [NOTICE](NOTICE). The HA Ansible collection used by the automation is licensed
+MIT, see [LICENSE](LICENSE) and [NOTICE](NOTICE). Open-source components and their licenses:
+[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md). The HA Ansible collection used by the automation is licensed
 separately by its vendor and is not part of this repository. Upstream documentation: [AUTOBASE-README.md](AUTOBASE-README.md).

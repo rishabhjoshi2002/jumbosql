@@ -456,6 +456,11 @@ func summarize(nodes []BackupNodeStatus, now time.Time) map[string]any {
 				latest = t
 			}
 		}
+		window["wal_time_known"] = false
+		if primary != nil {
+			_, known := parsePGTime(str(mapOf(primary.Raw["pg"])["last_archived_time"]))
+			window["wal_time_known"] = known
+		}
 		window["to"] = latest
 		window["span_s"] = latest.Sub(oldest).Seconds()
 		window["data_loss_s"] = now.Sub(latest).Seconds() // time since the last WAL reached the repository
@@ -484,7 +489,7 @@ func summarize(nodes []BackupNodeStatus, now time.Time) map[string]any {
 		if len(backups) == 0 {
 			add("error", "no backup yet: nothing can be restored")
 		} else if age := now.Sub(newest); age > 26*time.Hour {
-			add("warning", "the last backup is %s old", age.Round(time.Hour))
+			add("warning", "the last backup is %s old", humanAge(age))
 		}
 		// missing stanza path / data: the stanza can be created
 		if code := num(stanzaStatus["code"]); code == 1 || code == 3 {
@@ -610,6 +615,15 @@ func summarize(nodes []BackupNodeStatus, now time.Time) map[string]any {
 	return map[string]any{"nodes": nodes, "primary": prim, "runner": run, "stanza": stanza, "stanza_status": stanzaStatus,
 		"backups": backups, "window": window, "repo_bytes": totalRepo, "issues": issues, "config_diff": diffs,
 		"can_create_stanza": canCreate, "checked_at": now}
+}
+
+// humanAge: "28 hours", "3 days"
+func humanAge(d time.Duration) string {
+	h := int(d.Hours() + 0.5)
+	if h < 48 {
+		return fmt.Sprintf("%d hours", h)
+	}
+	return fmt.Sprintf("%d days", int(d.Hours()/24+0.5))
 }
 
 func anySlice(v any) []any {

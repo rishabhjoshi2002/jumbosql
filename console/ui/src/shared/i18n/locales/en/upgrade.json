@@ -277,5 +277,9 @@
     "step_slots": "Replication slots",
     "step_start": "Start",
     "step_postbackup": "Full backup after"
-  }
+  },
+  "next_open": "Open",
+  "next_review": "Review",
+  "next_failed": "Upgrade #{{id}} failed. Open it to roll back now or try again.",
+  "next_planDone": "Dry run #{{id}} is done. Review what will change, then start the upgrade."
 }

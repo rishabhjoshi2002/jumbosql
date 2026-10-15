@@ -64,6 +64,7 @@ export type BStatus = {
     span_s?: number;
     data_loss_s?: number;
     pending_wal_bytes?: number;
+    wal_time_known?: boolean;
     last_backup_age_s?: number;
   };
   repo_bytes: number;

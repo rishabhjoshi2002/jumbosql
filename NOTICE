@@ -8,3 +8,6 @@ Imported from upstream commit fd9c946.
 The HA Ansible collection (version 2.2.0) used by the automation image is licensed separately by its vendor.
 It is NOT part of this repository; it is copied from your own licensed installation at build time
 (automation-ha/pack-from-ansible-vm.sh).
+
+Other open-source components used by the console (Go modules, npm packages) and their licenses are listed in
+THIRD_PARTY_NOTICES.md (regenerate with tools/third_party_notices.py).

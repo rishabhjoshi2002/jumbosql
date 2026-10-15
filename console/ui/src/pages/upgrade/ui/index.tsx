@@ -612,6 +612,38 @@ const BuiltInUpgrades: FC = () => {
 
         <Stack gap={2} minWidth={0}>
           {stepper}
+          {(() => {
+            // what to do next, so a finished dry run or a failed upgrade is never missed
+            const open = (id: number) => {
+              setSelected(id);
+              setView('run');
+            };
+            if (lastRun?.status === 'failed' && !rolledBack && (!lastPlan || lastRun.id > lastPlan.id))
+              return (
+                <Alert
+                  severity="error"
+                  action={
+                    <Button color="inherit" size="small" variant="outlined" onClick={() => open(lastRun.id)}>
+                      {t('next_open')}
+                    </Button>
+                  }>
+                  {t('next_failed', { id: lastRun.id })}
+                </Alert>
+              );
+            if (lastPlan?.status === 'success' && (!lastRun || lastRun.id < lastPlan.id))
+              return (
+                <Alert
+                  severity="info"
+                  action={
+                    <Button color="inherit" size="small" variant="outlined" onClick={() => open(lastPlan.id)}>
+                      {t('next_review')}
+                    </Button>
+                  }>
+                  {t('next_planDone', { id: lastPlan.id })}
+                </Alert>
+              );
+            return null;
+          })()}
           <Card title={t('history')}>
             <Stack divider={<Box sx={{ borderTop: 1, borderColor: 'divider' }} />}>
               {upgrades.map((u) => (

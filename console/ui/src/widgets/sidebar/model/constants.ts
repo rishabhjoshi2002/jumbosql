@@ -14,6 +14,8 @@ import AuditIcon from '@mui/icons-material/FactCheckOutlined';
 import HomeIcon from '@mui/icons-material/HomeOutlined';
 import DiscoverIcon from '@mui/icons-material/TravelExploreOutlined';
 import BackupsIcon from '@mui/icons-material/SettingsBackupRestoreOutlined';
+import UpgradesIcon from '@mui/icons-material/SystemUpdateAltOutlined';
+import PlaybooksIcon from '@mui/icons-material/TerminalOutlined';
 import { canAny, getSessionUser, SessionUser } from '@shared/lib/session.ts';
 
 // pg_mantra: menu items follow the user's access policies (perms: any one of them)
@@ -60,6 +62,18 @@ export const sidebarData = (t: TFunction, user: SessionUser | null = getSessionU
       label: t('title', { ns: 'backup' }),
       path: RouterPaths.backups.absolutePath,
       perms: ['backup.run'],
+    },
+    {
+      icon: UpgradesIcon,
+      label: t('title', { ns: 'upgrade' }),
+      path: RouterPaths.upgrade.absolutePath,
+      perms: ['upgrade.run'],
+    },
+    {
+      icon: PlaybooksIcon,
+      label: t('pb.title', { ns: 'upgrade' }),
+      path: RouterPaths.playbooks.absolutePath,
+      perms: ['upgrade.run'],
     },
     {
       icon: PostgresLogsIcon,

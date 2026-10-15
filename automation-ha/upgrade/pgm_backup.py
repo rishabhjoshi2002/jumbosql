@@ -258,7 +258,7 @@ def pg_state(pg):
             "archived_count": int(r[7] or 0), "failed_count": int(r[8] or 0), "now": r[9], "version": r[10],
             "data_directory": r[11], "lsn": r[12], "primary_slot_name": r[13],
             "slots": [x for x in r[14].split(",") if x], "archive_timeout": r[15], "current_wal": r[16],
-            "pending_wal_bytes": pending_wal(r[16], r[3], r[17], r[18])}
+            "pending_wal_bytes": pending_wal(r[16], r[3], r[17], r[18]), "wal_in_segment": r[17], "wal_segment_size": r[18]}
 
 
 def pending_wal(current, archived, in_seg, seg_size):
@@ -513,6 +513,18 @@ def status(spec):
                     break
     OUT["pg"] = {}
     section("PostgreSQL", pgs)
+
+    def pending_from_repo():
+        # after a restart PostgreSQL forgets its last archived WAL: ask the repository instead
+        p = OUT["pg"]
+        if p.get("role") != "primary" or p.get("pending_wal_bytes") is not None:
+            return
+        cur = next((x for x in OUT.get("info") or [] if x.get("name") == st), None)
+        archived = max((a.get("max") or "" for a in (cur or {}).get("archive") or []), default="")
+        if archived:
+            p["pending_wal_bytes"] = pending_wal(p.get("current_wal"), archived, p.get("wal_in_segment"), p.get("wal_segment_size"))
+            p["pending_from"] = "repository"
+    section("unarchived WAL", pending_from_repo)
     OUT["patroni"] = None
 
     def pat():
