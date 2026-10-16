@@ -53,6 +53,7 @@ import TargetSelect, { targetKey } from '@pages/upgrade/ui/TargetSelect.tsx';
 import RunView from '@pages/upgrade/ui/RunView.tsx';
 import { apiErrorText } from '@shared/lib/apiError.ts';
 import Timeline, { when } from './Timeline.tsx';
+import BackupFlow, { FlowNode } from './BackupFlow.tsx';
 
 const mono = { fontFamily: '"JetBrains Mono", monospace', fontSize: 12.5 };
 const STATUS = { running: 'info', success: 'success', failed: 'error' } as const;
@@ -290,6 +291,27 @@ const Backups: FC = () => {
     return m;
   }, [status, t]);
 
+  // the nodes and the repository, for the live picture of a job
+  const flowNodes: FlowNode[] = (status?.nodes ?? []).map((n) => ({
+    name: n.name,
+    address: n.address,
+    role: n.status?.repo_host
+      ? 'repo'
+      : n.status?.pg?.role === 'primary'
+        ? 'primary'
+        : n.status?.pg?.role === 'replica'
+          ? 'replica'
+          : n.ok
+            ? 'down'
+            : '',
+  }));
+  const repoNode = status?.nodes.find((n) => n.status?.repo_host);
+  const runnerNode = status?.nodes.find((n) => n.address === status.runner);
+  const flowRepo = {
+    host: repoNode?.address,
+    path: (repoNode ?? runnerNode)?.status?.repos?.find((r) => r.path)?.path,
+  };
+
   if (view === 'run' && current && target) {
     const restored = (current.result ?? []).find(
       (r) => isStep(r) && r.phase === 'restore' && (r.detail as { set?: string } | undefined)?.set,
@@ -303,6 +325,21 @@ const Backups: FC = () => {
         steps={STEPS[current.action]}
         stepOf={stepOf}
         roles={roles}
+        picture={(prog, isRunning) => (
+          <BackupFlow
+            action={current.action}
+            p={prog}
+            running={isRunning}
+            failed={current.status === 'failed'}
+            nodes={flowNodes}
+            repo={flowRepo}
+            steps={STEPS[current.action]}
+            stepOf={stepOf}
+            result={current.result}
+            startedAt={current.created_at}
+            finishedAt={current.finished_at}
+          />
+        )}
         onBack={() => setView('status')}
         actions={
           current.status !== 'running' ? (

@@ -43,7 +43,8 @@ describe('parseAnsibleLog', () => {
 
 describe('coloured output', () => {
   it('reads a log with terminal colour codes', () => {
-    const c = '\u001b[0;32mok: [10.0.0.31]\u001b[0m\r\nPLAY RECAP ***\n\u001b[0;31m10.0.0.31\u001b[0m : \u001b[0;32mok=3\u001b[0m changed=0    unreachable=0    \u001b[0;31mfailed=1\u001b[0m skipped=0\n';
+    const c =
+      '\u001b[0;32mok: [10.0.0.31]\u001b[0m\r\nPLAY RECAP ***\n\u001b[0;31m10.0.0.31\u001b[0m : \u001b[0;32mok=3\u001b[0m changed=0    unreachable=0    \u001b[0;31mfailed=1\u001b[0m skipped=0\n';
     const p = parseAnsibleLog('TASK [Back up] ***\n' + c);
     expect(p.hosts['10.0.0.31'].state).toBe('failed');
     expect(stripAnsi('\u001b[0;32mok\u001b[0m')).toBe('ok');

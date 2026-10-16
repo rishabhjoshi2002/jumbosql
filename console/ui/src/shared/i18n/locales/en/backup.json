@@ -122,5 +122,26 @@
   "result": "Result",
   "restoredSet": "Restored from {{set}}",
   "backToStatus": "Back To Status",
-  "noPgbackrest": "No pgBackRest found. Install it on the database nodes (or a repository server) and run Discover again."
+  "noPgbackrest": "No pgBackRest found. Install it on the database nodes (or a repository server) and run Discover again.",
+  "flow": {
+    "starting": "Starting The Job…",
+    "finishing": "Finishing…",
+    "copying": "Copying Data To The Repository",
+    "restoring": "Restoring Data From The Repository",
+    "backedUp": "Backup Done",
+    "restored": "Restore Done",
+    "done": "Done",
+    "failed": "The Job Failed",
+    "sending": "Sending data…",
+    "receiving": "Receiving data…",
+    "updating": "Updating…",
+    "ready": "Ready",
+    "repository": "Backup Repository",
+    "config": "pgBackRest config",
+    "schedule": "Backup schedule",
+    "type": "Type",
+    "size": "Database Size",
+    "stored": "Stored",
+    "took": "Took"
+  }
 }

@@ -3,7 +3,7 @@ import { Box, Button, Chip, Stack, Typography } from '@mui/material';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import { useTranslation } from 'react-i18next';
 import Card from '@pages/discover/ui/Card.tsx';
-import { parseAnsibleLog, stripAnsi } from '../lib/ansibleLog.ts';
+import { LogProgress, parseAnsibleLog, stripAnsi } from '../lib/ansibleLog.ts';
 import RunProgress from './RunProgress.tsx';
 
 const STATUS = { running: 'info', success: 'success', failed: 'error' } as const;
@@ -21,9 +21,11 @@ const RunView: FC<{
   stepOf?: (task: string) => string | undefined;
   roles?: Record<string, string>;
   actions?: ReactNode;
+  /** a picture of its own for the live progress (e.g. backups); default: machines with their steps */
+  picture?: (p: LogProgress, running: boolean) => ReactNode;
   onBack: () => void;
   children?: ReactNode;
-}> = ({ title, status, log, knownHosts, steps, stepOf, roles, actions, onBack, children }) => {
+}> = ({ title, status, log, knownHosts, steps, stepOf, roles, actions, picture, onBack, children }) => {
   const { t } = useTranslation('upgrade');
   const running = status === 'running';
   const p = useMemo(() => parseAnsibleLog(log, knownHosts), [log, knownHosts]);
@@ -51,14 +53,18 @@ const RunView: FC<{
           gridTemplateColumns: { xs: 'minmax(0,1fr)', lg: 'minmax(0,1fr) minmax(0,1fr)' },
         }}>
         <Card title={t('rv.progress')}>
-          <RunProgress
-            hosts={p.order.map((h) => p.hosts[h])}
-            running={running}
-            task={p.task}
-            steps={steps}
-            stepOf={stepOf}
-            roles={roles}
-          />
+          {picture ? (
+            picture(p, running)
+          ) : (
+            <RunProgress
+              hosts={p.order.map((h) => p.hosts[h])}
+              running={running}
+              task={p.task}
+              steps={steps}
+              stepOf={stepOf}
+              roles={roles}
+            />
+          )}
         </Card>
         <Card title={t('rv.logs')}>
           <Box

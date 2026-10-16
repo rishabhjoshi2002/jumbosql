@@ -9,6 +9,7 @@ export type HostProgress = {
   state: HostState;
   task: string; // the last task it reported (or the one it is on)
   tasks: string[]; // tasks it finished, in order
+  ran: string[]; // the tasks it really ran (not skipped)
   changed: number;
   error?: string;
   recap?: { ok: number; changed: number; failed: number; unreachable: number; skipped: number };
@@ -26,7 +27,6 @@ const RESULT = /^(ok|changed|skipping|fatal|failed|unreachable):\s*\[([^\]]+)\](
 const RECAP = /^(\S+)\s*:\s*ok=(\d+)\s+changed=(\d+)\s+unreachable=(\d+)\s+failed=(\d+)\s+skipped=(\d+)/;
 
 // terminal colour codes (an Ansible run with a TTY colours its output): removed for display and parsing
-// eslint-disable-next-line no-control-regex
 const ANSI = /\u001b\[[0-9;?]*[ -/]*[@-~]/g;
 export const stripAnsi = (s: string) => s.replace(ANSI, '').replace(/\r(?=\n)/g, '');
 
@@ -37,7 +37,7 @@ export const parseAnsibleLog = (raw: string, known: string[] = []): LogProgress 
     // "10.0.0.1 -> localhost" (delegated) counts for the first name
     const h = name.split(' -> ')[0].trim();
     if (!out.hosts[h]) {
-      out.hosts[h] = { host: h, state: 'waiting', task: '', tasks: [], changed: 0 };
+      out.hosts[h] = { host: h, state: 'waiting', task: '', tasks: [], ran: [], changed: 0 };
       out.order.push(h);
     }
     return out.hosts[h];
@@ -86,6 +86,7 @@ export const parseAnsibleLog = (raw: string, known: string[] = []): LogProgress 
     const ignored = (lines[i + 1] ?? '').trim().startsWith('...ignoring');
     h.task = out.task;
     if (out.task && h.tasks[h.tasks.length - 1] !== out.task) h.tasks.push(out.task);
+    if (kind !== 'skipping' && out.task && h.ran[h.ran.length - 1] !== out.task) h.ran.push(out.task);
     if (kind === 'fatal' || kind === 'failed' || kind === 'unreachable') {
       if (ignored) continue;
       const unreachable = kind === 'unreachable' || rest.includes('UNREACHABLE');

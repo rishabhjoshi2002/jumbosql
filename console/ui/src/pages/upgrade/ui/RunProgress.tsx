@@ -112,7 +112,7 @@ const RunProgress: FC<{
           const working = running && h.state === 'working';
           const failed = h.state === 'failed' || h.state === 'unreachable';
           const color = STATE_COLOR[running || h.state !== 'working' ? h.state : 'ok'];
-          const reached = steps && stepOf ? new Set(h.tasks.map(stepOf).filter(Boolean) as string[]) : null;
+          const reached = steps && stepOf ? new Set(h.ran.map(stepOf).filter(Boolean) as string[]) : null;
           const cur = stepOf?.(h.task);
           return (
             <Box key={h.host}>
