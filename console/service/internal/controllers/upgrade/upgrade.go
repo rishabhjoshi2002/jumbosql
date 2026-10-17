@@ -6,6 +6,7 @@
 package upgrade
 
 import (
+	acc "postgresql-cluster-console/internal/access"
 	"context"
 	"encoding/base64"
 	"encoding/json"
@@ -102,10 +103,12 @@ type Handlers struct {
 	db     storage.IStorage
 	docker xdocker.IManager
 	cfg    *configuration.Config
+	access *acc.Service
+	act    *activity
 }
 
 func New(db storage.IStorage, docker xdocker.IManager, cfg *configuration.Config) *Handlers {
-	return &Handlers{db: db, docker: docker, cfg: cfg}
+	return &Handlers{db: db, docker: docker, cfg: cfg, act: newActivity()}
 }
 
 func (h *Handlers) list(ctx context.Context, clusterID, discoveryID int64) ([]any, error) {

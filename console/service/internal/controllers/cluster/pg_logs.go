@@ -89,7 +89,8 @@ func (h *logsListHandler) Handle(param cluster.GetClustersIDLogsParams) middlewa
 		return cluster.NewGetClustersIDLogsBadRequest().WithPayload(controllers.MakeErrorPayload(
 			fmt.Errorf("read the log directory on %s (%s:%d): %w", name, node.Host, node.Port, err), controllers.BaseError))
 	}
-	out := &models.ResponseLogFiles{Server: name, LogDirectory: l.LogDirectory, Current: l.Current}
+	out := &models.ResponseLogFiles{Server: name, LogDirectory: l.LogDirectory, Current: l.Current,
+		LoggingCollector: l.LoggingCollector, LogDestination: l.LogDestination, LogFilename: l.LogFilename}
 	for _, f := range l.Files {
 		out.Files = append(out.Files, &models.ResponseLogFilesFilesItems0{Name: f.Name, Size: f.Size, Modified: strfmt.DateTime(f.Modified)})
 	}

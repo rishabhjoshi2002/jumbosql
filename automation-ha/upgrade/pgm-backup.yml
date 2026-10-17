@@ -4,12 +4,14 @@
 #   check          pgbackrest check (archiving + repository)       stanza-create   create the stanza, then check
 #   config         write the new pgbackrest.conf on every node (each keeps its own pg1-path / port / socket / host),
 #                  then check it; if the check fails, every node gets its old config back
+#   repo-add       a new repository (a disk, S3, Azure, GCS, SFTP) on every node, then stanza-create + check on it;
+#                  if that fails, every node is put back as it was          repo-remove   remove one added here
 #   schedule       the backup times (cron) on the node(s) that run backups; removed from the others
 #   restore        latest / to a time (PITR) / a backup set: stop the replicas, then the primary; restore the
 #                  primary and let it recover and promote (with Patroni: clear the DCS, start Patroni); then
 #                  rebuild each replica from the repository as a standby and start it
-# Extra vars: pgm = {id, action, run_id, stanza, type, target_time, set, restore_host, pre_backup, content_b64,
-#                    keep_local, verify, entries, remove}
+# Extra vars: pgm = {id, action, run_id, stanza, type, repo, target_time, set, restore_host, pre_backup, content_b64,
+#                    keep_local, verify, entries, remove, index, repo_def}
 # Every step reports a task "pgm_result" per node (the console reads them from the JSON log).
 
 - name: pg_MANTRA backup | nodes with pgBackRest
@@ -21,7 +23,7 @@
       ansible.builtin.assert:
         that:
           - pgm is defined
-          - pgm.action in ['backup', 'check', 'stanza-create', 'config', 'schedule', 'restore']
+          - pgm.action in ['backup', 'check', 'stanza-create', 'config', 'schedule', 'restore', 'repo-add', 'repo-remove']
         fail_msg: "bad request: {{ pgm | default({}) }}"
 
     - name: No node
@@ -87,7 +89,7 @@
           {{ 'no running primary was found (and no repository server): start PostgreSQL first'
              if pgm.action != 'restore' else 'choose the node to restore (no running primary was found)' }}
       when: >-
-        (pgm.action != 'restore' and pgm.action not in ['config', 'schedule'] and not (pgm_roles.repo or pgm_roles.primary))
+        (pgm.action != 'restore' and pgm.action not in ['config', 'schedule', 'repo-add', 'repo-remove'] and not (pgm_roles.repo or pgm_roles.primary))
         or (pgm.action == 'restore' and not pgm_restore_host)
 
     - name: The node that runs backups
@@ -133,7 +135,7 @@
   gather_facts: false
   become: true
   vars:
-    pgm_spec: "{{ pgm_spec_fact | combine({'type': pgm.type | default('incr')}) }}"
+    pgm_spec: "{{ pgm_spec_fact | combine({'type': pgm.type | default('incr'), 'repo': pgm.repo | default('')}) }}"
   tasks:
     - name: Run it
       when: pgm.action in ['backup', 'check', 'stanza-create']
@@ -183,6 +185,38 @@
           ansible.builtin.fail:
             msg: "the config could not be written on {{ inventory_hostname }}"
 
+- name: pg_MANTRA backup | repositories
+  hosts: pgm_all
+  gather_facts: false
+  become: true
+  vars:
+    pgm_repo_server: "{{ (hostvars[hostvars['localhost'].pgm_roles.repo[0]].ansible_host | default(hostvars['localhost'].pgm_roles.repo[0])) if hostvars['localhost'].pgm_roles.repo | default([]) else '' }}"
+    pgm_spec: "{{ pgm_spec_fact | combine({'index': pgm.index | default(0), 'repo_def': pgm.repo_def | default({}), 'repo_server': pgm_repo_server}) }}"
+  tasks:
+    - name: Write the repository
+      when: pgm.action in ['repo-add', 'repo-remove']
+      block:
+        - name: Write the repository
+          ansible.builtin.script:
+            cmd: "pgm_backup.py {{ pgm.action }} {{ pgm_spec | to_json | b64encode }}"
+            executable: python3
+          register: pgm_out
+        - name: pgm_result
+          ansible.builtin.debug:
+            msg: "{{ {'host': inventory_hostname, 'phase': pgm.action, 'status': 'success', 'detail': pgm_out.stdout_lines | last | from_json} }}"
+      rescue:
+        - name: pgm_result
+          ansible.builtin.debug:
+            msg: "{{ {'host': inventory_hostname, 'phase': pgm.action, 'status': 'failed', 'task': 'Write the repository', 'error': ((ansible_failed_result.stdout_lines | default(['{}']) | last | from_json).error | default('') if (ansible_failed_result.stdout_lines | default([])) else '') or ansible_failed_result.msg | default('failed')} }}"
+        - name: Put this node back
+          ansible.builtin.script:
+            cmd: "pgm_backup.py repo-remove {{ pgm_spec | combine({'undo': true}) | to_json | b64encode }}"
+            executable: python3
+          failed_when: false
+        - name: Stop here
+          ansible.builtin.fail:
+            msg: "the repository could not be written on {{ inventory_hostname }}"
+
 - name: pg_MANTRA backup | check the new config
   hosts: pgm_runner
   gather_facts: false
@@ -192,22 +226,23 @@
   tasks:
     - name: Check the new config
       ansible.builtin.script:
-        cmd: "pgm_backup.py check {{ pgm_spec | to_json | b64encode }}"
+        # a new repository needs its stanza first (stanza-create leaves the others as they are, then checks all)
+        cmd: "pgm_backup.py {{ 'stanza-create' if pgm.action == 'repo-add' else 'check' }} {{ pgm_spec | to_json | b64encode }}"
         executable: python3
       register: pgm_check
       failed_when: false
-      when: pgm.action == 'config' and pgm.verify | default(true)
+      when: (pgm.action == 'config' and pgm.verify | default(true)) or pgm.action == 'repo-add'
 
     - name: Keep the outcome
       ansible.builtin.set_fact:
         pgm_check_ok: "{{ pgm_check.skipped | default(false) or pgm_check.rc | default(1) == 0 }}"
         pgm_check_error: "{{ ((pgm_check.stdout_lines | default(['{}']) | last | from_json).error | default('')) if (pgm_check.stdout_lines | default([])) else '' }}"
-      when: pgm.action == 'config'
+      when: pgm.action in ['config', 'repo-add']
 
     - name: pgm_result
       ansible.builtin.debug:
         msg: "{{ {'host': inventory_hostname, 'phase': 'config-check', 'status': 'success' if pgm_check_ok else 'failed', 'error': pgm_check_error, 'skipped': pgm_check.skipped | default(false)} }}"
-      when: pgm.action == 'config'
+      when: pgm.action in ['config', 'repo-add']
 
 - name: pg_MANTRA backup | put the old config back if the check failed
   hosts: pgm_all
@@ -216,11 +251,11 @@
   vars:
     pgm_spec: "{{ pgm_spec_fact | combine({'file': pgm.file | default('')}) }}"
     pgm_cfg_here: "{{ pgm.config_kind | default('') == '' or ((pgm_st.repo_host | default(false)) | bool) == (pgm.config_kind == 'repo') }}"
-    pgm_failed_check: "{{ pgm.action == 'config' and pgm_cfg_here | bool and groups['pgm_runner'] | default([]) | length > 0 and not (hostvars[groups['pgm_runner'][0]].pgm_check_ok | default(true)) }}"
+    pgm_failed_check: "{{ pgm.action in ['config', 'repo-add'] and (pgm_cfg_here | bool or pgm.action == 'repo-add') and groups['pgm_runner'] | default([]) | length > 0 and not (hostvars[groups['pgm_runner'][0]].pgm_check_ok | default(true)) }}"
   tasks:
     - name: Put the old config back
       ansible.builtin.script:
-        cmd: "pgm_backup.py config-undo {{ pgm_spec | to_json | b64encode }}"
+        cmd: "{{ ('pgm_backup.py repo-remove ' ~ (pgm_spec | combine({'undo': true, 'index': pgm.index | default(0)}) | to_json | b64encode)) if pgm.action == 'repo-add' else ('pgm_backup.py config-undo ' ~ (pgm_spec | to_json | b64encode)) }}"
         executable: python3
       register: pgm_undo
       when: pgm_failed_check | bool
@@ -233,7 +268,7 @@
     - name: The new config did not pass the check
       ansible.builtin.fail:
         msg: "pgbackrest check failed with the new config, so every node has its old config again: {{ hostvars[groups['pgm_runner'][0]].pgm_check_error }}"
-      when: pgm.action == 'config' and groups['pgm_runner'] | default([]) | length > 0 and not (hostvars[groups['pgm_runner'][0]].pgm_check_ok | default(true))
+      when: pgm.action in ['config', 'repo-add'] and groups['pgm_runner'] | default([]) | length > 0 and not (hostvars[groups['pgm_runner'][0]].pgm_check_ok | default(true))
       run_once: true
 
 # ------------------------------------------------------------------ schedule
@@ -315,7 +350,7 @@
   become: true
   any_errors_fatal: true
   vars:
-    pgm_spec: "{{ pgm_spec_fact | combine({'type': pgm.type | default('latest'), 'target_time': pgm.target_time | default(''), 'set': pgm.set | default('')}) }}"
+    pgm_spec: "{{ pgm_spec_fact | combine({'type': pgm.type | default('latest'), 'target_time': pgm.target_time | default(''), 'set': pgm.set | default(''), 'repo': pgm.repo | default('')}) }}"
   tasks:
     - name: Restore the primary
       block:
@@ -360,7 +395,7 @@
   become: true
   vars:
     # the same backup set as the primary: a newer one could not follow the primary's new timeline
-    pgm_spec: "{{ pgm_spec_fact | combine({'type': 'standby', 'set': hostvars[groups['pgm_primary'][0]].pgm_restored_set | default('')}) }}"
+    pgm_spec: "{{ pgm_spec_fact | combine({'type': 'standby', 'set': hostvars[groups['pgm_primary'][0]].pgm_restored_set | default(''), 'repo': pgm.repo | default('')}) }}"
   tasks:
     - name: Rebuild this replica
       block:

@@ -31,6 +31,10 @@ type File struct {
 
 type Listing struct {
 	LogDirectory string `json:"log_directory"`
+	// where the server sends its log: files are only written with logging_collector on (else stderr / syslog / journal)
+	LoggingCollector string `json:"logging_collector"`
+	LogDestination   string `json:"log_destination"`
+	LogFilename      string `json:"log_filename"`
 	Current      string `json:"current"` // file the server writes to now (pg_current_logfile), base name
 	Files        []File `json:"files"`   // newest first
 }
@@ -60,13 +64,16 @@ func rows(ctx context.Context, conn *pgconn.PgConn, sql string, args ...[]byte) 
 }
 
 func list(ctx context.Context, conn *pgconn.PgConn) (*Listing, error) {
-	head, err := rows(ctx, conn, "select current_setting('log_directory'), coalesce(pg_current_logfile(), '')")
+	// asked from the server itself, so a renamed or moved log (log_directory, log_filename) is always followed
+	head, err := rows(ctx, conn, "select current_setting('log_directory'), coalesce(pg_current_logfile(), ''), "+
+		"current_setting('logging_collector'), current_setting('log_destination'), current_setting('log_filename')")
 	if err != nil {
 		return nil, err
 	}
 	l := &Listing{Files: []File{}}
 	if len(head) == 1 {
 		l.LogDirectory = string(head[0][0])
+		l.LoggingCollector, l.LogDestination, l.LogFilename = string(head[0][2]), string(head[0][3]), string(head[0][4])
 		cur := string(head[0][1])
 		if i := strings.LastIndexByte(cur, '/'); i >= 0 {
 			cur = cur[i+1:]

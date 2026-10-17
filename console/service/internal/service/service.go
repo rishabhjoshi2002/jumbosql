@@ -201,6 +201,8 @@ func NewService(
 	api.ClusterGetInsightsSummaryHandler = cluster.NewInsightsSummaryHandler(insightsSvc, db, accessSvc)
 	api.ClusterGetClustersIDMonitoringHandler = cluster.NewMonitoringHandler(insightsSvc)
 	upgrades := upgradectl.New(db, dockerManager, cfg)
+	upgrades.SetAccess(accessSvc)
+	api.BackupGetBackupsActivityHandler = upgrades.BackupActivity()
 	api.UpgradeGetUpgradeComponentsHandler = upgradectl.NewGetUpgradeComponentsHandler()
 	api.UpgradeGetClustersIDUpgradesHandler = upgrades.ClusterList()
 	api.UpgradeGetClustersIDUpgradesUIDHandler = upgrades.ClusterOne()

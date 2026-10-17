@@ -445,9 +445,51 @@ func summarize(nodes []BackupNodeStatus, now time.Time) map[string]any {
 				"duration_s": stop.Sub(start).Seconds(), "size": inf["size"], "delta": inf["delta"], "repo_size": repo["size"],
 				"repo_delta": repo["delta"], "lsn_start": lsn["start"], "lsn_stop": lsn["stop"], "wal_start": arch["start"],
 				"wal_stop": arch["stop"], "prior": bm["prior"], "usable": ok,
-				"error": bm["error"]})
+				"error": bm["error"], "repo": mapOf(bm["database"])["repo-key"]})
 		}
 	}
+	// the repositories: what the runner's config says, with pgBackRest's status of each and what it holds
+	repos := []map[string]any{}
+	repoState := map[string]map[string]any{}
+	if info != nil {
+		for _, r := range anySlice(info["repo"]) {
+			rm := mapOf(r)
+			repoState[fmt.Sprint(num(rm["key"]))] = mapOf(rm["status"])
+		}
+	}
+	if runner != nil {
+		for _, r := range anySlice(runner.Raw["repos"]) {
+			rm := mapOf(r)
+			if rm == nil {
+				continue
+			}
+			key := fmt.Sprint(num(rm["index"]))
+			out := map[string]any{}
+			for k, v := range rm {
+				out[k] = v
+			}
+			if st := repoState[key]; st != nil {
+				out["status"] = st
+			}
+			count, size := 0, 0.0
+			var last time.Time
+			for _, b := range backups {
+				if fmt.Sprint(b["repo"]) == key || (b["repo"] == nil && key == "1") {
+					count++
+					size += num(b["repo_delta"])
+					if t, _ := b["stop"].(time.Time); t.After(last) {
+						last = t
+					}
+				}
+			}
+			out["backups"], out["bytes"] = count, size
+			if !last.IsZero() {
+				out["last"] = last
+			}
+			repos = append(repos, out)
+		}
+	}
+
 	// the recovery window: from the end of the oldest backup to the last archived WAL
 	window := map[string]any{}
 	if !oldest.IsZero() {
@@ -496,6 +538,23 @@ func summarize(nodes []BackupNodeStatus, now time.Time) map[string]any {
 		// missing stanza path / data: the stanza can be created
 		if code := num(stanzaStatus["code"]); code == 1 || code == 3 {
 			canCreate = stanza != ""
+		}
+		// several repositories: each has its own status (a new one has no stanza yet)
+		if len(repoState) > 1 {
+			keys := make([]string, 0, len(repoState))
+			for k := range repoState {
+				keys = append(keys, k)
+			}
+			sort.Strings(keys)
+			for _, k := range keys {
+				st := repoState[k]
+				if c := num(st["code"]); c != 0 {
+					add("error", "repo%s: %s", k, str(st["message"]))
+					if c == 1 || c == 3 {
+						canCreate = stanza != ""
+					}
+				}
+			}
 		}
 	} else if runner != nil {
 		if e := str(runner.Raw["info_error"]); e != "" {
@@ -616,7 +675,7 @@ func summarize(nodes []BackupNodeStatus, now time.Time) map[string]any {
 	}
 	return map[string]any{"nodes": nodes, "primary": prim, "runner": run, "stanza": stanza, "stanza_status": stanzaStatus,
 		"backups": backups, "window": window, "repo_bytes": totalRepo, "issues": issues, "config_diff": diffs,
-		"can_create_stanza": canCreate, "checked_at": now}
+		"can_create_stanza": canCreate, "checked_at": now, "repos": repos}
 }
 
 // humanAge: "28 hours", "3 days"
@@ -636,7 +695,24 @@ func anySlice(v any) []any {
 /* ------------------------------------------------------------ jobs */
 
 var backupActions = map[string]bool{"backup": true, "check": true, "stanza-create": true, "config": true, "schedule": true,
-	"restore": true}
+	"restore": true, "repo-add": true, "repo-remove": true}
+
+var repoNum = regexp.MustCompile(`^(repo)?([1-9][0-9]{0,2})$`)
+
+// repoArg: "2" / "repo2" -> "2" ("" = pgBackRest's choice)
+func repoArg(v string) (string, error) {
+	v = strings.TrimSpace(v)
+	if v == "" {
+		return "", nil
+	}
+	m := repoNum.FindStringSubmatch(v)
+	if m == nil {
+		return "", fmt.Errorf("not a repository: %s", v)
+	}
+	return m[2], nil
+}
+
+var repoTypes = map[string]bool{"posix": true, "cifs": true, "s3": true, "azure": true, "gcs": true, "sftp": true}
 
 type backupOpts struct {
 	Stanza      string           `json:"stanza,omitempty"`
@@ -653,6 +729,10 @@ type backupOpts struct {
 	ConfigKind  string           `json:"config_kind,omitempty"`
 	Entries     []map[string]any `json:"entries,omitempty"`
 	Remove      bool             `json:"remove,omitempty"`
+	Repo        string           `json:"repo,omitempty"`
+	Index       int64            `json:"index,omitempty"`
+	RepoType    string           `json:"repo_type,omitempty"`
+	RepoWhere   string           `json:"repo_where,omitempty"` // path / bucket - never keys or passwords
 	SSHUser     string           `json:"ssh_user,omitempty"`
 }
 
@@ -667,7 +747,7 @@ func boolOr(p *bool, def bool) bool {
 
 func (h *Handlers) startBackupJob(ctx context.Context, bt *backupTarget, b *models.RequestBackupJob) (any, error) {
 	if b == nil || b.Action == nil || !backupActions[*b.Action] {
-		return nil, errors.New("action must be backup, check, stanza-create, config, schedule or restore")
+		return nil, errors.New("action must be backup, check, stanza-create, config, schedule, restore, repo-add or repo-remove")
 	}
 	action := *b.Action
 	list, err := h.db.ListUpgrades(ctx, bt.clusterID, bt.discoveryID, 30)
@@ -681,6 +761,10 @@ func (h *Handlers) startBackupJob(ctx context.Context, bt *backupTarget, b *mode
 	}
 	o := backupOpts{Stanza: strings.TrimSpace(b.Stanza), Type: b.Type, SSHUser: strings.TrimSpace(b.SSHUser)}
 	pgm := map[string]any{"action": action, "stanza": o.Stanza}
+	if o.Repo, err = repoArg(b.Repo); err != nil {
+		return nil, err
+	}
+	pgm["repo"] = o.Repo
 	switch action {
 	case "backup":
 		if o.Type == "" {
@@ -708,6 +792,45 @@ func (h *Handlers) startBackupJob(ctx context.Context, bt *backupTarget, b *mode
 			pgm["config_kind"], o.ConfigKind = b.ConfigKind, b.ConfigKind
 		default:
 			return nil, errors.New("config_kind must be db or repo")
+		}
+	case "repo-add", "repo-remove":
+		if b.Index < 1 || b.Index > 256 || (action == "repo-add" && b.Index < 2) {
+			return nil, errors.New("the repository number must be 2 to 256")
+		}
+		o.Index, pgm["index"] = b.Index, b.Index
+		if action == "repo-add" {
+			def, _ := b.RepoDef.(map[string]any)
+			if def == nil {
+				return nil, errors.New("give the new repository")
+			}
+			clean := map[string]any{}
+			for k, v := range def {
+				sv := strings.TrimSpace(fmt.Sprint(v))
+				if v == nil || sv == "" {
+					continue
+				}
+				if strings.ContainsAny(sv, "\n\r") {
+					return nil, fmt.Errorf("%s: one line only", k)
+				}
+				clean[k] = sv
+			}
+			t, _ := clean["type"].(string)
+			if t == "" {
+				t = "posix"
+				clean["type"] = t
+			}
+			if !repoTypes[t] {
+				return nil, fmt.Errorf("unknown repository type %s", t)
+			}
+			o.RepoType = t
+			var where []string
+			for _, k := range []string{"host", "bucket", "container", "path"} {
+				if v, _ := clean[k].(string); v != "" {
+					where = append(where, v)
+				}
+			}
+			o.RepoWhere = strings.Join(where, " ")
+			pgm["repo_def"] = clean // keys and passwords go to the runner only, never into the job record
 		}
 	case "schedule":
 		for _, e := range b.Entries {
@@ -893,6 +1016,14 @@ func (h *Handlers) statusFor(ctx context.Context, kind string, id int64, b *mode
 	}
 	out := h.backupStatus(ctx, bt, auth, strings.TrimSpace(b.Stanza))
 	out["name"] = bt.name
+	if kind == "discoveries" && strings.TrimSpace(b.SSHUser) != "" {
+		for _, n := range out["nodes"].([]BackupNodeStatus) {
+			if n.OK {
+				h.act.remember(id, auth) // to see its scheduled backups (memory only)
+				break
+			}
+		}
+	}
 	return out, nil
 }
 

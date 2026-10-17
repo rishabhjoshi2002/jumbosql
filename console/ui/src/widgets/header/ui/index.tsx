@@ -6,7 +6,8 @@ import Stack from '@mui/material/Stack';
 import TextField from '@mui/material/TextField';
 import Toolbar from '@mui/material/Toolbar';
 import Typography from '@mui/material/Typography';
-import logoIcon from '@shared/assets/pgMantraIcon.png';
+import logoIcon from '@shared/assets/autonomicIcon.png';
+import BrandName from '@shared/ui/brand';
 import UserMenu from '@features/user-menu';
 import { BRAND } from '@shared/theme/theme.ts';
 import ThemeToggle from '@features/theme-toggle';
@@ -45,12 +46,20 @@ const Header: FC = () => {
               width={OPEN_SIDEBAR_WIDTH}
               boxSizing="border-box"
               paddingLeft="16px">
-              <Box sx={{ width: 56, height: 40, flexShrink: 0, display: 'flex' }}>
-                <img src={logoIcon} alt="pg_MANTRA" style={{ width: '56px', height: '40px' }} data-logo="true" />
+              <Box
+                sx={{
+                  width: 40,
+                  height: 40,
+                  flexShrink: 0,
+                  display: 'flex',
+                  borderRadius: '50%',
+                  boxShadow: `0 0 0 3px rgba(244,179,33,0.18), 0 0 18px rgba(56,178,245,0.35)`,
+                }}>
+                <img src={logoIcon} alt={BRAND.name} style={{ width: '40px', height: '40px' }} data-logo="true" />
               </Box>
               <Box sx={{ lineHeight: 1 }}>
-                <Typography sx={{ color: BRAND.chromeText, fontWeight: 800, fontSize: '1.05rem', lineHeight: 1.15 }}>
-                  pg_MANTRA
+                <Typography component="div" sx={{ lineHeight: 1.15 }}>
+                  <BrandName size="1.12rem" />
                 </Typography>
                 <Typography sx={{ color: BRAND.sky, fontSize: '0.74rem', fontWeight: 600, lineHeight: 1.2 }}>
                   {t('productLine')}

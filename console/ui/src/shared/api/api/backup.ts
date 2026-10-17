@@ -16,7 +16,10 @@ export type BNodeRaw = {
   stanzas?: string[];
   remote_repo?: string;
   repo_host?: boolean;
-  repos?: { key: string; type: string; path?: string; free_bytes?: number }[];
+  repos?: BRepo[];
+  config_found?: { source: string; options: string; include_path: string; exists: boolean };
+  pg_conf?: { data_dir?: string; port?: number; socket?: string; host?: string; bin?: string };
+  running?: BRunning[];
   timeline?: string;
   cron?: { file: string; line: string; ours: boolean; timer?: boolean }[];
   pg?: {
@@ -29,9 +32,71 @@ export type BNodeRaw = {
     last_archived_time?: string;
     lsn?: string;
     remote?: string;
+    data_directory?: string;
+    port?: number;
+    files?: {
+      config_file?: string;
+      hba_file?: string;
+      ident_file?: string;
+      log_directory?: string;
+      log_filename?: string;
+      logging_collector?: string;
+      log_destination?: string;
+      current_log?: string;
+    };
   };
   patroni?: { running?: boolean; scope?: string; role?: string } | null;
 };
+export type BRepo = {
+  key: string;
+  index: number;
+  type: 'posix' | 'cifs' | 's3' | 'azure' | 'gcs' | 'sftp' | string;
+  path?: string;
+  host?: string;
+  bucket?: string;
+  endpoint?: string;
+  region?: string;
+  retention_full?: string;
+  retention_diff?: string;
+  cipher?: string;
+  managed?: boolean;
+  free_bytes?: number;
+  total_bytes?: number;
+  status?: { code: number; message: string };
+  backups?: number;
+  bytes?: number;
+  last?: string;
+};
+export type BRunning = {
+  pid: number;
+  stanza: string;
+  type: string;
+  repo?: string;
+  started: number;
+  by: 'schedule' | 'manual' | 'console' | 'other';
+  how?: string;
+  user?: string;
+  size?: number;
+  done?: number;
+};
+export type BActivity = {
+  key: string;
+  kind: 'clusters' | 'discoveries';
+  id: number;
+  cluster: string;
+  node: string;
+  address: string;
+  stanza: string;
+  type: string;
+  repo?: string;
+  by: 'schedule' | 'manual' | 'console' | 'other';
+  how?: string;
+  user?: string;
+  started: string;
+  size?: number;
+  done?: number;
+};
+export type BRepoDef = Record<string, string>;
 export type BNode = { name: string; address: string; ok: boolean; error?: string; status?: BNodeRaw };
 export type BBackup = {
   label: string;
@@ -48,6 +113,7 @@ export type BBackup = {
   error?: boolean;
   wal_start?: string;
   wal_stop?: string;
+  repo?: number;
 };
 export type BIssue = { severity: 'error' | 'warning' | 'info'; text: string };
 export type BStatus = {
@@ -73,9 +139,10 @@ export type BStatus = {
   config_diff: { section: string; key: string; kind: 'db' | 'repo'; values: Record<string, string> }[];
   can_create_stanza?: boolean;
   checked_at: string;
+  repos?: BRepo[];
 };
 
-export type BAction = 'backup' | 'check' | 'stanza-create' | 'config' | 'schedule' | 'restore';
+export type BAction = 'backup' | 'check' | 'stanza-create' | 'config' | 'schedule' | 'restore' | 'repo-add' | 'repo-remove';
 export type BCron = {
   type: 'full' | 'diff' | 'incr';
   minute: string;
@@ -83,6 +150,7 @@ export type BCron = {
   dom: string;
   month: string;
   dow: string;
+  repo?: string;
 };
 export type BJobRequest = BSSH & {
   action: BAction;
@@ -101,6 +169,9 @@ export type BJobRequest = BSSH & {
   verify?: boolean;
   entries?: BCron[];
   remove?: boolean;
+  repo?: string;
+  index?: number;
+  repo_def?: BRepoDef;
 };
 export type BJob = Omit<Upgrade, 'action' | 'options' | 'result'> & {
   action: BAction;
@@ -114,6 +185,10 @@ export type BJob = Omit<Upgrade, 'action' | 'options' | 'result'> & {
     post_backup?: boolean;
     entries?: BCron[];
     remove?: boolean;
+    repo?: string;
+    index?: number;
+    repo_type?: string;
+    repo_where?: string;
   } | null;
   result:
     ({ host: string; phase: string; status: string; detail?: Record<string, unknown> } | { error: string })[] | null;
@@ -133,6 +208,9 @@ const injectedRtkApi = api.enhanceEndpoints({ addTagTypes: ['Backups'] }).inject
     getBackupJob: build.query<BJob, UTarget & { uid: number }>({
       query: (t) => ({ url: `${base(t)}/jobs/${t.uid}` }),
     }),
+    getBackupActivity: build.query<{ items: BActivity[]; checked_at: string; targets: number }, { fresh?: boolean }>({
+      query: ({ fresh }) => ({ url: `/backups/activity`, params: fresh ? { fresh: true } : {} }),
+    }),
     postBackupJob: build.mutation<BJob, { target: UTarget; body: BJobRequest }>({
       query: ({ target, body }) => ({ url: `${base(target)}/jobs`, method: 'POST', body }),
       invalidatesTags: (_r, _e, { target }) => [{ type: 'Backups', id: `${target.kind}/${target.id}` }],
@@ -141,5 +219,10 @@ const injectedRtkApi = api.enhanceEndpoints({ addTagTypes: ['Backups'] }).inject
   overrideExisting: false,
 });
 
-export const { usePostBackupStatusMutation, useGetBackupJobsQuery, useGetBackupJobQuery, usePostBackupJobMutation } =
-  injectedRtkApi;
+export const {
+  usePostBackupStatusMutation,
+  useGetBackupJobsQuery,
+  useGetBackupJobQuery,
+  usePostBackupJobMutation,
+  useGetBackupActivityQuery,
+} = injectedRtkApi;

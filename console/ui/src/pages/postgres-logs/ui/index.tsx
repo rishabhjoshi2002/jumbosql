@@ -347,6 +347,13 @@ const PostgresLogs: FC = () => {
       </Stack>
 
       {files.error ? <Alert severity="error">{errorText(files.error)}</Alert> : null}
+      {files.data && !files.data.files?.length ? (
+        <Alert severity="info">
+          {files.data.logging_collector === 'off'
+            ? t('logsCollectorOff', { dest: files.data.log_destination || 'stderr' })
+            : t('logsNoFiles', { dir: files.data.log_directory })}
+        </Alert>
+      ) : null}
       {loadError ? <Alert severity="error">{loadError}</Alert> : null}
 
       <Box

@@ -41,6 +41,7 @@ import {
   BJob,
   BJobRequest,
   BStatus,
+  useGetBackupActivityQuery,
   useGetBackupJobQuery,
   useGetBackupJobsQuery,
   usePostBackupJobMutation,
@@ -54,6 +55,7 @@ import RunView from '@pages/upgrade/ui/RunView.tsx';
 import { apiErrorText } from '@shared/lib/apiError.ts';
 import Timeline, { when } from './Timeline.tsx';
 import BackupFlow, { FlowNode } from './BackupFlow.tsx';
+import { RepoCards, RepoPick, Running, RunningNow, repoName } from './Repos.tsx';
 
 const mono = { fontFamily: '"JetBrains Mono", monospace', fontSize: 12.5 };
 const STATUS = { running: 'info', success: 'success', failed: 'error' } as const;
@@ -67,8 +69,12 @@ const jobKind = (j: BJob, t: (k: string) => string) =>
         ? `${t('r_time')} · ${j.options.target_time}`
         : t('r_latest')
     : j.action === 'backup' && j.options?.type
-      ? t(j.options.type)
-      : '';
+      ? `${t(j.options.type)}${j.options.repo ? ` · ${t('rp_repo')} ${j.options.repo}` : ''}`
+      : j.action === 'repo-add'
+        ? `${t('rp_repo')} ${j.options?.index ?? ''} · ${t(`rp_t_${j.options?.repo_type ?? 'posix'}`)} ${j.options?.repo_where ?? ''}`
+        : j.action === 'repo-remove'
+          ? `${t('rp_repo')} ${j.options?.index ?? ''}`
+          : '';
 
 export const ago = (s?: number) => {
   if (s === undefined || s === null || !Number.isFinite(s)) return '—';
@@ -87,6 +93,7 @@ const STEP: Record<string, string> = {
   Check: 'bcheck',
   'Create the stanza': 'stanza',
   'Write the config': 'write',
+  'Write the repository': 'repowrite',
   'Check the new config': 'verify',
   'Put the old config back': 'undo',
   'Write the schedule': 'schedule',
@@ -106,6 +113,8 @@ const STEPS: Record<BAction, string[]> = {
   config: ['look', 'write', 'verify'],
   schedule: ['look', 'schedule'],
   restore: ['look', 'prebackup', 'stop', 'restore', 'promote', 'start', 'postbackup'],
+  'repo-add': ['look', 'repowrite', 'verify'],
+  'repo-remove': ['look', 'repowrite'],
 };
 const stepOf = (task: string) => STEP[task];
 
@@ -125,7 +134,7 @@ const toLocalInput = (iso?: string) => {
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
 };
 
-const DEFAULT_CRON: (BCron & { on: boolean })[] = [
+const DEFAULT_CRON: (BCron & { on: boolean; repo?: string })[] = [
   { on: true, type: 'full', minute: '0', hour: '1', dom: '*', month: '*', dow: '0' },
   { on: true, type: 'diff', minute: '0', hour: '1', dom: '*', month: '*', dow: '1-6' },
   { on: false, type: 'incr', minute: '0', hour: '*/4', dom: '*', month: '*', dow: '*' },
@@ -139,7 +148,16 @@ const cronFrom = (lines: string[]) => {
     const tm = /--type=(full|diff|incr)/.exec(l)?.[1];
     const i = out.findIndex((c) => c.type === tm);
     if (f.length > 5 && i >= 0) {
-      out[i] = { on: true, type: out[i].type, minute: f[0], hour: f[1], dom: f[2], month: f[3], dow: f[4] };
+      out[i] = {
+        on: true,
+        type: out[i].type,
+        minute: f[0],
+        hour: f[1],
+        dom: f[2],
+        month: f[3],
+        dow: f[4],
+        repo: /--repo=(\d+)/.exec(l)?.[1] ?? '',
+      };
       any = true;
     }
   });
@@ -192,6 +210,7 @@ const Backups: FC = () => {
   const [tab, setTab] = useState(0);
   const [view, setView] = useState<'status' | 'run'>('status');
   const [selected, setSelected] = useState(0);
+  const [live, setLive] = useState(params.get('live') === '1');
   const [getStatus, loading] = usePostBackupStatusMutation();
   const [post, posting] = usePostBackupJobMutation();
 
@@ -229,6 +248,18 @@ const Backups: FC = () => {
     setView('status');
     setSelected(0);
   }, []);
+  // opened again from a popup (?cluster=..&live=1) while already here: follow it
+  useEffect(() => {
+    const d = Number(params.get('discovery'));
+    const c = Number(params.get('cluster'));
+    const want: UTarget | null = d ? { kind: 'discoveries', id: d } : c ? { kind: 'clusters', id: c } : null;
+    if (want && targetKey(want) !== targetKey(target)) onTarget(want);
+    if (params.get('live') === '1') {
+      setLive(true);
+      setView('status');
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [params]);
   // a cluster of the console has its SSH secret: read it at once
   useEffect(() => {
     if (target?.kind === 'clusters' && !status && !loading.isLoading && !statusError) void load();
@@ -248,6 +279,39 @@ const Backups: FC = () => {
       setView('run');
     }
   }, [jobs.data, view]);
+  // backups running now that the console did not start (a schedule, or someone on a node): shown live
+  const activity = useGetBackupActivityQuery(
+    { fresh: live },
+    { skip: !target?.id, pollingInterval: live ? 5000 : 30000, refetchOnMountOrArgChange: true },
+  );
+  const runningNow: Running[] = useMemo(() => {
+    if (!target) return [];
+    const fromWatch = (activity.data?.items ?? [])
+      .filter((a) => a.kind === target.kind && a.id === target.id && a.by !== 'console')
+      .map((a) => ({ ...a, started: new Date(a.started).getTime() / 1000 }));
+    if (fromWatch.length || activity.data) return fromWatch;
+    // before the first answer: what the status saw
+    return (status?.nodes ?? []).flatMap((n) =>
+      (n.status?.running ?? [])
+        .filter((r) => r.by !== 'console')
+        .map((r) => ({ ...r, key: `${n.address}/${r.pid}/${r.started}`, node: n.address })),
+    );
+  }, [activity.data, status, target]);
+  useEffect(() => {
+    if (runningNow.length && !live) setLive(true);
+  }, [runningNow.length, live]);
+  // a running backup ended: read the status again (the new backup is in it)
+  const [wasRunning, setWasRunning] = useState(false);
+  useEffect(() => {
+    if (runningNow.length) setWasRunning(true);
+    else if (wasRunning) {
+      setWasRunning(false);
+      setLive(false);
+      toast.success(t('rn_finished'));
+      void load();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [runningNow.length]);
   const current: BJob | undefined = (jobs.data ?? []).find((j) => j.id === selected);
   const detail = useGetBackupJobQuery(
     { ...(target ?? { kind: 'discoveries', id: 0 }), uid: selected },
@@ -427,6 +491,8 @@ const Backups: FC = () => {
       ) : null}
       {running && view === 'status' ? <Alert severity="info">{t('busy')}</Alert> : null}
 
+      <RunningNow items={runningNow} status={status} />
+
       {status ? (
         <StatusView
           status={status}
@@ -516,6 +582,10 @@ const StatusView: FC<{
         />
       </Box>
 
+      <Card title={t('rp_title')} subtitle={t('rp_help')}>
+        <RepoCards status={status} busy={busy} start={start} />
+      </Card>
+
       {status.can_create_stanza ? (
         <Alert
           severity="error"
@@ -589,11 +659,18 @@ const BackupsTab: FC<TabProps & { onRestore: (b: BBackup) => void }> = ({ status
   const { t } = useTranslation('backup');
   const noStanza = !!status.can_create_stanza || !status.stanza;
   const list = [...status.backups].reverse();
+  const [repo, setRepo] = useState('');
+  const multi = (status.repos ?? []).length > 1;
+  const repoLabel = (n?: number) => {
+    const r = (status.repos ?? []).find((x) => x.index === (n ?? 1));
+    return r ? repoName(r, t) : `${t('rp_repo')} ${n ?? 1}`;
+  };
   return (
     <Card
       title={t('t_backups')}
       action={
-        <Stack direction="row" gap={1} flexWrap="wrap">
+        <Stack direction="row" gap={1} flexWrap="wrap" alignItems="center">
+          <RepoPick status={status} value={repo} onChange={setRepo} label={t('rp_to')} auto={t('rp_autoBackup')} width={190} />
           {(['full', 'diff', 'incr'] as const).map((k) => (
             <Button
               key={k}
@@ -601,7 +678,7 @@ const BackupsTab: FC<TabProps & { onRestore: (b: BBackup) => void }> = ({ status
               variant={k === 'full' ? 'contained' : 'outlined'}
               startIcon={<BackupIcon />}
               disabled={busy || noStanza}
-              onClick={() => void start({ action: 'backup', type: k })}>
+              onClick={() => void start({ action: 'backup', type: k, repo: repo || undefined })}>
               {t(k)}
             </Button>
           ))}
@@ -628,7 +705,7 @@ const BackupsTab: FC<TabProps & { onRestore: (b: BBackup) => void }> = ({ status
           <Table size="small">
             <TableHead>
               <TableRow>
-                {['label', 'type', 'started', 'duration', 'size', 'repoSize', 'state', ''].map((k) => (
+                {['label', 'type', ...(multi ? ['rp_repo'] : []), 'started', 'duration', 'size', 'repoSize', 'state', ''].map((k) => (
                   <TableCell key={k} sx={{ fontWeight: 700 }}>
                     {k ? t(k) : ''}
                   </TableCell>
@@ -640,6 +717,7 @@ const BackupsTab: FC<TabProps & { onRestore: (b: BBackup) => void }> = ({ status
                 <TableRow key={b.label} hover>
                   <TableCell sx={mono}>{b.label}</TableCell>
                   <TableCell>{t(b.type)}</TableCell>
+                  {multi ? <TableCell>{repoLabel(b.repo)}</TableCell> : null}
                   <TableCell>{when(b.start)}</TableCell>
                   <TableCell>{ago(b.duration_s)}</TableCell>
                   <TableCell>{bytes(b.size)}</TableCell>
@@ -682,11 +760,12 @@ const RestoreTab: FC<TabProps & { set: string; setSet: (s: string) => void }> = 
   }, [set]);
   const [time, setTime] = useState(() => toLocalInput(status.window.to));
   const [host, setHost] = useState('');
+  const [repo, setRepo] = useState('');
   const [pre, setPre] = useState(false);
   const [postB, setPostB] = useState(true);
   const [confirm, setConfirm] = useState(false);
   const [name, setName] = useState('');
-  const usable = status.backups.filter((b) => b.usable);
+  const usable = status.backups.filter((b) => b.usable && (!repo || String(b.repo ?? 1) === repo));
   const ms = new Date(time).getTime();
   const outside =
     mode === 'time' &&
@@ -702,6 +781,7 @@ const RestoreTab: FC<TabProps & { set: string; setSet: (s: string) => void }> = 
       target_time: mode === 'time' ? withZone(time) : undefined,
       set: mode === 'set' ? set : undefined,
       restore_host: host || undefined,
+      repo: repo || undefined,
       pre_backup: pre,
       post_backup: postB,
       confirm: name,
@@ -759,10 +839,12 @@ const RestoreTab: FC<TabProps & { set: string; setSet: (s: string) => void }> = 
             {usable.map((b) => (
               <MenuItem key={b.label} value={b.label} sx={mono}>
                 {b.label} · {t(b.type)} · {when(b.stop)}
+                {(status.repos ?? []).length > 1 ? ` · ${t('rp_repo')} ${b.repo ?? 1}` : ''}
               </MenuItem>
             ))}
           </TextField>
         ) : null}
+        <RepoPick status={status} value={repo} onChange={setRepo} label={t('rp_from')} auto={t('rp_autoRestore')} width={420} />
         <TextField
           select
           size="small"
@@ -872,7 +954,7 @@ const ConfigTab: FC<TabProps> = ({ status, busy, start }) => {
               void start({
                 action: 'config',
                 config: text,
-                file: base(file),
+                file: file === node?.status?.config_path ? '' : base(file),
                 config_kind: kinds.size > 1 ? kind : undefined,
                 keep_local: keepLocal,
                 verify,
@@ -913,6 +995,19 @@ const ConfigTab: FC<TabProps> = ({ status, busy, start }) => {
               {t('cfg_goesTo', { nodes: same.map((n) => n.address).join(', ') })}
             </Typography>
           </Stack>
+          {node?.status?.config_found ? (
+            <Typography variant="caption" color="text.secondary">
+              {t('cfg_found', {
+                path: node.status.config_path,
+                how: t(`cfg_src_${node.status.config_found.source.split(' ')[0]}`, {
+                  defaultValue: node.status.config_found.source,
+                }),
+              })}
+              {node.status.config_found.include_path
+                ? ` · ${t('cfg_include', { dir: node.status.config_found.include_path })}`
+                : ` · ${t('cfg_noInclude')}`}
+            </Typography>
+          ) : null}
           <TextField
             multiline
             minRows={12}
@@ -999,11 +1094,19 @@ const ScheduleTab: FC<TabProps> = ({ status, busy, start }) => {
   );
   const [rows, setRows] = useState(() => cronFrom(lines));
   const others = all.filter((c) => !c.ours);
-  const set = (i: number, k: keyof BCron | 'on', v: string | boolean) =>
+  const set = (i: number, k: keyof BCron | 'on' | 'repo', v: string | boolean) =>
     setRows(rows.map((r, n) => (n === i ? { ...r, [k]: v } : r)));
   const entries = rows
     .filter((r) => r.on)
-    .map((r) => ({ type: r.type, minute: r.minute, hour: r.hour, dom: r.dom, month: r.month, dow: r.dow }));
+    .map((r) => ({
+      type: r.type,
+      minute: r.minute,
+      hour: r.hour,
+      dom: r.dom,
+      month: r.month,
+      dow: r.dow,
+      ...(r.repo ? { repo: r.repo } : {}),
+    }));
 
   return (
     <Stack gap={2}>
@@ -1047,6 +1150,14 @@ const ScheduleTab: FC<TabProps> = ({ status, busy, start }) => {
                   sx={{ width: 96, '& input': mono }}
                 />
               ))}
+              <RepoPick
+                status={status}
+                value={r.repo ?? ''}
+                onChange={(v) => set(i, 'repo', v)}
+                label={t('rp_to')}
+                auto={t('rp_autoBackup')}
+                width={190}
+              />
             </Stack>
           ))}
         </Stack>
@@ -1080,7 +1191,7 @@ const NodesTab: FC<{ status: BStatus; roles: Record<string, string> }> = ({ stat
         <Table size="small">
           <TableHead>
             <TableRow>
-              {['n_node', 'n_role', 'n_version', 'n_archive', 'n_cron', 'n_status'].map((k) => (
+              {['n_node', 'n_role', 'n_version', 'n_config', 'n_pg', 'n_archive', 'n_cron', 'n_status'].map((k) => (
                 <TableCell key={k} sx={{ fontWeight: 700 }}>
                   {t(k)}
                 </TableCell>
@@ -1093,11 +1204,31 @@ const NodesTab: FC<{ status: BStatus; roles: Record<string, string> }> = ({ stat
                 <TableCell sx={mono}>{n.address}</TableCell>
                 <TableCell>{roles[n.address]}</TableCell>
                 <TableCell>{n.status?.version ?? '—'}</TableCell>
+                <TableCell sx={{ ...mono, fontSize: 12 }}>
+                  {n.status?.config_path ?? '—'}
+                  {n.status?.config_found ? (
+                    <Typography variant="caption" color="text.secondary" display="block">
+                      {t(`cfg_src_${n.status.config_found.source.split(' ')[0]}`, { defaultValue: n.status.config_found.source })}
+                    </Typography>
+                  ) : null}
+                </TableCell>
+                <TableCell sx={{ ...mono, fontSize: 12, minWidth: 280, maxWidth: 360, wordBreak: 'break-all' }}>
+                  {n.status?.pg?.data_directory || n.status?.pg_conf?.data_dir || '—'}
+                  {n.status?.pg?.port ? `:${n.status.pg.port}` : ''}
+                  {n.status?.pg?.files ? (
+                    <Typography variant="caption" color="text.secondary" display="block" sx={{ wordBreak: 'break-all' }}>
+                      {n.status.pg.files.config_file}
+                      <br />
+                      {t('n_logs')}: {n.status.pg.files.log_directory}/{n.status.pg.files.log_filename}
+                      {n.status.pg.files.logging_collector === 'off' ? ` (${t('n_logsOff', { dest: n.status.pg.files.log_destination })})` : ''}
+                    </Typography>
+                  ) : null}
+                </TableCell>
                 <TableCell sx={mono}>
                   {n.status?.pg?.last_archived_wal || '—'}
                   {n.status?.pg?.last_archived_time ? (
                     <Typography variant="caption" color="text.secondary" display="block">
-                      {when(n.status.pg.last_archived_time.replace(' ', 'T'))}
+                      {when(n.status.pg.last_archived_time.replace(' ', 'T').replace(/([+-]\d\d)$/, '$1:00'))}
                     </Typography>
                   ) : null}
                 </TableCell>

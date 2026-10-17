@@ -1242,6 +1242,22 @@ paths:
           schema:
             $ref: "#/definitions/Response.Error"
 
+  /backups/activity:
+    get:
+      summary: "autoNOMIC: backups running now on any cluster the user may back up (started by a schedule, by hand or by the console)"
+      tags: [backup]
+      parameters:
+        - {name: fresh, in: query, required: false, type: boolean, description: "ask the nodes now (else at most every 45 s)"}
+      responses:
+        '200':
+          description: OK
+          schema:
+            type: object
+        '400':
+          description: Error
+          schema:
+            $ref: "#/definitions/Response.Error"
+
   /backups/clusters/{id}/status:
     post:
       summary: "pg_MANTRA: pgBackRest of a console cluster: backups, recovery window, config and schedule on every node (live, over SSH)"
@@ -2103,9 +2119,18 @@ definitions:
     properties:
       action:
         type: string
-        description: "backup | check | stanza-create | config | schedule | restore"
+        description: "backup | check | stanza-create | config | schedule | restore | repo-add | repo-remove"
       stanza:
         type: string
+      repo:
+        type: string
+        description: "backup / restore: the repository number (empty: pgBackRest's choice)"
+      index:
+        type: integer
+        description: "repo-add / repo-remove: the repository number"
+      repo_def:
+        type: object
+        description: "repo-add: {type: posix|cifs|s3|azure|gcs|sftp, path, bucket, endpoint, region, key, secret, uri_style, port, verify_tls, account, container, host, user, private_key, retention_full, retention_diff, cipher_pass}"
       type:
         type: string
         description: "backup: full | diff | incr; restore: latest | time | set"
@@ -2398,6 +2423,9 @@ definitions:
       server: {type: string}
       log_directory: {type: string}
       current: {type: string}
+      logging_collector: {type: string}
+      log_destination: {type: string}
+      log_filename: {type: string}
       files:
         type: array
         items:

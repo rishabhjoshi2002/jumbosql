@@ -86,6 +86,9 @@ export type AuditQuery = {
 export type LogFiles = {
   server?: string;
   log_directory?: string;
+  logging_collector?: string;
+  log_destination?: string;
+  log_filename?: string;
   current?: string;
   files?: { name: string; size: number; modified: string }[];
 };

@@ -90,3 +90,37 @@ func TestSummarizeNoStanza(t *testing.T) {
 		t.Fatalf("diff between different kinds: %s", d)
 	}
 }
+
+// several repositories: each with its status and what it holds; backups know their repository
+func TestSummarizeRepos(t *testing.T) {
+	now := time.Unix(1_800_000_000, 0)
+	info := map[string]any{"name": "main", "status": map[string]any{"code": 5.0, "message": "different across repos"},
+		"repo": []any{map[string]any{"key": 1.0, "status": map[string]any{"code": 0.0, "message": "ok"}},
+			map[string]any{"key": 2.0, "status": map[string]any{"code": 1.0, "message": "missing stanza path"}}},
+		"backup": []any{map[string]any{"label": "20261017-010000F", "type": "full", "database": map[string]any{"repo-key": 1.0},
+			"timestamp": map[string]any{"start": 1_799_990_000.0, "stop": 1_799_990_100.0},
+			"info": map[string]any{"size": 10.0, "repository": map[string]any{"delta": 4.0}}}}}
+	db := map[string]any{"ok": true, "installed": true, "stanza": "main", "pg": map[string]any{"role": "primary", "archive_mode": "on",
+		"archive_command": "pgbackrest --stanza=main archive-push %p", "archive_timeout": "60"}, "info": []any{info},
+		"repos": []any{map[string]any{"key": "repo1", "index": 1.0, "type": "posix"}, map[string]any{"key": "repo2", "index": 2.0, "type": "s3"}},
+		"cron": []any{map[string]any{"file": "x", "line": "y"}}}
+	out := summarize([]BackupNodeStatus{{Name: "a", Address: "10.0.0.1", OK: true, Raw: db}}, now)
+	repos := out["repos"].([]map[string]any)
+	if len(repos) != 2 || repos[0]["backups"] != 1 || repos[1]["backups"] != 0 || mapOf(repos[1]["status"])["code"] != 1.0 {
+		t.Fatalf("repos: %v", repos)
+	}
+	if out["can_create_stanza"] != true || !strings.Contains(sprint(out["issues"]), "repo2: missing stanza path") {
+		t.Fatalf("create %v issues %v", out["can_create_stanza"], out["issues"])
+	}
+	if b := out["backups"].([]map[string]any); b[0]["repo"] != 1.0 {
+		t.Fatalf("backup repo %v", b[0]["repo"])
+	}
+	for _, c := range []struct{ in, want string }{{"", ""}, {"2", "2"}, {"repo3", "3"}} {
+		if got, err := repoArg(c.in); err != nil || got != c.want {
+			t.Fatalf("repoArg(%q) = %q %v", c.in, got, err)
+		}
+	}
+	if _, err := repoArg("2;rm"); err == nil {
+		t.Fatal("repoArg accepted 2;rm")
+	}
+}

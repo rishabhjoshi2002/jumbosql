@@ -15,7 +15,7 @@ type Step = { host: string; phase: string; status: string; detail?: Record<strin
 
 const TO_REPO = new Set(['backup', 'prebackup', 'postbackup', 'bcheck', 'stanza']);
 const FROM_REPO = new Set(['restore']);
-const TO_NODES = new Set(['write', 'verify', 'undo', 'schedule']);
+const TO_NODES = new Set(['write', 'repowrite', 'verify', 'undo', 'schedule']);
 
 const anim = {
   '@keyframes bfPulse': {
@@ -183,7 +183,8 @@ const BackupFlow: FC<{
   const MID = 180;
   const yOf = (i: number) => top + i * rowH + rowH / 2;
   const repoY = H / 2;
-  const right = dir === 'toNodes' || action === 'config' || action === 'schedule';
+  const right =
+    dir === 'toNodes' || action === 'config' || action === 'schedule' || action === 'repo-add' || action === 'repo-remove';
   const packetColor = dir === 'fromRepo' ? C.orange : dir === 'toNodes' ? theme.palette.secondary.main : C.blue;
 
   const stateText = (n: FlowNode, h?: HostProgress) => {
@@ -420,7 +421,7 @@ const BackupFlow: FC<{
           ) : null}
         </Box>
 
-        {/* the repository (or pg_MANTRA itself for config / schedule) */}
+        {/* the repository (or autoNOMIC itself for config / schedule / repositories) */}
         <Stack justifyContent="center" sx={{ flex: '0 0 200px', minWidth: 180, height: H, position: 'relative' }}>
           <Stack
             alignItems="center"
@@ -467,11 +468,11 @@ const BackupFlow: FC<{
               />
             )}
             <Typography variant="body2" fontWeight={800} textAlign="center">
-              {right ? 'pg_MANTRA' : t('flow.repository')}
+              {right ? 'autoNOMIC' : t('flow.repository')}
             </Typography>
             <Typography variant="caption" color="text.secondary" textAlign="center" sx={{ wordBreak: 'break-all' }}>
               {right
-                ? t(action === 'schedule' ? 'flow.schedule' : 'flow.config')
+                ? t(action === 'schedule' ? 'flow.schedule' : action.startsWith('repo-') ? 'flow.repo' : 'flow.config')
                 : [repo.host, repo.path].filter(Boolean).join(' · ') || 'pgBackRest'}
             </Typography>
             {made?.label && !running ? (

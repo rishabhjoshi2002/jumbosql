@@ -260,23 +260,157 @@ def binary_info(spec):
 # ---------------------------------------------------------------- Patroni
 
 def patroni_conf():
-    # the config the running Patroni was started with, else the usual places
-    _, o, _ = sh("ps -eo args")
-    for line in o.splitlines():
-        f = line.split()
-        if f and "patroni" in line and not "patronictl" in line and f[-1].endswith((".yml", ".yaml")) and os.path.exists(f[-1]):
-            return f[-1]
+    """the config the running Patroni was started with (a file or a directory of *.yml), else the usual places"""
+    for p in procs():
+        a = p["args"]
+        if any(os.path.basename(x) in ("patroni", "patroni.py") for x in a[:3]) and not any("patronictl" in x for x in a[:3]):
+            last = a[-1]
+            if os.path.isfile(last) or (os.path.isdir(last) and glob.glob(os.path.join(last, "*.y*ml"))):
+                return last
     for f in ("/etc/patroni/patroni.yml", "/etc/patroni.yml", "/etc/patroni/config.yml", *sorted(glob.glob("/etc/patroni/*.yml"))):
         if os.path.exists(f):
             return f
     return None
 
 
+def patroni_text(conf):
+    files = sorted(glob.glob(os.path.join(conf, "*.y*ml"))) if os.path.isdir(conf) else [conf]
+    out = []
+    for f in files:
+        try:
+            out.append(open(f, errors="ignore").read())
+        except OSError:
+            pass
+    return "\n".join(out)
+
+
+# ---------------------------------------------------------------- what runs here (found, never assumed)
+
+_PROCS = []
+
+
+def procs():
+    """every process (pid, parent, name, arguments) from /proc"""
+    if _PROCS:
+        return _PROCS
+    for d in os.listdir("/proc"):
+        if not d.isdigit():
+            continue
+        try:
+            args = [a.decode(errors="ignore") for a in open(f"/proc/{d}/cmdline", "rb").read().split(b"\0") if a]
+            stat = open(f"/proc/{d}/stat").read()
+            comm = stat[stat.index("(") + 1:stat.rindex(")")]
+            ppid = int(stat[stat.rindex(")") + 2:].split()[1])
+        except (OSError, ValueError, IndexError):
+            continue
+        if args:
+            _PROCS.append({"pid": int(d), "ppid": ppid, "comm": comm, "args": args})
+    return _PROCS
+
+
+def pg_instances():
+    """running PostgreSQL servers: data directory (the postmaster works in it), port and socket (postmaster.pid)"""
+    out = []
+    by = {p["pid"]: p for p in procs()}
+    for p in procs():
+        if p["comm"] not in ("postgres", "postmaster") or p["args"][0].startswith(("postgres:", "postmaster:")):
+            continue
+        par = by.get(p["ppid"])
+        if par and par["comm"] in ("postgres", "postmaster"):
+            continue
+        try:
+            data = os.readlink(f"/proc/{p['pid']}/cwd")
+            exe = os.readlink(f"/proc/{p['pid']}/exe")
+        except OSError:
+            continue
+        port, sock = 0, ""
+        try:
+            lines = open(os.path.join(data, "postmaster.pid"), errors="ignore").read().splitlines()
+            port = int(lines[3]) if len(lines) > 3 and lines[3].strip().isdigit() else 0
+            sock = lines[4].split(",")[0].strip() if len(lines) > 4 else ""
+        except OSError:
+            pass
+        out.append({"pid": p["pid"], "data_dir": data, "port": port or 5432, "socket": sock, "bin": os.path.dirname(exe)})
+    return out
+
+
+def pg_query(inst, sql):
+    own = os.path.join(inst.get("bin") or "", "psql")
+    psql = own if inst.get("bin") and os.path.exists(own) else pg_tool("psql")
+    if not psql:
+        return None
+    host = f"-h {inst['socket']} " if inst.get("socket") else ""
+    rc, o, _ = sh(["su", "-", "postgres", "-s", "/bin/sh", "-c", f"{psql} -XAt -F '|' {host}-p {inst['port']} -d postgres -c \"{sql}\""])
+    return [line.split("|") for line in o.strip().splitlines()] if rc == 0 else None
+
+
+def found_ports(spec):
+    """PostgreSQL's real ports here (not just the default 5432)"""
+    ports = [i["port"] for i in pg_instances()]
+    return ports or spec.get("ports") or [5432]
+
+
+BR_OPT = re.compile(r"--(config|config-path|config-include-path)(?:=|\s+)['\"]?([^'\"\s]+)")
+CONF_ARG = re.compile(r"\.(conf|cfg|ini|ya?ml|json|toml)$")
+
+
+def found_configs(spec):
+    """the config files this component really uses: PostgreSQL asked (SHOW config_file ...), Patroni's own config,
+    pgBackRest's --config options, and the files the running service was started with"""
+    comp = spec.get("component", "")
+    out = []
+    if comp in ("postgres", "patroni"):
+        for inst in pg_instances():
+            rows = pg_query(inst, "select current_setting('config_file'), current_setting('hba_file'), current_setting('ident_file')")
+            for f in (rows[0] if rows else []):
+                if f and os.path.exists(f):
+                    out.append(f)
+            auto = os.path.join(inst["data_dir"], "postgresql.auto.conf")
+            if os.path.exists(auto):
+                out.append(auto)
+        pc = patroni_conf()
+        if pc:
+            out.append(pc)
+    if comp == "pgbackrest":
+        texts = []
+        for inst in pg_instances():
+            rows = pg_query(inst, "select current_setting('archive_command')")
+            if rows:
+                texts.append(rows[0][0])
+        texts += [" ".join(p["args"]) for p in procs() if any(os.path.basename(x) == "pgbackrest" for x in p["args"][:3])]
+        for f in glob.glob("/etc/cron.d/*") + glob.glob("/etc/systemd/system/*backrest*.service") + glob.glob("/etc/systemd/system/*backup*.service"):
+            try:
+                texts.append(open(f, errors="ignore").read())
+            except OSError:
+                pass
+        for t in texts:
+            for m in BR_OPT.finditer(t):
+                out.append(m.group(2))
+        out += [f for f in ("/etc/pgbackrest/pgbackrest.conf", "/etc/pgbackrest.conf", "/etc/pgbackrest/conf.d") if os.path.exists(f)]
+    # the files the component's running processes were started with (-f /etc/haproxy/haproxy.cfg, --config-file ...)
+    names = set(spec.get("services") or []) | {comp, comp.replace("-", "_"), comp.replace("_", "-")}
+    for p in procs():
+        if p["comm"] not in names and os.path.basename(p["args"][0]) not in names:
+            continue
+        a = p["args"]
+        for i, x in enumerate(a):
+            v = x.split("=", 1)[1] if x.startswith("--") and "=" in x else (a[i + 1] if x in ("-f", "-c", "--config", "--config-file", "--conf") and i + 1 < len(a) else x)
+            if v.startswith("/") and CONF_ARG.search(v) and os.path.isfile(v):
+                out.append(v)
+    seen, uniq = set(), []
+    for f in out:
+        r = os.path.realpath(f)
+        if os.path.exists(r) and r not in seen:
+            seen.add(r)
+            uniq.append(f)
+    return uniq
+
+
 def patroni_state():
     conf = patroni_conf()
     if not conf:
         return None
-    txt = open(conf, errors="ignore").read()
+    txt = patroni_text(conf)
     scope = re.search(r"^scope:\s*['\"]?([^'\"\s]+)", txt, re.M)
     name = re.search(r"^name:\s*['\"]?([^'\"\s]+)", txt, re.M)
     api = re.search(r"^restapi:\s*\n(?:\s+.*\n)*?\s+connect_address:\s*['\"]?([^'\"\s]+)", txt, re.M)
@@ -322,11 +456,10 @@ def pg_tool(name):
 
 
 def pg_local_role(port):
-    psql = pg_tool("psql")
-    if not psql:
-        return ""
-    rc, o, _ = sh(["su", "-", "postgres", "-s", "/bin/sh", "-c", f"{psql} -XAt -p {port} -c 'select pg_is_in_recovery()'"])
-    return {"t": "replica", "f": "primary"}.get(o.strip(), "") if rc == 0 else ""
+    """primary / replica of the server on that port, through its own socket directory"""
+    inst = next((i for i in pg_instances() if i["port"] == port), None) or {"port": port, "socket": "", "bin": ""}
+    rows = pg_query(inst, "select pg_is_in_recovery()")
+    return {"t": "replica", "f": "primary"}.get(rows[0][0], "") if rows else ""
 
 
 def pg_units():
@@ -392,7 +525,8 @@ def detect(spec):
     if spec["component"] in ("postgres", "patroni"):
         OUT["patroni"] = patroni_state()
     if spec["component"] == "postgres" and not (OUT.get("patroni") or {}).get("role"):
-        OUT["pg_role"] = pg_local_role((spec.get("ports") or [5432])[0])
+        OUT["pg_role"] = pg_local_role(found_ports(spec)[0])
+        OUT["pg_ports"] = found_ports(spec)
         OUT["pg_units"] = pg_units()
     base = spec.get("base", "/var/lib/pg_mantra/upgrade")
     probe = base
@@ -451,14 +585,17 @@ def preserve(spec):
         for f in bi["files"]:
             shutil.copy2(f["path"], os.path.join(d, "bin", os.path.basename(f["path"])))
         saved.append({"name": "binaries", "version": bi["installed"], "files": [f["path"] for f in bi["files"]]})
-    cfgs = [c for c in spec.get("configs", []) if os.path.exists(c)]
+    # the usual places, and the ones this node really uses (found from PostgreSQL and the running processes)
+    found = found_configs(spec)
+    cfgs = list(dict.fromkeys([c for c in spec.get("configs", []) if os.path.exists(c)] + found))
+    OUT["configs_found"] = found
     if cfgs:
         with tarfile.open(os.path.join(d, "config.tgz"), "w:gz") as t:
             for c in cfgs:
                 t.add(c)
     manifest = {"component": spec["component"], "run_id": spec["run_id"], "at": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
                 "family": FAMILY, "packages": info["packages"], "pip": pi, "binary": bi, "saved": saved, "unsaved": unsaved,
-                "configs": cfgs}
+                "configs": cfgs, "ports": found_ports(spec)}
     with open(os.path.join(d, "manifest.json"), "w") as f:
         json.dump(manifest, f, indent=2)
     OUT.update(dir=d, saved=saved, unsaved=unsaved, configs=cfgs)
@@ -583,7 +720,12 @@ def health(spec):
     comp, t0, timeout = spec["component"], time.time(), int(spec.get("health_timeout", 300))
     if comp == "postgres" and not (patroni_state() or {}).get("role"):
         ready = pg_tool("pg_isready")
-        port = (spec.get("ports") or [5432])[0]
+        # the port it really uses: saved when it was kept (it may be down now), else what runs, else the default
+        try:
+            saved = json.load(open(os.path.join(run_dir(spec), "manifest.json"))).get("ports") or []
+        except (OSError, ValueError, KeyError):
+            saved = []
+        port = (saved or found_ports(spec))[0]
         while time.time() - t0 < timeout:
             if ready and sh([ready, "-q", "-h", "127.0.0.1", "-p", str(port)])[0] == 0 or not ready and port_open(port):
                 OUT["healthy"] = True

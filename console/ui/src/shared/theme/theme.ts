@@ -12,17 +12,21 @@ declare module '@mui/material/styles' {
 }
 
 /**
- * pg_mantra design tokens. Colours come from the logo: navy outline (chrome), elephant blue (primary),
- * sky highlight (accent). The header and sidebar are always dark ("chrome"); the content area follows
- * the light/dark mode.
+ * autoNOMIC design tokens. Colours come from the logo: royal navy ring (chrome), circuit blue (primary),
+ * gold (the NOMIC letters, highlights) and sky (accent). The header and sidebar are always dark ("chrome");
+ * the content area follows the light/dark mode.
  */
 export const BRAND = Object.freeze({
-  navy900: '#071430',
-  navy800: '#0B1D3F',
-  navy700: '#11295A',
+  name: 'autoNOMIC',
+  cli: 'atmos',
+  navy900: '#070F2B',
+  navy800: '#0C1A47',
+  navy700: '#14286B',
   blue: '#1D6FE0',
   blueHover: '#165BBE',
   sky: '#38B2F5',
+  gold: '#F4B321',
+  goldDeep: '#C98A0B',
   chromeText: '#E6EDF8',
   chromeMuted: 'rgba(230, 237, 248, 0.64)',
   fontSans: '"Plus Jakarta Sans", "Segoe UI", system-ui, -apple-system, sans-serif',

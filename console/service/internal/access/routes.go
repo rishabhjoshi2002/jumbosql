@@ -88,6 +88,7 @@ var routes = []Route{
 	r("POST", `/clusters/(\d+)/upgrades`, scopeCluster, "upgrade.start", policy.UpgradeRun),
 	r("GET", `/discoveries/\d+/upgrades(/\d+)?`, scopeNone, "upgrade.read", policy.UpgradeRun),
 	r("POST", `/discoveries/\d+/upgrades`, scopeNone, "upgrade.start", policy.UpgradeRun),
+	r("GET", `/backups/activity`, scopeNone, "backup.activity", policy.BackupRun),
 	r("POST", `/backups/clusters/(\d+)/status`, scopeCluster, "backup.status", policy.BackupRun),
 	r("GET", `/backups/clusters/(\d+)/jobs(/\d+)?`, scopeCluster, "backup.read", policy.BackupRun),
 	r("POST", `/backups/clusters/(\d+)/jobs`, scopeCluster, "backup.start", policy.BackupRun),
