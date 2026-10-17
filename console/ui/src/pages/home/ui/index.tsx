@@ -13,7 +13,8 @@ import { useSessionUser } from '@shared/lib/useSession.ts';
 import { can } from '@shared/lib/session.ts';
 import { sidebarData } from '@widgets/sidebar/model/constants.ts';
 import { loadHistory } from '@pages/sql-editor/lib/storage.ts';
-import { FleetGrowth, FleetRisks, FleetTable, FleetTiles, useFleet } from '@pages/insights/ui/Fleet.tsx';
+import { FleetGrowth, FleetRisks, useFleet } from '@pages/insights/ui/Fleet.tsx';
+import { ClusterCards, SummaryLine } from './ClusterCards.tsx';
 import { chosenCards, isWide } from '../model/cards.ts';
 
 const Panel: FC<{ title: string; action?: ReactNode; children: ReactNode; wide?: boolean }> = ({
@@ -66,12 +67,7 @@ const FleetCard: FC<{ id: 'fleet' | 'risks' | 'growth' }> = ({ id }) => {
     );
   return id === 'fleet' ? (
     <Panel title={t('home_fleet')} action={more} wide={isWide(id)}>
-      {body(
-        <Stack gap={2}>
-          <FleetTiles fleet={q.data!} />
-          <FleetTable fleet={q.data!} onOpen={open} compact />
-        </Stack>,
-      )}
+      {body(<ClusterCards fleet={q.data!} onOpen={open} />)}
     </Panel>
   ) : id === 'risks' ? (
     <Panel title={t('home_risks')}>{body(<FleetRisks fleet={q.data!} max={6} onOpen={open} />)}</Panel>
@@ -268,7 +264,7 @@ const NotesCard: FC<{ prefs: UserPreferences; save: (p: UserPreferences) => Prom
 
 /* ------------------------------------------------------------ page ------------------------------------------------------------ */
 
-/** pg_mantra: each user's own home page - the cards an admin chose for them (Settings -> Users), limited to what they may see. */
+/** autoNOMIC: each user's own home page - the cards an admin chose for them (Settings -> Users), limited to what they may see. */
 const Home: FC = () => {
   const { t } = useTranslation('shared');
   const user = useSessionUser();
@@ -288,6 +284,8 @@ const Home: FC = () => {
   };
 
   const name = user?.display_name || user?.username || '';
+  const projectId = Number(useAppSelector(selectCurrentProject));
+  const fleet = useFleet(can('insights.view', undefined, user) ? projectId : 0);
   return (
     <Stack gap={2} p={2}>
       <Stack direction="row" alignItems="flex-end" gap={2} flexWrap="wrap">
@@ -307,6 +305,8 @@ const Home: FC = () => {
           </Typography>
         </Box>
       </Stack>
+
+      {fleet.data ? <SummaryLine fleet={fleet.data} /> : null}
 
       {!cards.length ? <Alert severity="info">{t('homeEmpty')}</Alert> : null}
 
