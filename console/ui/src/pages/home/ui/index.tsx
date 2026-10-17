@@ -13,17 +13,32 @@ import { useSessionUser } from '@shared/lib/useSession.ts';
 import { can } from '@shared/lib/session.ts';
 import { sidebarData } from '@widgets/sidebar/model/constants.ts';
 import { loadHistory } from '@pages/sql-editor/lib/storage.ts';
-import { FleetGrowth, useFleet } from '@pages/insights/ui/Fleet.tsx';
+import { FleetGrowth, FleetRisks, FleetTable, FleetTiles, useFleet } from '@pages/insights/ui/Fleet.tsx';
 import { chosenCards, isWide } from '../model/cards.ts';
-import { ClusterTiles, Hero, homeAnim, Panel } from './Visual.tsx';
-import HubOutlined from '@mui/icons-material/HubOutlined';
-import WarningAmberRounded from '@mui/icons-material/WarningAmberRounded';
-import TrendingUpRounded from '@mui/icons-material/TrendingUpRounded';
-import StorageRounded from '@mui/icons-material/StorageRounded';
-import TerminalRounded from '@mui/icons-material/TerminalRounded';
-import HistoryRounded from '@mui/icons-material/HistoryRounded';
-import BoltRounded from '@mui/icons-material/BoltRounded';
-import StickyNote2Outlined from '@mui/icons-material/StickyNote2Outlined';
+
+const Panel: FC<{ title: string; action?: ReactNode; children: ReactNode; wide?: boolean }> = ({
+  title,
+  action,
+  children,
+  wide,
+}) => (
+  <Box
+    sx={{
+      gridColumn: wide ? '1 / -1' : undefined,
+      border: 1,
+      borderColor: 'divider',
+      borderRadius: 2,
+      p: 2,
+      bgcolor: 'background.paper',
+      minWidth: 0,
+    }}>
+    <Stack direction="row" alignItems="center" justifyContent="space-between" mb={1.25} gap={1}>
+      <Typography fontWeight={700}>{title}</Typography>
+      {action}
+    </Stack>
+    {children}
+  </Box>
+);
 
 const greeting = (h: number) => (h < 12 ? 'morning' : h < 17 ? 'afternoon' : 'evening');
 
@@ -50,64 +65,18 @@ const FleetCard: FC<{ id: 'fleet' | 'risks' | 'growth' }> = ({ id }) => {
       <Typography color="text.secondary">{t('homeLoading')}</Typography>
     );
   return id === 'fleet' ? (
-    <Panel title={t('home_fleet')} icon={<HubOutlined />} action={more} wide={isWide(id)} delay={0.05}>
-      {body(<ClusterTiles fleet={q.data!} onOpen={open} />)}
+    <Panel title={t('home_fleet')} action={more} wide={isWide(id)}>
+      {body(
+        <Stack gap={2}>
+          <FleetTiles fleet={q.data!} />
+          <FleetTable fleet={q.data!} onOpen={open} compact />
+        </Stack>,
+      )}
     </Panel>
   ) : id === 'risks' ? (
-    <Panel title={t('home_risks')} icon={<WarningAmberRounded />} delay={0.1}>
-      {body(<Risks fleet={q.data!} onOpen={open} />)}
-    </Panel>
+    <Panel title={t('home_risks')}>{body(<FleetRisks fleet={q.data!} max={6} onOpen={open} />)}</Panel>
   ) : (
-    <Panel title={t('home_growth')} icon={<TrendingUpRounded />} delay={0.15}>
-      {body(<FleetGrowth fleet={q.data!} />)}
-    </Panel>
-  );
-};
-
-const SEV: Record<string, { color: string; n: number }> = {
-  critical: { color: '#EF4444', n: 0 },
-  warning: { color: '#F59E0B', n: 1 },
-  info: { color: '#38B2F5', n: 2 },
-};
-
-/** the top risks across clusters: a colour bar for how serious, the cluster, what to do */
-const Risks: FC<{ fleet: NonNullable<ReturnType<typeof useFleet>['data']>; onOpen: (id: number) => void }> = ({
-  fleet,
-  onOpen,
-}) => {
-  const { t } = useTranslation('insights');
-  const lines = (fleet.clusters ?? [])
-    .flatMap((c) => [
-      ...(c.summary?.unreachable ? [{ id: c.id, cluster: c.name, severity: 'critical', text: c.summary.unreachable }] : []),
-      ...(c.summary?.outlook ?? []).filter((o) => o.severity !== 'ok').map((o) => ({ id: c.id, cluster: c.name, ...o })),
-    ])
-    .sort((a, b) => (SEV[a.severity]?.n ?? 9) - (SEV[b.severity]?.n ?? 9))
-    .slice(0, 6);
-  if (!lines.length) return <Alert severity="success">{t('noRisks')}</Alert>;
-  return (
-    <Stack gap={1}>
-      {lines.map((l, i) => (
-        <Box
-          key={i}
-          onClick={() => onOpen(l.id)}
-          sx={{
-            cursor: 'pointer',
-            pl: 1.5,
-            pr: 1,
-            py: 1,
-            borderRadius: '10px',
-            borderLeft: `4px solid ${SEV[l.severity]?.color ?? '#8A99B4'}`,
-            bgcolor: 'action.hover',
-            transition: 'transform .15s',
-            '&:hover': { transform: 'translateX(3px)' },
-          }}>
-          <Typography variant="caption" fontWeight={800} sx={{ color: SEV[l.severity]?.color }}>
-            {l.cluster}
-          </Typography>
-          <Typography variant="body2">{l.text}</Typography>
-        </Box>
-      ))}
-    </Stack>
+    <Panel title={t('home_growth')}>{body(<FleetGrowth fleet={q.data!} />)}</Panel>
   );
 };
 
@@ -120,7 +89,6 @@ const ClustersCard: FC = () => {
   return (
     <Panel
       title={t('home_clusters')}
-      icon={<StorageRounded />}
       action={
         <Button size="small" component={RouterLink} to={RouterPaths.clusters.absolutePath}>
           {t('homeAll')}
@@ -168,7 +136,6 @@ const RecentQueriesCard: FC = () => {
   return (
     <Panel
       title={t('home_recentQueries')}
-      icon={<TerminalRounded />}
       action={
         <Button size="small" component={RouterLink} to={RouterPaths.sqlEditor.absolutePath}>
           {t('homeOpenEditor')}
@@ -215,7 +182,6 @@ const OperationsCard: FC = () => {
   return (
     <Panel
       title={t('home_operations')}
-      icon={<HistoryRounded />}
       action={
         <Button size="small" component={RouterLink} to={RouterPaths.operations.absolutePath}>
           {t('homeAll')}
@@ -251,56 +217,23 @@ const OperationsCard: FC = () => {
   );
 };
 
-const TILE = [
-  'linear-gradient(135deg,#1D6FE0,#14286B)',
-  'linear-gradient(135deg,#F4B321,#C98A0B)',
-  'linear-gradient(135deg,#22C55E,#15803D)',
-  'linear-gradient(135deg,#38B2F5,#1D6FE0)',
-  'linear-gradient(135deg,#A855F7,#6D28D9)',
-  'linear-gradient(135deg,#EF4444,#B91C1C)',
-];
-
 const ShortcutsCard: FC = () => {
   const { t } = useTranslation(['shared', 'clusters', 'operations', 'settings', 'insights']);
   const user = useSessionUser();
   const links = sidebarData(t, user).filter((l) => l.path !== RouterPaths.home.absolutePath);
   return (
-    <Panel title={t('home_shortcuts')} icon={<BoltRounded />}>
-      <Box sx={{ display: 'grid', gap: 1.25, gridTemplateColumns: 'repeat(auto-fill, minmax(118px, 1fr))' }}>
-        {links.map((l, i) => (
-          <Stack
+    <Panel title={t('home_shortcuts')}>
+      <Box sx={{ display: 'grid', gap: 1, gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))' }}>
+        {links.map((l) => (
+          <Button
             key={l.path}
             component={RouterLink}
             to={l.path}
-            alignItems="center"
-            gap={1}
-            sx={{
-              p: 1.5,
-              borderRadius: '14px',
-              border: 1,
-              borderColor: 'divider',
-              color: 'text.primary',
-              textDecoration: 'none',
-              textAlign: 'center',
-              transition: 'transform .15s, box-shadow .15s, border-color .15s',
-              '&:hover': { transform: 'translateY(-3px)', borderColor: 'primary.main', boxShadow: '0 10px 22px rgba(16,30,70,0.12)' },
-            }}>
-            <Box
-              sx={{
-                width: 42,
-                height: 42,
-                borderRadius: '12px',
-                display: 'grid',
-                placeItems: 'center',
-                background: TILE[i % TILE.length],
-                '& svg': { fill: '#fff', color: '#fff' },
-              }}>
-              <l.icon width={22} height={22} />
-            </Box>
-            <Typography variant="caption" fontWeight={700} lineHeight={1.2}>
-              {l.label}
-            </Typography>
-          </Stack>
+            variant="outlined"
+            startIcon={<l.icon width={18} height={18} />}
+            sx={{ justifyContent: 'flex-start', textTransform: 'none' }}>
+            {l.label}
+          </Button>
         ))}
       </Box>
     </Panel>
@@ -315,7 +248,6 @@ const NotesCard: FC<{ prefs: UserPreferences; save: (p: UserPreferences) => Prom
   return (
     <Panel
       title={t('home_notes')}
-      icon={<StickyNote2Outlined />}
       action={
         <Button size="small" disabled={!dirty} onClick={() => void save({ ...prefs, notes: text.slice(0, 8000) })}>
           {t('save')}
@@ -336,7 +268,7 @@ const NotesCard: FC<{ prefs: UserPreferences; save: (p: UserPreferences) => Prom
 
 /* ------------------------------------------------------------ page ------------------------------------------------------------ */
 
-/** autoNOMIC: each user's own home page - the cards an admin chose for them (Settings -> Users), limited to what they may see. */
+/** pg_mantra: each user's own home page - the cards an admin chose for them (Settings -> Users), limited to what they may see. */
 const Home: FC = () => {
   const { t } = useTranslation('shared');
   const user = useSessionUser();
@@ -356,32 +288,32 @@ const Home: FC = () => {
   };
 
   const name = user?.display_name || user?.username || '';
-  const projectId = Number(useAppSelector(selectCurrentProject));
-  const fleetOk = can('insights.view', undefined, user);
-  const fleet = useFleet(fleetOk ? projectId : 0);
-  const cl = useGetClustersQuery({ projectId, offset: 0, limit: 999_999_999 }, { skip: !projectId });
-  const mine = (cl.data?.data ?? []).filter((c) => c.id && can('clusters.view', c.id, user));
-  const nodes = fleet.data ? fleet.data.totals.servers : mine.reduce((n, c) => n + (c.servers?.length ?? 0), 0);
-  const up = fleet.data
-    ? (fleet.data.clusters ?? []).reduce((n, c) => n + c.healthy, 0)
-    : mine.reduce((n, c) => n + (c.servers ?? []).filter((x) => x.status === 'running' || x.status === 'streaming').length, 0);
   return (
-    <Stack gap={2.25} p={{ xs: 1.5, md: 2.5 }} sx={homeAnim}>
-      <Hero
-        greeting={t(`homeGreeting_${greeting(new Date().getHours())}`, { name })}
-        subtitle={t('homeSubtitle')}
-        fleet={fleet.data}
-        clusters={fleet.data ? fleet.data.totals.clusters : mine.length}
-        nodes={nodes}
-        nodesUp={up}
-      />
+    <Stack gap={2} p={2}>
+      <Stack direction="row" alignItems="flex-end" gap={2} flexWrap="wrap">
+        <Box flex={1}>
+          <Typography variant="h5" fontWeight={700}>
+            {t(`homeGreeting_${greeting(new Date().getHours())}`, { name })}
+          </Typography>
+          <Typography variant="body2" color="text.secondary">
+            {new Date().toLocaleDateString(undefined, {
+              weekday: 'long',
+              day: 'numeric',
+              month: 'long',
+              year: 'numeric',
+            })}
+            {' · '}
+            {t('homeSubtitle')}
+          </Typography>
+        </Box>
+      </Stack>
 
       {!cards.length ? <Alert severity="info">{t('homeEmpty')}</Alert> : null}
 
       <Box
         sx={{
           display: 'grid',
-          gap: 2.25,
+          gap: 2,
           gridTemplateColumns: { xs: 'minmax(0, 1fr)', lg: 'repeat(2, minmax(0, 1fr))' },
           alignItems: 'start',
         }}>

@@ -19,9 +19,9 @@ declare module '@mui/material/styles' {
 export const BRAND = Object.freeze({
   name: 'autoNOMIC',
   cli: 'atmos',
-  navy900: '#070F2B',
-  navy800: '#0C1A47',
-  navy700: '#14286B',
+  navy900: '#071430',
+  navy800: '#0B1D3F',
+  navy700: '#11295A',
   blue: '#1D6FE0',
   blueHover: '#165BBE',
   sky: '#38B2F5',

@@ -86,7 +86,7 @@ export const RepoCards: FC<{
                   position: 'absolute',
                   inset: 'auto 0 0 0',
                   height: 3,
-                  background: bad ? '#EF4444' : r.type === 'posix' ? '#1D6FE0' : '#F4B321',
+                  bgcolor: bad ? 'error.main' : 'primary.main',
                 },
               }}>
               <Stack direction="row" gap={1.25} alignItems="center">
@@ -97,11 +97,8 @@ export const RepoCards: FC<{
                     borderRadius: '11px',
                     display: 'grid',
                     placeItems: 'center',
-                    color: '#fff',
-                    background:
-                      r.type === 'posix' || r.type === 'cifs'
-                        ? 'linear-gradient(135deg,#1D6FE0,#14286B)'
-                        : 'linear-gradient(135deg,#F4B321,#C98A0B)',
+                    color: 'primary.main',
+                    bgcolor: 'primary.lighter10',
                   }}>
                   {repoIcon(r.type)}
                 </Box>
@@ -422,7 +419,7 @@ const anim = {
     '100%': { left: '100%', opacity: 0, transform: 'translateY(-50%) scale(1)' },
   },
   '@keyframes rnBreath': { '0%,100%': { transform: 'scale(1)' }, '50%': { transform: 'scale(1.06)' } },
-  '@keyframes rnRing': { '0%': { boxShadow: '0 0 0 0 rgba(244,179,33,.55)' }, '100%': { boxShadow: '0 0 0 18px rgba(244,179,33,0)' } },
+  '@keyframes rnRing': { '0%': { boxShadow: '0 0 0 0 rgba(46,160,67,.5)' }, '100%': { boxShadow: '0 0 0 10px rgba(46,160,67,0)' } },
   '@media (prefers-reduced-motion: reduce)': { '& *': { animation: 'none !important' } },
 };
 
@@ -468,33 +465,38 @@ export const RunningNow: FC<{ items: Running[]; status: BStatus | null }> = ({ i
             sx={{
               p: { xs: 2, md: 2.5 },
               borderRadius: '18px',
-              color: '#E6EDF8',
+              color: 'text.primary',
               position: 'relative',
               overflow: 'hidden',
-              background: 'radial-gradient(500px 200px at 90% 0%, rgba(244,179,33,.20), transparent 60%), linear-gradient(135deg,#070F2B,#14286B)',
-              boxShadow: '0 16px 40px rgba(7,15,43,.3)',
+              bgcolor: 'background.paper',
+              border: 1,
+              borderColor: 'divider',
+              borderLeft: 4,
+              borderLeftColor: 'primary.main',
             }}>
             <Stack direction={{ xs: 'column', md: 'row' }} gap={2.5} alignItems={{ md: 'center' }}>
               <Box flex={1} minWidth={0}>
                 <Stack direction="row" alignItems="center" gap={1}>
-                  <Box sx={{ width: 10, height: 10, borderRadius: '50%', background: '#F4B321', animation: 'rnRing 1.6s infinite' }} />
-                  <Typography sx={{ fontWeight: 800, letterSpacing: '.12em', fontSize: 12, color: '#F4B321' }}>
+                  <Box sx={{ width: 10, height: 10, borderRadius: '50%', bgcolor: 'success.main', animation: 'rnRing 1.6s infinite' }} />
+                  <Typography sx={{ fontWeight: 700, letterSpacing: '.08em', fontSize: 12, color: 'success.main' }}>
                     {t('rn_live')}
                   </Typography>
                 </Stack>
-                <Typography sx={{ fontWeight: 800, fontSize: '1.35rem', mt: 0.5, color: '#fff' }}>
+                <Typography sx={{ fontWeight: 700, fontSize: '1.15rem', mt: 0.5 }}>
                   {t('rn_title', { type: t(r.type) })}
                 </Typography>
                 <Stack direction="row" gap={0.75} mt={1} flexWrap="wrap">
                   <Chip
                     size="small"
-                    icon={<ScheduleRounded sx={{ color: '#1B1300 !important' }} />}
+                    icon={<ScheduleRounded />}
+                    color="primary"
+                    variant="outlined"
                     label={t(`rn_by_${r.by}`, { how: r.how ?? '' })}
-                    sx={{ bgcolor: '#F4B321', color: '#1B1300', fontWeight: 800 }}
+                    sx={{ fontWeight: 600 }}
                   />
-                  <Chip size="small" label={`${t('stanza')}: ${r.stanza || '—'}`} sx={{ bgcolor: 'rgba(255,255,255,.1)', color: '#fff' }} />
-                  <Chip size="small" label={r.node} sx={{ bgcolor: 'rgba(255,255,255,.1)', color: '#fff' }} />
-                  {r.user ? <Chip size="small" label={r.user} sx={{ bgcolor: 'rgba(255,255,255,.1)', color: '#fff' }} /> : null}
+                  <Chip size="small" label={`${t('stanza')}: ${r.stanza || '—'}`} variant="outlined" />
+                  <Chip size="small" label={r.node} variant="outlined" />
+                  {r.user ? <Chip size="small" label={r.user} variant="outlined" /> : null}
                 </Stack>
               </Box>
               {/* the picture: the database sends its data to the repository */}
@@ -507,12 +509,12 @@ export const RunningNow: FC<{ items: Running[]; status: BStatus | null }> = ({ i
                       <path d="M3 20c0 4 9 7 20 7s20-3 20-7M3 32c0 4 9 7 20 7s20-3 20-7" stroke="#0B1D3F" strokeWidth="1.6" fill="none" />
                     </svg>
                   </Box>
-                  <Typography variant="caption" sx={{ color: 'rgba(230,237,248,.7)' }} noWrap>
+                  <Typography variant="caption" color="text.secondary" noWrap>
                     {t('primary')}
                   </Typography>
                 </Stack>
                 <Box sx={{ position: 'relative', flex: 1, height: 36 }}>
-                  <Box sx={{ position: 'absolute', top: '50%', left: 0, right: 0, height: 2, background: 'repeating-linear-gradient(90deg, rgba(255,255,255,.25) 0 8px, transparent 8px 14px)' }} />
+                  <Box sx={{ position: 'absolute', top: '50%', left: 0, right: 0, height: 2, background: 'repeating-linear-gradient(90deg, rgba(120,140,170,.35) 0 8px, transparent 8px 14px)' }} />
                   {[0, 1, 2, 3, 4].map((i) => (
                     <Box
                       key={i}
@@ -522,8 +524,8 @@ export const RunningNow: FC<{ items: Running[]; status: BStatus | null }> = ({ i
                         width: 14,
                         height: 10,
                         borderRadius: '3px',
-                        background: i % 2 ? '#F4B321' : '#38B2F5',
-                        boxShadow: `0 0 12px ${i % 2 ? '#F4B321' : '#38B2F5'}`,
+                        bgcolor: 'primary.main',
+                        opacity: 0.85,
                         animation: `rnFly 2.2s ${i * 0.44}s linear infinite`,
                       }}
                     />
@@ -537,23 +539,23 @@ export const RunningNow: FC<{ items: Running[]; status: BStatus | null }> = ({ i
                       borderRadius: '14px',
                       display: 'grid',
                       placeItems: 'center',
-                      background: 'linear-gradient(135deg,#F4B321,#C98A0B)',
-                      color: '#1B1300',
+                      bgcolor: 'primary.lighter10',
+                      color: 'primary.main',
                       animation: 'rnBreath 2.4s 1.2s ease-in-out infinite',
                       '& svg': { fontSize: 28 },
                     }}>
                     {repoIcon(repo?.type)}
                   </Box>
-                  <Typography variant="caption" sx={{ color: 'rgba(230,237,248,.7)' }} noWrap>
+                  <Typography variant="caption" color="text.secondary" noWrap>
                     {repo ? repoName(repo, t) : t('flow.repository')}
                   </Typography>
                 </Stack>
               </Stack>
               <Box sx={{ minWidth: 170 }}>
-                <Typography sx={{ fontSize: 34, fontWeight: 900, color: '#fff', lineHeight: 1, fontVariantNumeric: 'tabular-nums' }}>
+                <Typography sx={{ fontSize: 28, fontWeight: 700, lineHeight: 1, fontVariantNumeric: 'tabular-nums' }}>
                   {pct !== undefined ? `${Math.floor(pct)}%` : clock(Math.max(0, now - r.started))}
                 </Typography>
-                <Typography variant="caption" sx={{ color: 'rgba(230,237,248,.7)' }}>
+                <Typography variant="caption" color="text.secondary">
                   {pct !== undefined
                     ? t('rn_progress', { done: bytes(r.done ?? 0), size: bytes(r.size ?? 0), time: clock(Math.max(0, now - r.started)) })
                     : r.size
@@ -569,8 +571,7 @@ export const RunningNow: FC<{ items: Running[]; status: BStatus | null }> = ({ i
                 mt: 2,
                 height: 8,
                 borderRadius: 4,
-                bgcolor: 'rgba(255,255,255,.12)',
-                '& .MuiLinearProgress-bar': { background: 'linear-gradient(90deg,#38B2F5,#F4B321)', borderRadius: 4 },
+                '& .MuiLinearProgress-bar': { borderRadius: 4 },
               }}
             />
           </Box>

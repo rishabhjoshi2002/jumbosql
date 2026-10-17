@@ -38,11 +38,9 @@ const Popup: FC<{ a: BActivity; onOpen: () => void }> = ({ a, onOpen }) => {
           borderRadius: '12px',
           display: 'grid',
           placeItems: 'center',
-          color: '#1B1300',
-          background: 'linear-gradient(135deg,#F4B321,#C98A0B)',
-          '@keyframes bwPulse': { '0%': { boxShadow: '0 0 0 0 rgba(244,179,33,.6)' }, '100%': { boxShadow: '0 0 0 14px rgba(244,179,33,0)' } },
-          animation: 'bwPulse 1.6s infinite',
-        }}>
+          color: 'primary.main',
+          bgcolor: 'primary.lighter10',
+                  }}>
         <BackupRounded />
       </Box>
       <Box minWidth={0} flex={1}>

@@ -6,8 +6,7 @@ import Stack from '@mui/material/Stack';
 import TextField from '@mui/material/TextField';
 import Toolbar from '@mui/material/Toolbar';
 import Typography from '@mui/material/Typography';
-import logoIcon from '@shared/assets/autonomicIcon.png';
-import BrandName from '@shared/ui/brand';
+import { BrandMark, BrandName } from '@shared/ui/brand';
 import UserMenu from '@features/user-menu';
 import { BRAND } from '@shared/theme/theme.ts';
 import ThemeToggle from '@features/theme-toggle';
@@ -46,17 +45,7 @@ const Header: FC = () => {
               width={OPEN_SIDEBAR_WIDTH}
               boxSizing="border-box"
               paddingLeft="16px">
-              <Box
-                sx={{
-                  width: 40,
-                  height: 40,
-                  flexShrink: 0,
-                  display: 'flex',
-                  borderRadius: '50%',
-                  boxShadow: `0 0 0 3px rgba(244,179,33,0.18), 0 0 18px rgba(56,178,245,0.35)`,
-                }}>
-                <img src={logoIcon} alt={BRAND.name} style={{ width: '40px', height: '40px' }} data-logo="true" />
-              </Box>
+              <BrandMark size={36} />
               <Box sx={{ lineHeight: 1 }}>
                 <Typography component="div" sx={{ lineHeight: 1.15 }}>
                   <BrandName size="1.12rem" />

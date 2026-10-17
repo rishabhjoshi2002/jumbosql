@@ -1,9 +1,9 @@
 import { FC } from 'react';
 import { Box, Typography, useTheme } from '@mui/material';
-import logo from '@shared/assets/autonomicLogo.png';
+import { BrandMark } from '@shared/ui/brand';
 
 /**
- * autoNOMIC: faint brand watermark on every page - the autoNOMIC logo (no background) and the managing company.
+ * autoNOMIC: faint brand watermark on every page - the autoNOMIC mark and the managing company.
  * It never takes clicks (pointer-events: none) and sits below the page content.
  *   fixed    - centred in the viewport (main layout)
  *   absolute - inside the parent (login panel); align='bottom' keeps it clear of the sign-in form
@@ -38,17 +38,14 @@ const Watermark: FC<{ variant?: 'fixed' | 'absolute'; align?: 'center' | 'bottom
         pt: variant === 'fixed' ? '56px' : 0,
       }}>
       <Box
-        component="img"
-        src={logo}
-        alt=""
-        data-logo="true"
         sx={{
-          width: align === 'bottom' ? { xs: 130, md: 150 } : { xs: 300, md: 440 },
-          height: 'auto',
-          opacity: align === 'bottom' ? (isLight ? 0.2 : 0.22) : isLight ? 0.045 : 0.035,
-          filter: isLight ? 'grayscale(100%)' : 'grayscale(100%) brightness(1.6)',
-        }}
-      />
+          width: align === 'bottom' ? { xs: 90, md: 110 } : { xs: 220, md: 300 },
+          opacity: align === 'bottom' ? 0.2 : isLight ? 0.04 : 0.05,
+          filter: 'grayscale(100%)',
+          '& svg': { width: '100%', height: 'auto' },
+        }}>
+        <BrandMark size={300} />
+      </Box>
       <Typography
         sx={{
           fontWeight: 600,
