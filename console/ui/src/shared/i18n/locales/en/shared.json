@@ -73,13 +73,13 @@
     "1h": "1h"
   },
   "productLine": "PostgreSQL On Autopilot",
-  "loginHeadline": "Your PostgreSQL, On Autopilot.",
+  "loginHeadline": "PostgreSQL that looks after itself.",
   "loginHighlightInventory": "Build and discover HA clusters on your own servers",
   "loginHighlightPatroni": "Backups, restores and upgrades with one click",
   "loginHighlightObservability": "Health, forecasts and alerts for every cluster",
   "basedOn": "Built on",
   "signIn": "Sign In",
-  "signInSubtitle": "Welcome back. Sign in to continue.",
+  "signInSubtitle": "Use your autoNOMIC account.",
   "signingIn": "Signing In…",
   "invalidCredentials": "Wrong username or password.",
   "signInFailed": "Couldn't sign in. Check that the console is running and try again.",
@@ -318,7 +318,7 @@
   "homeCustomizeFor": "Home page of {{name}}",
   "logsCollectorOff": "This server does not write log files (logging_collector is off): its log goes to {{dest}}, e.g. the system journal. Turn logging_collector on to read logs here.",
   "logsNoFiles": "No log files in {{dir}} yet.",
-  "loginSub": "Build, back up, restore and upgrade PostgreSQL clusters from one place.",
+  "loginSub": "Build highly available clusters, keep them backed up, restore to any second and upgrade without downtime, from one console.",
   "hs_clusters": "Clusters",
   "hs_nodes": "Nodes Up",
   "hs_health": "Average Health",
@@ -332,5 +332,6 @@
   "hs_noData": "No data yet",
   "hs_nCritical": "{{n}} critical",
   "hs_nWarning": "{{n}} warning",
-  "hs_allGood": "All good"
+  "hs_allGood": "All good",
+  "loginVersion": "Version {{version}}, built on"
 }
