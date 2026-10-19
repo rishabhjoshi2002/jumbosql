@@ -6,7 +6,6 @@ import {
   CircularProgress,
   IconButton,
   InputAdornment,
-  Link,
   Stack,
   TextField,
   Typography,
@@ -125,8 +124,8 @@ const Login: FC = () => {
         sx={{ px: { xs: 3, sm: 6 }, py: 6, position: 'relative', borderLeft: isWide ? 1 : 0, borderColor: 'divider' }}>
         <Box component="form" onSubmit={handleSubmit(onSubmit)} noValidate sx={{ width: '100%', maxWidth: 380 }}>
           <Stack gap="18px">
-            <BrandLogo width={isWide ? 230 : 140} onDark={dark} sx={{ mb: 1 }} />
-            <Box>
+            <BrandLogo width={isWide ? 200 : 140} onDark={dark} sx={{ mb: 1, mx: 'auto' }} />
+            <Box textAlign="center">
               <Typography sx={{ fontWeight: 700, fontSize: '1.75rem', letterSpacing: '-0.02em' }}>
                 {t('signIn')}
               </Typography>
@@ -181,16 +180,14 @@ const Login: FC = () => {
               sx={{ py: '12px', fontSize: '1rem' }}>
               {isLoading ? t('signingIn') : t('signIn')}
             </Button>
-            <Typography variant="caption" color="text.secondary">
-              {t('loginVersion', { version })}{' '}
-              <Link href="https://github.com/autobase-tech/autobase" target="_blank" rel="noreferrer" underline="hover">
-                Autobase
-              </Link>{' '}
-              (MIT)
+            <Typography variant="caption" color="text.secondary" textAlign="center">
+              Version {version}
             </Typography>
           </Stack>
         </Box>
-        <Typography variant="caption" color="text.disabled" sx={{ position: 'absolute', bottom: 18 }}>
+        <Typography
+          variant="body2"
+          sx={{ position: 'absolute', bottom: 18, color: 'text.secondary', fontWeight: 500 }}>
           Managed by Keen &amp; Able Computers Pvt. Ltd.
         </Typography>
       </Stack>

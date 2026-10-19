@@ -4,18 +4,15 @@ import * as THREE from 'three';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
 import { BrandLogo } from '@shared/ui/brand';
+import logoSrc from '@shared/assets/keenpgLogo.png';
 
 /**
- * The sign-in scene in real 3D (WebGL), on a light background: a faceted KeenPG core (the low-poly shape of the
- * logo's ears) inside a protective lattice, and the six things KeenPG does for you on glass tiles that orbit it
+ * The sign-in scene in real 3D (WebGL), on a light background: the KeenPG logo on a white glass badge at the
+ * centre, inside a protective lattice, and the six things KeenPG does for you on glass tiles that orbit it
  * in one steady ring - secure, automated, backups, high availability, insights, upgrades. Thin links run from the
  * core to every tile with a pulse travelling out, the camera follows the mouse a little. Slow machines get fewer
  * pixels and no shadows; reduced motion gets a still frame; without WebGL the logo is shown instead.
  */
-
-const BLUE = new THREE.Color('#1565D8');
-const TEAL = new THREE.Color('#14B3C7');
-const GREEN = new THREE.Color('#2BD18B');
 
 // icon outlines (Material icons, 24 x 24)
 const ICON = {
@@ -101,6 +98,7 @@ const Scene3D: FC = () => {
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
     renderer.toneMappingExposure = 0.95;
     renderer.shadowMap.enabled = true;
+    renderer.localClippingEnabled = true;
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     renderer.domElement.style.display = 'block';
     el.appendChild(renderer.domElement);
@@ -131,36 +129,79 @@ const Scene3D: FC = () => {
     floor.receiveShadow = true;
     scene.add(floor);
 
-    // the core: a faceted gem coloured from blue (bottom) to green (top), like the logo
-    const coreGeo = new THREE.IcosahedronGeometry(1.75, 1).toNonIndexed();
-    const pos = coreGeo.getAttribute('position');
-    const colors: number[] = [];
-    for (let i = 0; i < pos.count; i += 3) {
-      // one colour per face (flat facets), by the height of the face's centre
-      const y = (pos.getY(i) + pos.getY(i + 1) + pos.getY(i + 2)) / 3;
-      const k = (y + 1.75) / 3.5;
-      const col = k < 0.5 ? BLUE.clone().lerp(TEAL, k * 2) : TEAL.clone().lerp(GREEN, (k - 0.5) * 2);
-      col.offsetHSL(0, 0, (Math.sin(i * 12.9898) * 0.5 + 0.5) * 0.08 - 0.04);
-      for (let v = 0; v < 3; v++) colors.push(col.r, col.g, col.b);
-    }
-    coreGeo.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
-    const core = new THREE.Mesh(
-      coreGeo,
+    // the core: the KeenPG logo on a round white glass badge, always facing you, everything else turns around it
+    const core = new THREE.Group();
+    const badge = new THREE.Mesh(
+      new THREE.CylinderGeometry(2.05, 2.05, 0.22, 96, 1),
       new THREE.MeshPhysicalMaterial({
-        vertexColors: true,
-        flatShading: true,
-        roughness: 0.28,
-        metalness: 0.15,
+        color: 0xffffff,
+        emissive: 0xffffff,
+        emissiveIntensity: 0.35,
+        roughness: 0.2,
         clearcoat: 1,
-        clearcoatRoughness: 0.08,
+        clearcoatRoughness: 0.1,
       }),
     );
-    core.castShadow = true;
+    badge.rotation.x = Math.PI / 2;
+    badge.castShadow = true;
+    core.add(badge);
+    // a thin gradient rim, blue to green like the logo
+    const rimCanvas = document.createElement('canvas');
+    rimCanvas.width = 256;
+    rimCanvas.height = 4;
+    const rg = rimCanvas.getContext('2d')!;
+    const rgrad = rg.createLinearGradient(0, 0, 256, 0);
+    ['#1565D8', '#14B3C7', '#2BD18B', '#14B3C7', '#1565D8'].forEach((c, i) => rgrad.addColorStop(i / 4, c));
+    rg.fillStyle = rgrad;
+    rg.fillRect(0, 0, 256, 4);
+    const rimTex = new THREE.CanvasTexture(rimCanvas);
+    rimTex.colorSpace = THREE.SRGBColorSpace;
+    const rim = new THREE.Mesh(
+      new THREE.TorusGeometry(2.08, 0.06, 16, 160),
+      new THREE.MeshPhysicalMaterial({ map: rimTex, roughness: 0.3, metalness: 0.2, clearcoat: 1 }),
+    );
+    rim.position.z = 0.1;
+    core.add(rim);
+    const logoMat = new THREE.MeshBasicMaterial({ transparent: true, toneMapped: false, opacity: 0 });
+    new THREE.TextureLoader().load(logoSrc, (tex) => {
+      if (disposed) return tex.dispose();
+      tex.colorSpace = THREE.SRGBColorSpace;
+      tex.anisotropy = renderer.capabilities.getMaxAnisotropy();
+      logoMat.map = tex;
+      logoMat.opacity = 1;
+      logoMat.needsUpdate = true;
+      if (still) frame(); // the still frame is drawn again with the logo
+    });
+    const logo = new THREE.Mesh(new THREE.PlaneGeometry(2.9, 2.9 * (748 / 900)), logoMat);
+    logo.position.set(0, 0.04, 0.125);
+    core.add(logo);
+    // a soft halo behind the badge
+    const haloCanvas = document.createElement('canvas');
+    haloCanvas.width = haloCanvas.height = 256;
+    const hg = haloCanvas.getContext('2d')!;
+    const hgrad = hg.createRadialGradient(128, 128, 60, 128, 128, 128);
+    hgrad.addColorStop(0, 'rgba(20,179,199,0.35)');
+    hgrad.addColorStop(1, 'rgba(20,179,199,0)');
+    hg.fillStyle = hgrad;
+    hg.fillRect(0, 0, 256, 256);
+    const haloTex = new THREE.CanvasTexture(haloCanvas);
+    const halo = new THREE.Mesh(
+      new THREE.PlaneGeometry(7, 7),
+      new THREE.MeshBasicMaterial({ map: haloTex, transparent: true, depthWrite: false }),
+    );
+    halo.position.z = -0.4;
+    core.add(halo);
     scene.add(core);
     // the protective lattice around it
     const shell = new THREE.LineSegments(
-      new THREE.EdgesGeometry(new THREE.IcosahedronGeometry(2.45, 1)),
-      new THREE.LineBasicMaterial({ color: 0x5aa7ff, transparent: true, opacity: 0.45 }),
+      new THREE.EdgesGeometry(new THREE.IcosahedronGeometry(2.9, 1)),
+      // only the half behind the badge, like a cage around the logo
+      new THREE.LineBasicMaterial({
+        color: 0x5aa7ff,
+        transparent: true,
+        opacity: 0.4,
+        clippingPlanes: [new THREE.Plane(new THREE.Vector3(0, 0, -1), 0)],
+      }),
     );
     scene.add(shell);
 
@@ -177,13 +218,6 @@ const Scene3D: FC = () => {
     ring.rotation.x = Math.PI / 2;
     ring.scale.set(1.12, 0.8, 1);
     orbit.add(ring);
-    const ring2 = new THREE.Mesh(
-      new THREE.TorusGeometry(R * 0.62, 0.012, 8, 160),
-      new THREE.MeshBasicMaterial({ color: 0x46d39a, transparent: true, opacity: 0.55 }),
-    );
-    ring2.rotation.x = Math.PI / 2;
-    ring2.scale.set(1.12, 0.8, 1);
-    orbit.add(ring2);
 
     // the tiles: glossy white glass with the capability on the front
     const bodyMat = new THREE.MeshPhysicalMaterial({
@@ -254,6 +288,7 @@ const Scene3D: FC = () => {
     window.addEventListener('mousemove', onMove);
 
     const tmp = new THREE.Vector3();
+    const edge = new THREE.Vector3();
     const clock = new THREE.Clock();
     let raf = 0;
     // a slow machine (no graphics card): fewer pixels and no shadows, so the page stays smooth
@@ -278,9 +313,11 @@ const Scene3D: FC = () => {
       camera.position.set(mouse.x * 3, 2.2 - mouse.y * 1.8, 15);
       camera.lookAt(look);
 
-      core.rotation.y = t * 0.18;
-      core.rotation.x = Math.sin(t * 0.3) * 0.12;
-      core.position.y = Math.sin(t * 0.8) * 0.12;
+      // the badge faces you, with a slow gentle sway so it reads as a solid object
+      core.quaternion.copy(camera.quaternion);
+      core.rotateY(Math.sin(t * 0.5) * 0.22);
+      core.rotateX(Math.sin(t * 0.37) * 0.08);
+      core.position.y = Math.sin(t * 0.8) * 0.1;
       shell.rotation.y = -t * 0.08;
       shell.rotation.z = t * 0.05;
 
@@ -299,11 +336,13 @@ const Scene3D: FC = () => {
         g.scale.setScalar(g.position.distanceTo(camera.position) / 14.5);
         const { geo, pulse } = links[i];
         const p = geo.getAttribute('position') as THREE.BufferAttribute;
-        p.setXYZ(0, core.position.x, core.position.y, core.position.z);
+        // links leave from the badge's rim, so nothing crosses the logo
+        edge.set(g.position.x - core.position.x, g.position.y - core.position.y, 0).setLength(2.14).add(core.position);
+        p.setXYZ(0, edge.x, edge.y, edge.z);
         p.setXYZ(1, g.position.x, g.position.y, g.position.z);
         p.needsUpdate = true;
         const u = (t * 0.45 + i / tiles.length) % 1;
-        pulse.position.lerpVectors(core.position, g.position, u);
+        pulse.position.lerpVectors(edge, g.position, u);
       });
 
       const d = dustGeo.getAttribute('position') as THREE.BufferAttribute;
