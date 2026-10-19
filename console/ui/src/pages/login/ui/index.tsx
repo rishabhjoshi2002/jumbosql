@@ -1,4 +1,4 @@
-import { FC, MouseEvent, useRef, useState } from 'react';
+import { FC, useState } from 'react';
 import {
   Alert,
   Box,
@@ -25,7 +25,7 @@ import { setSession } from '@shared/lib/session.ts';
 import { BRAND } from '@shared/theme/theme.ts';
 import { version } from '../../../../package.json';
 import { BrandLogo, BrandMark, BrandName } from '@shared/ui/brand';
-import ClusterScene from './ClusterScene.tsx';
+import Scene3D from './Scene3D.tsx';
 
 /**
  * KeenPG sign-in: username and password, checked by the API (local users today; LDAP / SSO providers plug in
@@ -41,15 +41,6 @@ const Login: FC = () => {
   const dark = useTheme().palette.mode === 'dark';
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
-  const [tilt, setTilt] = useState({ x: 0, y: 0 });
-  const raf = useRef(0);
-  const onMove = (e: MouseEvent<HTMLDivElement>) => {
-    const r = e.currentTarget.getBoundingClientRect();
-    const x = (e.clientX - r.left) / r.width - 0.5;
-    const y = (e.clientY - r.top) / r.height - 0.5;
-    cancelAnimationFrame(raf.current);
-    raf.current = requestAnimationFrame(() => setTilt({ x, y }));
-  };
 
   const { handleSubmit, control } = useForm<LoginFormValues>({
     defaultValues: { [LOGIN_FORM_FIELD_NAMES.USERNAME]: '', [LOGIN_FORM_FIELD_NAMES.PASSWORD]: '' },
@@ -75,53 +66,56 @@ const Login: FC = () => {
 
   return (
     <Stack direction={isWide ? 'row' : 'column'} minHeight="100vh" sx={{ bgcolor: 'background.paper' }}>
-      {/* the scene */}
+      {/* the scene: the cluster in 3D, full-bleed; brand on top, headline at the bottom */}
       <Box
         data-surface="chrome"
-        onMouseMove={isWide ? onMove : undefined}
-        onMouseLeave={() => setTilt({ x: 0, y: 0 })}
         sx={{
           position: 'relative',
-          flex: isWide ? '1 1 60%' : 'none',
-          minHeight: isWide ? '100vh' : 'auto',
+          flex: isWide ? '1 1 62%' : 'none',
+          minHeight: isWide ? '100vh' : 360,
           color: BRAND.chromeText,
-          background: `radial-gradient(1000px 520px at 50% 56%, #0F3557 0%, transparent 70%), ${BRAND.navy900}`,
-          display: 'flex',
-          flexDirection: 'column',
-          px: { xs: 3, md: 6 },
-          py: { xs: 3, md: 5 },
+          bgcolor: BRAND.navy900,
           overflow: 'hidden',
         }}>
-        <Stack direction="row" alignItems="center" gap={1.25}>
-          <BrandMark size={44} />
-          <BrandName size="1.35rem" />
+        <Scene3D />
+        {/* a soft shade at the top and bottom so the text stays readable over the scene */}
+        <Box
+          aria-hidden
+          sx={{
+            position: 'absolute',
+            inset: 0,
+            pointerEvents: 'none',
+            background: `linear-gradient(180deg, ${BRAND.navy900}E6 0%, transparent 22%, transparent 64%, ${BRAND.navy900}F2 100%)`,
+          }}
+        />
+        <Stack
+          sx={{ position: 'relative', height: '100%', minHeight: 'inherit', pointerEvents: 'none' }}
+          justifyContent="space-between"
+          px={{ xs: 3, md: 6 }}
+          py={{ xs: 3, md: 5 }}>
+          <Stack direction="row" alignItems="center" gap={1.25}>
+            <BrandMark size={44} />
+            <BrandName size="1.35rem" />
+          </Stack>
+          {isWide ? (
+            <Box sx={{ maxWidth: 640 }}>
+              <Typography
+                component="h1"
+                sx={{
+                  fontWeight: 700,
+                  fontSize: '2.4rem',
+                  lineHeight: 1.12,
+                  letterSpacing: '-0.025em',
+                  color: '#fff',
+                }}>
+                {t('loginHeadline')}
+              </Typography>
+              <Typography sx={{ color: BRAND.chromeMuted, mt: 1.5, fontSize: '1.05rem', lineHeight: 1.6 }}>
+                {t('loginSub')}
+              </Typography>
+            </Box>
+          ) : null}
         </Stack>
-
-        <Box sx={{ flex: 1, display: 'grid', placeItems: 'center', py: { xs: 2, md: 3 }, perspective: '1400px' }}>
-          <Box
-            sx={{
-              width: '100%',
-              maxWidth: isWide ? 600 : 400,
-              transform: `rotateX(${tilt.y * -6}deg) rotateY(${tilt.x * 8}deg)`,
-              transition: 'transform .4s ease-out',
-              transformStyle: 'preserve-3d',
-            }}>
-            <ClusterScene />
-          </Box>
-        </Box>
-
-        {isWide ? (
-          <Box sx={{ maxWidth: 660 }}>
-            <Typography
-              component="h1"
-              sx={{ fontWeight: 700, fontSize: '2.25rem', lineHeight: 1.15, letterSpacing: '-0.025em', color: '#fff' }}>
-              {t('loginHeadline')}
-            </Typography>
-            <Typography sx={{ color: BRAND.chromeMuted, mt: 1.5, fontSize: '1.05rem', lineHeight: 1.6 }}>
-              {t('loginSub')}
-            </Typography>
-          </Box>
-        ) : null}
       </Box>
 
       {/* the form */}
