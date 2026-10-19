@@ -42,15 +42,15 @@ const Header: FC = () => {
               direction="row"
               alignItems="center"
               gap="12px"
-              width={OPEN_SIDEBAR_WIDTH}
+              minWidth={OPEN_SIDEBAR_WIDTH}
               boxSizing="border-box"
               paddingLeft="16px">
-              <BrandMark size={36} />
+              <BrandMark size={40} />
               <Box sx={{ lineHeight: 1 }}>
                 <Typography component="div" sx={{ lineHeight: 1.15 }}>
                   <BrandName size="1.12rem" />
                 </Typography>
-                <Typography sx={{ color: BRAND.sky, fontSize: '0.74rem', fontWeight: 600, lineHeight: 1.2 }}>
+                <Typography noWrap sx={{ color: BRAND.sky, fontSize: '0.7rem', fontWeight: 600, lineHeight: 1.2 }}>
                   {t('productLine')}
                 </Typography>
               </Box>

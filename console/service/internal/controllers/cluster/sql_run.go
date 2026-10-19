@@ -242,7 +242,7 @@ func (h *sqlRunHandler) Handle(param cluster.PostClustersIDSQLParams) middleware
 	}
 	if res.Error != nil && res.Error.SQLState == "28P01" || res.Error != nil && res.Error.SQLState == "28000" {
 		res.Error.Hint = strings.TrimSpace(res.Error.Hint + " The cluster's pg_hba.conf must allow role " + role +
-			" (password authentication) from the HAProxy node; it is the database role pg_MANTRA created for your access policy.")
+			" (password authentication) from the HAProxy node; it is the database role KeenPG created for your access policy.")
 	}
 
 	if res.Error != nil && res.Error.SQLState == "42501" && prof.Restricted() {

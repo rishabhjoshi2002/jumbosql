@@ -296,7 +296,7 @@ func playbookFrom(b *models.RequestPlaybook, old *storage.Playbook, src *pulled)
 		case !nameRe.MatchString(v.Name):
 			return nil, false, fmt.Errorf("input %q: a variable name (letters, digits, _)", v.Name)
 		case v.Name == "pgm" || strings.HasPrefix(v.Name, "ansible_"):
-			return nil, false, fmt.Errorf("input %q: this name is used by pg_MANTRA / Ansible", v.Name)
+			return nil, false, fmt.Errorf("input %q: this name is used by KeenPG / Ansible", v.Name)
 		case seen[v.Name]:
 			return nil, false, fmt.Errorf("input %q is there twice", v.Name)
 		case !varTypes[v.Type]:

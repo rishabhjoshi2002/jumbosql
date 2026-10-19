@@ -3,7 +3,7 @@ import { Box, Typography, useTheme } from '@mui/material';
 import { BrandMark } from '@shared/ui/brand';
 
 /**
- * autoNOMIC: faint brand watermark on every page - the autoNOMIC mark and the managing company.
+ * KeenPG: faint brand watermark on every page - the KeenPG mark and the managing company.
  * It never takes clicks (pointer-events: none) and sits below the page content.
  *   fixed    - centred in the viewport (main layout)
  *   absolute - inside the parent (login panel); align='bottom' keeps it clear of the sign-in form
@@ -40,7 +40,7 @@ const Watermark: FC<{ variant?: 'fixed' | 'absolute'; align?: 'center' | 'bottom
       <Box
         sx={{
           width: align === 'bottom' ? { xs: 90, md: 110 } : { xs: 220, md: 300 },
-          opacity: align === 'bottom' ? 0.2 : isLight ? 0.04 : 0.05,
+          opacity: align === 'bottom' ? 0.2 : isLight ? 0.035 : 0.04,
           filter: 'grayscale(100%)',
           '& svg': { width: '100%', height: 'auto' },
         }}>

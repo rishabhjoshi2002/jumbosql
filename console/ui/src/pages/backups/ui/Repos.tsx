@@ -32,7 +32,7 @@ import { BJobRequest, BRepo, BRepoDef, BStatus } from '@shared/api/api/backup.ts
 import { bytes } from '@pages/insights/lib/format.ts';
 import { when } from './Timeline.tsx';
 
-/** autoNOMIC Backup & Restore: the repositories (a disk, S3, Azure, GCS, SFTP), adding one, and a backup running now. */
+/** KeenPG Backup & Restore: the repositories (a disk, S3, Azure, GCS, SFTP), adding one, and a backup running now. */
 
 export const repoIcon = (type?: string) =>
   type === 's3' || type === 'azure' || type === 'gcs' ? (

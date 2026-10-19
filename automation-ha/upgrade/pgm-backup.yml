@@ -1,5 +1,5 @@
 ---
-# pg_MANTRA backups - pgBackRest on the nodes of group pgm_backup (every node that has pgBackRest):
+# KeenPG backups - pgBackRest on the nodes of group pgm_backup (every node that has pgBackRest):
 #   backup         full / diff / incr, on the repository server if there is one, else on the primary
 #   check          pgbackrest check (archiving + repository)       stanza-create   create the stanza, then check
 #   config         write the new pgbackrest.conf on every node (each keeps its own pg1-path / port / socket / host),
@@ -14,7 +14,7 @@
 #                    keep_local, verify, entries, remove, index, repo_def}
 # Every step reports a task "pgm_result" per node (the console reads them from the JSON log).
 
-- name: pg_MANTRA backup | nodes with pgBackRest
+- name: KeenPG backup | nodes with pgBackRest
   hosts: localhost
   connection: local
   gather_facts: false
@@ -38,7 +38,7 @@
       loop: "{{ groups['pgm_backup'] }}"
       changed_when: false
 
-- name: pg_MANTRA backup | look at every node
+- name: KeenPG backup | look at every node
   hosts: pgm_all
   gather_facts: false
   become: true
@@ -59,7 +59,7 @@
         pgm_st: "{{ (pgm_status_raw.stdout_lines | last | from_json) if (pgm_status_raw.stdout_lines | default([])) else {'ok': false, 'error': pgm_status_raw.msg | default('node not reachable')} }}"
         pgm_spec_fact: "{{ pgm_spec }}"
 
-- name: pg_MANTRA backup | roles
+- name: KeenPG backup | roles
   hosts: localhost
   connection: local
   gather_facts: false
@@ -130,7 +130,7 @@
       changed_when: false
 
 # ------------------------------------------------------------------ backup / check / stanza-create
-- name: pg_MANTRA backup | {{ pgm.action }}
+- name: KeenPG backup | {{ pgm.action }}
   hosts: pgm_runner
   gather_facts: false
   become: true
@@ -157,7 +157,7 @@
             msg: "{{ pgm.action }} failed on {{ inventory_hostname }}"
 
 # ------------------------------------------------------------------ config
-- name: pg_MANTRA backup | write the config
+- name: KeenPG backup | write the config
   hosts: pgm_all
   gather_facts: false
   become: true
@@ -185,7 +185,7 @@
           ansible.builtin.fail:
             msg: "the config could not be written on {{ inventory_hostname }}"
 
-- name: pg_MANTRA backup | repositories
+- name: KeenPG backup | repositories
   hosts: pgm_all
   gather_facts: false
   become: true
@@ -217,7 +217,7 @@
           ansible.builtin.fail:
             msg: "the repository could not be written on {{ inventory_hostname }}"
 
-- name: pg_MANTRA backup | check the new config
+- name: KeenPG backup | check the new config
   hosts: pgm_runner
   gather_facts: false
   become: true
@@ -244,7 +244,7 @@
         msg: "{{ {'host': inventory_hostname, 'phase': 'config-check', 'status': 'success' if pgm_check_ok else 'failed', 'error': pgm_check_error, 'skipped': pgm_check.skipped | default(false)} }}"
       when: pgm.action in ['config', 'repo-add']
 
-- name: pg_MANTRA backup | put the old config back if the check failed
+- name: KeenPG backup | put the old config back if the check failed
   hosts: pgm_all
   gather_facts: false
   become: true
@@ -272,7 +272,7 @@
       run_once: true
 
 # ------------------------------------------------------------------ schedule
-- name: pg_MANTRA backup | schedule
+- name: KeenPG backup | schedule
   hosts: pgm_all
   gather_facts: false
   become: true
@@ -300,7 +300,7 @@
             msg: "the schedule could not be written on {{ inventory_hostname }}"
 
 # ------------------------------------------------------------------ restore
-- name: pg_MANTRA restore | back up first
+- name: KeenPG restore | back up first
   hosts: pgm_runner
   gather_facts: false
   become: true
@@ -318,7 +318,7 @@
         msg: "{{ {'host': inventory_hostname, 'phase': 'pre-backup', 'status': 'success', 'detail': pgm_pre.stdout_lines | last | from_json} }}"
       when: pgm.action == 'restore' and pgm.pre_backup | default(false)
 
-- name: pg_MANTRA restore | stop the replicas
+- name: KeenPG restore | stop the replicas
   hosts: pgm_replicas
   gather_facts: false
   become: true
@@ -344,7 +344,7 @@
           ansible.builtin.fail:
             msg: "{{ inventory_hostname }} could not be stopped - nothing was restored"
 
-- name: pg_MANTRA restore | restore the primary
+- name: KeenPG restore | restore the primary
   hosts: pgm_primary
   gather_facts: false
   become: true
@@ -389,7 +389,7 @@
           ansible.builtin.fail:
             msg: "the restore of the primary failed - the replicas are stopped and were not touched"
 
-- name: pg_MANTRA restore | rebuild the replicas
+- name: KeenPG restore | rebuild the replicas
   hosts: pgm_replicas
   gather_facts: false
   become: true
@@ -420,7 +420,7 @@
           ansible.builtin.fail:
             msg: "{{ inventory_hostname }} could not be rebuilt as a replica (the primary is restored and running)"
 
-- name: pg_MANTRA restore | a new full backup of the restored database
+- name: KeenPG restore | a new full backup of the restored database
   hosts: pgm_postbackup
   gather_facts: false
   become: true

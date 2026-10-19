@@ -1,6 +1,6 @@
 package upgrade
 
-// Backups (pgBackRest) of any cluster - created by pg_MANTRA or found by Discover:
+// Backups (pgBackRest) of any cluster - created by KeenPG or found by Discover:
 //   status   live, over SSH, on every node with pgBackRest: its config, `pgbackrest info`, PostgreSQL and WAL
 //            archiving, Patroni, the backup schedule - summed up as the recovery window (how far back, and up to
 //            when, the data can be restored), the backups, config differences between nodes, and issues

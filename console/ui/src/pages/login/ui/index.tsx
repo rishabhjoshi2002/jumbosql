@@ -11,6 +11,7 @@ import {
   TextField,
   Typography,
   useMediaQuery,
+  useTheme,
 } from '@mui/material';
 import VisibilityOutlined from '@mui/icons-material/VisibilityOutlined';
 import VisibilityOffOutlined from '@mui/icons-material/VisibilityOffOutlined';
@@ -23,12 +24,11 @@ import { usePostAuthLoginMutation } from '@shared/api/api/auth.ts';
 import { setSession } from '@shared/lib/session.ts';
 import { BRAND } from '@shared/theme/theme.ts';
 import { version } from '../../../../package.json';
-import logo from '@shared/assets/autonomicLogo.png';
-import { BrandMark, BrandName } from '@shared/ui/brand';
+import { BrandLogo, BrandMark, BrandName } from '@shared/ui/brand';
 import ClusterScene from './ClusterScene.tsx';
 
 /**
- * autoNOMIC sign-in: username and password, checked by the API (local users today; LDAP / SSO providers plug in
+ * KeenPG sign-in: username and password, checked by the API (local users today; LDAP / SSO providers plug in
  * on the server side without changing this page).
  * Left: what the product looks after, drawn in isometric 3D - a primary streaming WAL to its replicas and its
  * backup repository. The scene leans a little with the mouse; nothing else moves. Right: a plain sign-in form.
@@ -38,6 +38,7 @@ const Login: FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const isWide = useMediaQuery('(min-width: 1000px)');
+  const dark = useTheme().palette.mode === 'dark';
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
   const [tilt, setTilt] = useState({ x: 0, y: 0 });
@@ -84,7 +85,7 @@ const Login: FC = () => {
           flex: isWide ? '1 1 60%' : 'none',
           minHeight: isWide ? '100vh' : 'auto',
           color: BRAND.chromeText,
-          background: `radial-gradient(1000px 520px at 50% 56%, #102A5E 0%, transparent 70%), ${BRAND.navy900}`,
+          background: `radial-gradient(1000px 520px at 50% 56%, #0F3557 0%, transparent 70%), ${BRAND.navy900}`,
           display: 'flex',
           flexDirection: 'column',
           px: { xs: 3, md: 6 },
@@ -92,8 +93,8 @@ const Login: FC = () => {
           overflow: 'hidden',
         }}>
         <Stack direction="row" alignItems="center" gap={1.25}>
-          <BrandMark size={34} />
-          <BrandName size="1.25rem" />
+          <BrandMark size={44} />
+          <BrandName size="1.35rem" />
         </Stack>
 
         <Box sx={{ flex: 1, display: 'grid', placeItems: 'center', py: { xs: 2, md: 3 }, perspective: '1400px' }}>
@@ -131,13 +132,7 @@ const Login: FC = () => {
         sx={{ px: { xs: 3, sm: 6 }, py: 6, position: 'relative', borderLeft: isWide ? 1 : 0, borderColor: 'divider' }}>
         <Box component="form" onSubmit={handleSubmit(onSubmit)} noValidate sx={{ width: '100%', maxWidth: 380 }}>
           <Stack gap="18px">
-            <Box
-              component="img"
-              src={logo}
-              alt={BRAND.name}
-              data-logo="true"
-              sx={{ width: 120, height: 120, ml: '-8px', display: isWide ? 'block' : 'none' }}
-            />
+            <BrandLogo width={isWide ? 230 : 140} onDark={dark} sx={{ mb: 1 }} />
             <Box>
               <Typography sx={{ fontWeight: 700, fontSize: '1.75rem', letterSpacing: '-0.02em' }}>
                 {t('signIn')}

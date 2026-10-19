@@ -1,6 +1,6 @@
 # Third-Party Notices
 
-pg_MANTRA is built on Autobase (MIT, see LICENSE and NOTICE) and uses the open-source components below.
+KeenPG is built on Autobase (MIT, see LICENSE and NOTICE) and uses the open-source components below.
 Each keeps its own license; the full license texts are in the components' source (Go module cache,
 `node_modules`) and must be kept with every copy you distribute.
 

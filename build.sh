@@ -126,7 +126,7 @@ run_console() {
     --restart=unless-stopped \
     "$CONSOLE_IMAGE"
   allow_console_to_vms || echo "warning: could not open docker0 -> virbr* (see README, KVM host)" >&2
-  echo "pg_MANTRA console is starting on port ${JUMBOSQL_PORT:-80}. Sign in as: admin (first start only creates it)"
+  echo "KeenPG console is starting on port ${JUMBOSQL_PORT:-80}. Sign in as: admin (first start only creates it)"
 }
 
 case "${1:-}" in

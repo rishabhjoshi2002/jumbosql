@@ -83,7 +83,7 @@ func pullRepo(ctx context.Context, repoURL, ref, token string) (*pulled, error) 
 		return nil, err
 	}
 	req.Header.Set("Accept", "application/vnd.github+json")
-	req.Header.Set("User-Agent", "pg_MANTRA")
+	req.Header.Set("User-Agent", "KeenPG")
 	if t := strings.TrimSpace(token); t != "" {
 		req.Header.Set("Authorization", "Bearer "+t)
 	}

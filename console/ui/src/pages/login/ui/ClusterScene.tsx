@@ -14,16 +14,16 @@ const iso = (x: number, y: number, z = 0): [number, number] => [(x - y) * C, (x 
 const pts = (...p: [number, number, number][]) => p.map(([x, y, z]) => iso(x, y, z).join(',')).join(' ');
 
 const COL = {
-  floor: '#0A1838',
-  grid: '#17305E',
-  top: '#2F64C4',
-  left: '#1A438E',
-  right: '#123270',
-  edge: '#5A8EE8',
+  floor: '#08182A',
+  grid: '#15334F',
+  top: '#2369D6',
+  left: '#164A9C',
+  right: '#0F3577',
+  edge: '#4FA0F2',
   slot: '#0B2457',
-  trace: '#21488F',
-  wal: '#5CC4FF',
-  gold: '#F4B321',
+  trace: '#1A4A7E',
+  wal: '#3FD0E0',
+  gold: '#2BD18B',
   label: '#9DB2D8',
   ok: '#3DDC97',
 };
@@ -134,7 +134,8 @@ const Label: FC<{ x: number; y: number; text: string; sub: string; gold?: boolea
   left,
 }) => {
   const [bx, by] = iso(x, y, 0);
-  const [lx, ly, anchor] = left ? [bx + 74, by - 62, 'start'] : [bx, by + 48, 'middle'];
+  const [lx, ly] = left ? [bx + 74, by - 62] : [bx, by + 48];
+  const anchor: 'start' | 'middle' = left ? 'start' : 'middle';
   return (
     <g>
       <text x={lx} y={ly} textAnchor={anchor} fontSize={13} fontWeight={700} fill={gold ? COL.gold : '#E3EBF8'}>
@@ -181,7 +182,7 @@ const ClusterScene: FC<{ width?: number | string }> = ({ width = '100%' }) => {
       style={{ display: 'block', overflow: 'visible' }}>
       <defs>
         <radialGradient id="cs-floor" cx="50%" cy="50%" r="50%">
-          <stop offset="0" stopColor="#14306A" stopOpacity="0.9" />
+          <stop offset="0" stopColor="#0F3A5C" stopOpacity="0.9" />
           <stop offset="1" stopColor={COL.floor} stopOpacity="0" />
         </radialGradient>
         <style>{`
@@ -207,7 +208,7 @@ const ClusterScene: FC<{ width?: number | string }> = ({ width = '100%' }) => {
 
       {/* drawn back to front */}
       <Server x={-5.6} y={-2} w={2} d={1.6} h={1} slots={2} led={COL.gold} delay={0.1} />
-      <Server x={0} y={0} w={1.7} d={1.7} h={1.9} slots={4} led={COL.gold} top="#3A74DA" delay={0} />
+      <Server x={0} y={0} w={1.7} d={1.7} h={1.9} slots={4} led={COL.gold} top="#2B7BE8" delay={0} />
       <Server x={4.5} y={0} w={1.5} d={1.5} h={1.5} slots={3} led={COL.ok} delay={0.2} />
       <Server x={0} y={4.5} w={1.5} d={1.5} h={1.5} slots={3} led={COL.ok} delay={0.3} />
 

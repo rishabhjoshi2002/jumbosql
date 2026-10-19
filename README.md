@@ -1,8 +1,8 @@
 <p align="center">
-  <img src="console/ui/src/shared/assets/pgMantraLogo.png" alt="autoNOMIC" width="220">
+  <img src="console/ui/src/shared/assets/pgMantraLogo.png" alt="KeenPG" width="220">
 </p>
 
-# autoNOMIC: PostgreSQL On Autopilot
+# KeenPG: Manage PostgreSQL With Ease
 
 A web console for building and running highly available PostgreSQL clusters (Patroni, etcd, HAProxy,
 PgBouncer, pgBackRest, Prometheus/Grafana) on your own virtual machines, using your licensed HA Ansible
@@ -21,7 +21,7 @@ collection (version **2.2.0**). Based on [Autobase](https://github.com/autobase-
 | **Patroni console** | On each cluster page: `list`, `history`, `show-config`, `edit-config`, `pause`/`resume`, `switchover`, `failover`, `restart`, `reload`, `reinit` and a **rolling restart**. Every result shows the equivalent `patronictl` command. |
 | **Observability** | A live monitoring dashboard per cluster from its Prometheus: cluster / PostgreSQL / etcd / services health, firing alerts, last backup, and graphs for connections, TPS, replication lag, cache hit, database size, CPU, memory, disk, load, network and etcd. Links to Grafana, Prometheus and Alertmanager (URLs can be overridden per cluster). |
 | **SQL editor** | Built-in, pgAdmin-style query tool: object browser (schemas, tables with columns, views, functions, sequences), query tabs, every statement's result (also `SHOW`, `EXPLAIN`, `RETURNING`), Messages with notices and errors (SQLSTATE, detail, hint, position marked in the editor), Explain / Explain analyze, Cancel, CSV export, query history. Runs through HAProxy's read-write port, so always on the current Patroni leader. Follows the access policies: read-only / read-write / admin, only allowed databases, hidden columns and tables locked in the object browser, row and time limits. |
-| **Branding** | autoNOMIC look (navy and logo blue) with the autoNOMIC logo, and a light watermark on every page: *autoNOMIC, managed by Keen & Able Computers Pvt. Ltd.* |
+| **Branding** | KeenPG look (navy and logo blue) with the KeenPG logo, and a light watermark on every page: *KeenPG, managed by Keen & Able Computers Pvt. Ltd.* |
 
 ## How it fits together
 
@@ -119,7 +119,7 @@ You can change or disable them (not delete them), and add your own. The console 
 leave no user able to manage policies.
 
 **How the data scope is enforced.** Only an unrestricted `sql.admin` runs as the cluster's superuser. Everyone else
-runs as a database role autoNOMIC creates per scope (`jsql_<hash>`), with `SELECT` (and for write access
+runs as a database role KeenPG creates per scope (`jsql_<hash>`), with `SELECT` (and for write access
 `INSERT/UPDATE/DELETE`) granted only on the allowed tables, and only on the visible columns when columns are hidden.
 Views that read a hidden column are not granted, read-only profiles have `default_transaction_read_only`, and
 server statistics (`pg_stat_activity` of other users, …) need `sql.stats`. So the rules hold for any SQL - `*`,
@@ -207,7 +207,7 @@ Also on the page:
 
 ## Discover (map any PostgreSQL setup)
 
-**Discover** in the side menu (`discover.run`, given to Administrators) looks at PostgreSQL servers that autoNOMIC did
+**Discover** in the side menu (`discover.run`, given to Administrators) looks at PostgreSQL servers that KeenPG did
 not build - any client, any layout - as long as the console can reach them. Give it:
 
 - the **inventory**: one server per line (`host`, `host:port` or `host port`), or a whole **Ansible inventory**
@@ -227,7 +227,7 @@ the HAProxy / nginx / PgBouncer / keepalived / pgBackRest / Prometheus configs, 
 connections on the known ports (`ss`). Each new machine is probed the same way, round after round (up to 60
 machines). Application servers that only connect to PostgreSQL are listed as clients, not followed. Where the
 SSH login does not work, a pop-up asks for the logins of those machines (one for all, or one each) and Discover
-runs again; they are used for that run only and never saved. autoNOMIC's own address as the machines see it
+runs again; they are used for that run only and never saved. KeenPG's own address as the machines see it
 (the SSH client address, often a NAT gateway such as `192.168.122.1`) and their default gateway are ignored:
 those connections are Discover's own probes, not part of the setup. If PostgreSQL cannot be reached, the summary
 says why (e.g. "wrong database user or password").
@@ -291,7 +291,7 @@ Results can be saved (passwords never are), opened again, downloaded as JSON or 
 PostgreSQL (minor version), Patroni, etcd, HAProxy, keepalived, PgBouncer, pgBackRest, vip-manager, node_exporter,
 postgres_exporter, Prometheus, Alertmanager, Grafana - on **any cluster**. One **Cluster** list holds every cluster:
 those **Found By Discover** (any setup, whoever built it: the machines and what runs on each come from Discover)
-and those **Created By autoNOMIC** (with their inventory and stored SSH secret). Give the SSH login for the nodes
+and those **Created By KeenPG** (with their inventory and stored SSH secret). Give the SSH login for the nodes
 (used for that run only, never saved).
 
 The steps are shown on top: Dry Run → Review → Upgrade → Rollback (If Needed). The step going on is dark, finished
@@ -300,7 +300,7 @@ steps turn green, the next ones stay grey. When a run starts the form is hidden 
 install, restart, health check - ticking as they finish) and the **Ansible Log**. If anything fails: **Roll Back
 Now** (one click) or **Try Again** (back to the form to change the settings).
 
-autoNOMIC's own playbook does the work (`automation-ha/upgrade/`: plain Ansible, no vendor collection). It runs in
+KeenPG's own playbook does the work (`automation-ha/upgrade/`: plain Ansible, no vendor collection). It runs in
 the **upgrade runner** image `pg_mantra/upgrader:1.0`, built by `./build.sh console` (or `./build.sh upgrader`);
 the deployment image (`./build.sh automation`) is not needed for upgrades.
 
@@ -335,7 +335,7 @@ run in the same runner container on any machines you choose.
 Archive**, or **From GitHub**:
 - the **upgrade playbook** and, optionally, the **rollback playbook**: paste the YAML, or upload an archive
   (`.tar.gz` / `.tgz` / `.zip` with roles, templates, files, group_vars...) and give the playbooks' paths in it;
-- the **inputs** autoNOMIC asks before each run (target version, repository, a password...). Each input becomes
+- the **inputs** KeenPG asks before each run (target version, repository, a password...). Each input becomes
   an Ansible variable. Types: text, password (never saved), number, yes/no, choice, long text;
 - the **groups** your plays use (`hosts:`), filled with the machines where Discover found a component (e.g.
   `pgbouncer_nodes` = the machines with PgBouncer);
@@ -402,11 +402,11 @@ It picks free IPs on `192.168.122.0/24` (or `--ips A,B,C`), builds the VMs from 
 (`BASE_IMAGE`, default `/root/rhel-9.8-x86_64-kvm.qcow2`), sets static IPs and DHCP reservations, registers them
 with Red Hat (prompted), installs `glibc-langpack-en` and `chrony`, and creates an SSH key for the set
 (`/root/.ssh/jumbosql-<set>`). If any step fails, everything that run created is rolled back. The summary prints the
-hostnames, IPs, suggested roles and the key to paste into autoNOMIC. Sizes: `RAM_MB=4096 VCPUS=2 DISK=40G`.
+hostnames, IPs, suggested roles and the key to paste into KeenPG. Sizes: `RAM_MB=4096 VCPUS=2 DISK=40G`.
 
 ### Demo: an ordinary PostgreSQL 17 setup (to try Discover)
 
-`tools/pg-demo-cluster.sh` builds something autoNOMIC did **not** deploy: 3 VMs (`jumbosql-vms.sh --layout demo`)
+`tools/pg-demo-cluster.sh` builds something KeenPG did **not** deploy: 3 VMs (`jumbosql-vms.sh --layout demo`)
 with plain PostgreSQL 17 from the PGDG repository - `<set>-primary` (databases `shop` and `hr` with sample data),
 `<set>-standby` (streaming replica through slot `standby_slot`) and `<set>-logical` (subscriber of publication
 `shop_pub`, plus a table of its own).
@@ -447,7 +447,7 @@ root SSH access, and the HA playbook not yet run on them.
 ## Backups
 
 The HA automation creates the pgBackRest stanza and takes a first full backup at the end of every deployment.
-It only **schedules** backups when `backrest_backup_schedule` is set, so autoNOMIC sets a default on the pgBackRest
+It only **schedules** backups when `backrest_backup_schedule` is set, so KeenPG sets a default on the pgBackRest
 repository VM: **full on Sunday, incremental Monday to Saturday, at 01:00** (VM time zone), run as the PostgreSQL
 OS user through the automation's wrapper, which backs up only when Patroni reports a leader. They are systemd
 timers (`systemctl list-timers | grep jumbosql-backup` on the repository VM). If your `group_vars` set
@@ -455,7 +455,7 @@ timers (`systemctl list-timers | grep jumbosql-backup` on the repository VM). If
 
 ### Backup & Restore page (admins)
 
-**Backup & Restore** (in the sidebar, `backup.run`) manages pgBackRest for **any** cluster: one created by autoNOMIC (its saved SSH
+**Backup & Restore** (in the sidebar, `backup.run`) manages pgBackRest for **any** cluster: one created by KeenPG (its saved SSH
 secret is used) or one found by Discover (give an SSH login; it is used for that call only and never saved). It
 reads every node with pgBackRest over SSH (root, `sudo -n`, or `sudo` with the SSH password) and shows:
 
@@ -566,11 +566,11 @@ Insights).
 
 | Path | What |
 |---|---|
-| `console/ui` | React UI. autoNOMIC code: `shared/lib/haInventory.ts` (inventory model and rules), `entities/cluster/database-servers-block` (inventory step), `widgets/patroni-console`, `pages/observability`, `widgets/users-table`, `pages/login`, `shared/theme` |
-| `console/service` | Go API. autoNOMIC code: `internal/auth` (sign-in, sessions, providers), `internal/controllers/auth`, `internal/controllers/user`, `pkg/patroni/actions.go`, `internal/controllers/cluster/patroni_*.go`, `middleware/authorization.go`, `internal/policy` (policy engine), `internal/access` (routes, audit), `internal/insights` (sampler, forecasts, recommendations), `pkg/sqlroles` (data scope roles), `pkg/pglogs` |
+| `console/ui` | React UI. KeenPG code: `shared/lib/haInventory.ts` (inventory model and rules), `entities/cluster/database-servers-block` (inventory step), `widgets/patroni-console`, `pages/observability`, `widgets/users-table`, `pages/login`, `shared/theme` |
+| `console/service` | Go API. KeenPG code: `internal/auth` (sign-in, sessions, providers), `internal/controllers/auth`, `internal/controllers/user`, `pkg/patroni/actions.go`, `internal/controllers/cluster/patroni_*.go`, `middleware/authorization.go`, `internal/policy` (policy engine), `internal/access` (routes, audit), `internal/insights` (sampler, forecasts, recommendations), `pkg/sqlroles` (data scope roles), `pkg/pglogs` |
 | `console/db/migrations` | console database; `20261005150000_jumbosql_users.sql` adds users and sessions |
 | `automation-ha` | the HA automation image: entrypoint, inventory check and conversion, wrapper playbook, pack script |
-| `automation` | Autobase's own automation (unused by autoNOMIC, kept for upstream merges) |
+| `automation` | Autobase's own automation (unused by KeenPG, kept for upstream merges) |
 | `build.sh` | builds and runs everything |
 | `tools/jumbosql-vms.sh` | creates and prepares RHEL 9 VMs on the KVM host for a cluster |
 

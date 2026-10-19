@@ -1,8 +1,8 @@
 ---
 swagger: '2.0'
 info:
-  title: pg_MANTRA console
-  description: API for the pg_MANTRA console (based on the Autobase console, MIT)
+  title: KeenPG console
+  description: API for the KeenPG console (based on the Autobase console, MIT)
   version: 2.11.0
 host: localhost:8080
 schemes:
@@ -1169,7 +1169,7 @@ paths:
 
   /backups/discoveries/{id}/status:
     post:
-      summary: "pg_MANTRA: pgBackRest of a setup found by Discover: backups, recovery window, config and schedule on every node (live, over SSH)"
+      summary: "KeenPG: pgBackRest of a setup found by Discover: backups, recovery window, config and schedule on every node (live, over SSH)"
       tags: [backup]
       parameters:
         - {name: id, in: path, required: true, type: integer}
@@ -1190,7 +1190,7 @@ paths:
 
   /backups/discoveries/{id}/jobs:
     get:
-      summary: "pg_MANTRA: backup / restore / config / schedule jobs of a setup found by Discover, newest first"
+      summary: "KeenPG: backup / restore / config / schedule jobs of a setup found by Discover, newest first"
       tags: [backup]
       parameters:
         - {name: id, in: path, required: true, type: integer}
@@ -1206,7 +1206,7 @@ paths:
           schema:
             $ref: "#/definitions/Response.Error"
     post:
-      summary: "pg_MANTRA: start a backup, check, config change, schedule or restore on a setup found by Discover"
+      summary: "KeenPG: start a backup, check, config change, schedule or restore on a setup found by Discover"
       tags: [backup]
       parameters:
         - {name: id, in: path, required: true, type: integer}
@@ -1227,7 +1227,7 @@ paths:
 
   /backups/discoveries/{id}/jobs/{uid}:
     get:
-      summary: "pg_MANTRA: one backup job with its log"
+      summary: "KeenPG: one backup job with its log"
       tags: [backup]
       parameters:
         - {name: id, in: path, required: true, type: integer}
@@ -1244,7 +1244,7 @@ paths:
 
   /backups/activity:
     get:
-      summary: "autoNOMIC: backups running now on any cluster the user may back up (started by a schedule, by hand or by the console)"
+      summary: "KeenPG: backups running now on any cluster the user may back up (started by a schedule, by hand or by the console)"
       tags: [backup]
       parameters:
         - {name: fresh, in: query, required: false, type: boolean, description: "ask the nodes now (else at most every 45 s)"}
@@ -1260,7 +1260,7 @@ paths:
 
   /backups/clusters/{id}/status:
     post:
-      summary: "pg_MANTRA: pgBackRest of a console cluster: backups, recovery window, config and schedule on every node (live, over SSH)"
+      summary: "KeenPG: pgBackRest of a console cluster: backups, recovery window, config and schedule on every node (live, over SSH)"
       tags: [backup]
       parameters:
         - {name: id, in: path, required: true, type: integer}
@@ -1281,7 +1281,7 @@ paths:
 
   /backups/clusters/{id}/jobs:
     get:
-      summary: "pg_MANTRA: backup / restore / config / schedule jobs of a console cluster, newest first"
+      summary: "KeenPG: backup / restore / config / schedule jobs of a console cluster, newest first"
       tags: [backup]
       parameters:
         - {name: id, in: path, required: true, type: integer}
@@ -1297,7 +1297,7 @@ paths:
           schema:
             $ref: "#/definitions/Response.Error"
     post:
-      summary: "pg_MANTRA: start a backup, check, config change, schedule or restore on a console cluster"
+      summary: "KeenPG: start a backup, check, config change, schedule or restore on a console cluster"
       tags: [backup]
       parameters:
         - {name: id, in: path, required: true, type: integer}
@@ -1318,7 +1318,7 @@ paths:
 
   /backups/clusters/{id}/jobs/{uid}:
     get:
-      summary: "pg_MANTRA: one backup job with its log"
+      summary: "KeenPG: one backup job with its log"
       tags: [backup]
       parameters:
         - {name: id, in: path, required: true, type: integer}

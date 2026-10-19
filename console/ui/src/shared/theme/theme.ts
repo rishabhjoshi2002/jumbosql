@@ -12,21 +12,21 @@ declare module '@mui/material/styles' {
 }
 
 /**
- * autoNOMIC design tokens. Colours come from the logo: royal navy ring (chrome), circuit blue (primary),
- * gold (the NOMIC letters, highlights) and sky (accent). The header and sidebar are always dark ("chrome");
- * the content area follows the light/dark mode.
+ * KeenPG design tokens, taken from the logo: deep navy (the "Keen" letters, header and sidebar), cobalt blue
+ * (primary), teal and green (the "PG" letters and the trunk - accents, success). The header and sidebar are always
+ * dark ("chrome"); the content area follows the light/dark mode.
  */
 export const BRAND = Object.freeze({
-  name: 'autoNOMIC',
-  cli: 'atmos',
-  navy900: '#071430',
-  navy800: '#0B1D3F',
-  navy700: '#11295A',
-  blue: '#1D6FE0',
-  blueHover: '#165BBE',
-  sky: '#38B2F5',
-  gold: '#F4B321',
-  goldDeep: '#C98A0B',
+  name: 'KeenPG',
+  tagline: 'Manage PostgreSQL With Ease',
+  navy900: '#07172A',
+  navy800: '#0B2036',
+  navy700: '#102D4A',
+  blue: '#1565D8',
+  blueHover: '#0F52B5',
+  sky: '#14B3C7',
+  green: '#22C27A',
+  greenDeep: '#14955B',
   chromeText: '#E6EDF8',
   chromeMuted: 'rgba(230, 237, 248, 0.64)',
   fontSans: '"Plus Jakarta Sans", "Segoe UI", system-ui, -apple-system, sans-serif',
@@ -37,16 +37,16 @@ export const createAppTheme = (mode: PaletteMode) => {
   const isLight = mode === 'light';
 
   const t = {
-    bg: isLight ? '#F3F6FB' : '#0A1120',
-    paper: isLight ? '#FFFFFF' : '#111B2E',
-    paperRaised: isLight ? '#FFFFFF' : '#16223A',
-    subtle: isLight ? '#F6F8FC' : '#152038',
-    border: isLight ? '#E2E8F1' : '#22314F',
-    borderStrong: isLight ? '#CCD6E4' : '#2E4067',
-    text: isLight ? '#13233F' : '#E3EAF5',
-    textMuted: isLight ? '#55657E' : '#9AABC6',
-    hover: isLight ? '#EEF3FB' : '#1A2742',
-    primary: isLight ? BRAND.blue : '#4C8FF0',
+    bg: isLight ? '#F4F7FA' : '#08131F',
+    paper: isLight ? '#FFFFFF' : '#0F1D2C',
+    paperRaised: isLight ? '#FFFFFF' : '#132436',
+    subtle: isLight ? '#F6F9FB' : '#122233',
+    border: isLight ? '#E1E8EF' : '#1F344B',
+    borderStrong: isLight ? '#CAD5E0' : '#2B4663',
+    text: isLight ? '#0B2036' : '#E3EBF4',
+    textMuted: isLight ? '#52647A' : '#97AAC0',
+    hover: isLight ? '#EEF4F8' : '#16283B',
+    primary: isLight ? BRAND.blue : '#4D93F0',
     danger: isLight ? '#D93636' : '#F06464',
   };
 
@@ -57,9 +57,10 @@ export const createAppTheme = (mode: PaletteMode) => {
         primary: {
           main: t.primary,
           dark: BRAND.blueHover,
-          lighter10: isLight ? 'rgba(29, 111, 224, 0.10)' : 'rgba(76, 143, 240, 0.16)',
+          lighter10: isLight ? 'rgba(21, 101, 216, 0.10)' : 'rgba(77, 147, 240, 0.16)',
         },
-        secondary: { main: BRAND.sky },
+        secondary: { main: BRAND.green },
+        success: { main: isLight ? BRAND.greenDeep : BRAND.green },
         error: { main: t.danger },
         background: { default: t.bg, paper: t.paper },
         text: { primary: t.text, secondary: t.textMuted },

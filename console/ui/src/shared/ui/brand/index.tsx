@@ -1,44 +1,39 @@
 import { FC } from 'react';
 import { Box, BoxProps } from '@mui/material';
 import { BRAND } from '@shared/theme/theme.ts';
+import icon from '@shared/assets/keenpgIcon.png';
+import logoLight from '@shared/assets/keenpgLogo.png';
+import logoDark from '@shared/assets/keenpgLogoDark.png';
 
-/**
- * The autoNOMIC mark, drawn (not a picture), so it stays sharp at any size: the dial of the logo - a gold arc and a
- * blue arc on a navy disc - with the atmos prompt ">_" in the middle.
- */
+/** the KeenPG elephant (the logo without its name), for small places: header, favicon, watermark */
 export const BrandMark: FC<{ size?: number; title?: string }> = ({ size = 32, title = BRAND.name }) => (
-  <svg
-    width={size}
-    height={size}
-    viewBox="0 0 64 64"
-    role="img"
-    aria-label={title}
+  <Box
+    component="img"
+    src={icon}
+    alt={title}
     data-logo="true"
-    style={{ flexShrink: 0, display: 'block' }}>
-    <circle cx="32" cy="32" r="30.5" fill="#102A5C" stroke="rgba(255,255,255,0.55)" strokeWidth="2" />
-    <circle cx="32" cy="32" r="25" fill="none" stroke="#1D3B78" strokeWidth="4" />
-    <path d="M32 7 A25 25 0 1 1 9.2 42.2" fill="none" stroke={BRAND.gold} strokeWidth="4" strokeLinecap="round" />
-    <path
-      d="M9.2 42.2 A25 25 0 0 1 32 7"
-      fill="none"
-      stroke={BRAND.sky}
-      strokeWidth="4"
-      strokeLinecap="round"
-      opacity="0.9"
-    />
-    <path
-      d="M20 23 L29 32 L20 41"
-      fill="none"
-      stroke="#FFFFFF"
-      strokeWidth="4.5"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    />
-    <rect x="32" y="37.5" width="13" height="4.5" rx="1.5" fill={BRAND.gold} />
-  </svg>
+    sx={{ width: size, height: size, flexShrink: 0, display: 'block', objectFit: 'contain' }}
+  />
 );
 
-/** the product name as the logo writes it: "auto" and a bold gold "NOMIC" */
+/** the full KeenPG logo with its name and tagline; onDark uses the version with light letters */
+export const BrandLogo: FC<{ width?: number | string; onDark?: boolean } & Omit<BoxProps, 'children'>> = ({
+  width = 240,
+  onDark,
+  sx,
+  ...rest
+}) => (
+  <Box
+    component="img"
+    src={onDark ? logoDark : logoLight}
+    alt={`${BRAND.name} - ${BRAND.tagline}`}
+    data-logo="true"
+    sx={{ width, height: 'auto', display: 'block', ...sx }}
+    {...rest}
+  />
+);
+
+/** the name as the logo writes it: "Keen" in navy (white on dark) and "PG" in the logo's blue-to-green */
 export const BrandName: FC<{ size?: number | string; light?: boolean } & Omit<BoxProps, 'children'>> = ({
   size = '1.1rem',
   light = true,
@@ -47,13 +42,22 @@ export const BrandName: FC<{ size?: number | string; light?: boolean } & Omit<Bo
 }) => (
   <Box
     component="span"
-    sx={{ fontSize: size, letterSpacing: '-0.01em', lineHeight: 1.1, whiteSpace: 'nowrap', ...sx }}
+    sx={{ fontSize: size, fontWeight: 800, letterSpacing: '-0.01em', lineHeight: 1.1, whiteSpace: 'nowrap', ...sx }}
     {...rest}>
-    <Box component="span" sx={{ fontWeight: 600, color: light ? BRAND.chromeText : 'text.primary' }}>
-      auto
+    <Box component="span" sx={{ color: light ? '#FFFFFF' : 'text.primary' }}>
+      Keen
     </Box>
-    <Box component="span" sx={{ fontWeight: 800, color: light ? BRAND.gold : BRAND.goldDeep }}>
-      NOMIC
+    <Box
+      component="span"
+      sx={{
+        background: light
+          ? `linear-gradient(90deg, #4D9BFF, ${BRAND.sky} 45%, #3BE08F)`
+          : `linear-gradient(90deg, ${BRAND.blue}, ${BRAND.sky} 45%, ${BRAND.green})`,
+        WebkitBackgroundClip: 'text',
+        backgroundClip: 'text',
+        color: 'transparent',
+      }}>
+      PG
     </Box>
   </Box>
 );

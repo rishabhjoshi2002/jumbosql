@@ -421,7 +421,7 @@ const BackupFlow: FC<{
           ) : null}
         </Box>
 
-        {/* the repository (or autoNOMIC itself for config / schedule / repositories) */}
+        {/* the repository (or KeenPG itself for config / schedule / repositories) */}
         <Stack justifyContent="center" sx={{ flex: '0 0 200px', minWidth: 180, height: H, position: 'relative' }}>
           <Stack
             alignItems="center"
@@ -468,7 +468,7 @@ const BackupFlow: FC<{
               />
             )}
             <Typography variant="body2" fontWeight={800} textAlign="center">
-              {right ? 'autoNOMIC' : t('flow.repository')}
+              {right ? 'KeenPG' : t('flow.repository')}
             </Typography>
             <Typography variant="caption" color="text.secondary" textAlign="center" sx={{ wordBreak: 'break-all' }}>
               {right

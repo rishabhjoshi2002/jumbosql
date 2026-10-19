@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-pgm_backup.py - pg_MANTRA backups: pgBackRest on one machine. The console runs it over SSH (status) and the
+pgm_backup.py - KeenPG backups: pgBackRest on one machine. The console runs it over SSH (status) and the
 backup playbook runs it with Ansible (everything else). Called with an action and a base64 JSON spec; it prints
 one JSON object (the last line of its output).
 
@@ -1178,7 +1178,7 @@ def repo_file(n):
 
 
 def block_marks(n):
-    return f"# >>> autoNOMIC repository {int(n)}", f"# <<< autoNOMIC repository {int(n)}"
+    return f"# >>> KeenPG repository {int(n)}", f"# <<< KeenPG repository {int(n)}"
 
 
 def repo_managed(n):
@@ -1287,7 +1287,7 @@ def repo_add(spec):
                                    "after a failover the new primary writes there too")
     if path:
         os.makedirs(os.path.dirname(path), exist_ok=True)
-        body = f"# autoNOMIC: repository {n} ({d.get('type', 'posix')}), added from the Backup & Restore page\n" + text
+        body = f"# KeenPG: repository {n} ({d.get('type', 'posix')}), added from the Backup & Restore page\n" + text
     else:
         path = conf_path()  # pgBackRest reads only this file here: a marked block in its [global] section
         body = put_block(open(path, errors="ignore").read() if os.path.exists(path) else "", n, text)
@@ -1374,7 +1374,7 @@ def schedule(spec):
     sock = f"-h {pg['socket']} " if pg.get("socket") else ""
     # on a database node, only the primary backs up (after a failover the new primary takes over)
     guard = "" if pg.get("host") else f"[ \"$({psql_exe} -XAt {sock}-p {pg['port']} -d postgres -c 'select pg_is_in_recovery()' 2>/dev/null)\" = \"f\" ] && "
-    lines = ["# autoNOMIC: pgBackRest schedule (managed from the Backup & Restore page - changes here are overwritten)",
+    lines = ["# KeenPG: pgBackRest schedule (managed from the Backup & Restore page - changes here are overwritten)",
              "SHELL=/bin/sh", "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"]
     for e in entries:
         t = e.get("type")
