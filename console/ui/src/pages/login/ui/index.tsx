@@ -22,7 +22,6 @@ import { LoginFormValues } from '@pages/login/model/types.ts';
 import { LOGIN_FORM_FIELD_NAMES } from '@pages/login/model/constants.ts';
 import { usePostAuthLoginMutation } from '@shared/api/api/auth.ts';
 import { setSession } from '@shared/lib/session.ts';
-import { BRAND } from '@shared/theme/theme.ts';
 import { version } from '../../../../package.json';
 import { BrandLogo, BrandMark, BrandName } from '@shared/ui/brand';
 import Scene3D from './Scene3D.tsx';
@@ -66,28 +65,28 @@ const Login: FC = () => {
 
   return (
     <Stack direction={isWide ? 'row' : 'column'} minHeight="100vh" sx={{ bgcolor: 'background.paper' }}>
-      {/* the scene: the cluster in 3D, full-bleed; brand on top, headline at the bottom */}
+      {/* the scene: what KeenPG does, in 3D, on a light background; brand on top, headline at the bottom */}
       <Box
-        data-surface="chrome"
         sx={{
           position: 'relative',
           flex: isWide ? '1 1 62%' : 'none',
-          minHeight: isWide ? '100vh' : 360,
-          color: BRAND.chromeText,
-          bgcolor: BRAND.navy900,
+          minHeight: isWide ? '100vh' : 380,
           overflow: 'hidden',
-        }}>
-        <Scene3D />
-        {/* a soft shade at the top and bottom so the text stays readable over the scene */}
-        <Box
-          aria-hidden
-          sx={{
+          background: dark
+            ? 'radial-gradient(900px 600px at 50% 45%, #15406A 0%, transparent 70%), linear-gradient(150deg, #0F2A45 0%, #0E3442 100%)'
+            : 'radial-gradient(900px 600px at 50% 45%, #FFFFFF 0%, transparent 70%), linear-gradient(150deg, #EAF2FF 0%, #E9F8F6 55%, #E6F8EE 100%)',
+          // a fine honeycomb, like the facets of the logo
+          '&::before': {
+            content: '""',
             position: 'absolute',
             inset: 0,
-            pointerEvents: 'none',
-            background: `linear-gradient(180deg, ${BRAND.navy900}E6 0%, transparent 22%, transparent 64%, ${BRAND.navy900}F2 100%)`,
-          }}
-        />
+            backgroundImage: `url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='56' height='97' viewBox='0 0 56 97'><path d='M28 0 56 16v32L28 64 0 48V16zM28 97V64' fill='none' stroke='%231565D8' stroke-opacity='.09' stroke-width='1'/></svg>")`,
+            backgroundSize: '56px 97px',
+            opacity: dark ? 0.6 : 1,
+            maskImage: 'radial-gradient(circle at 50% 45%, transparent 18%, black 75%)',
+          },
+        }}>
+        <Scene3D />
         <Stack
           sx={{ position: 'relative', height: '100%', minHeight: 'inherit', pointerEvents: 'none' }}
           justifyContent="space-between"
@@ -95,22 +94,22 @@ const Login: FC = () => {
           py={{ xs: 3, md: 5 }}>
           <Stack direction="row" alignItems="center" gap={1.25}>
             <BrandMark size={44} />
-            <BrandName size="1.35rem" />
+            <BrandName size="1.35rem" light={dark} />
           </Stack>
           {isWide ? (
             <Box sx={{ maxWidth: 640 }}>
               <Typography
                 component="h1"
                 sx={{
-                  fontWeight: 700,
+                  fontWeight: 800,
                   fontSize: '2.4rem',
                   lineHeight: 1.12,
                   letterSpacing: '-0.025em',
-                  color: '#fff',
+                  color: 'text.primary',
                 }}>
                 {t('loginHeadline')}
               </Typography>
-              <Typography sx={{ color: BRAND.chromeMuted, mt: 1.5, fontSize: '1.05rem', lineHeight: 1.6 }}>
+              <Typography color="text.secondary" sx={{ mt: 1.25, fontSize: '1.05rem', lineHeight: 1.6 }}>
                 {t('loginSub')}
               </Typography>
             </Box>
