@@ -79,17 +79,17 @@ const UserMenu: FC = () => {
       <Button
         onClick={(e) => setAnchor(e.currentTarget)}
         sx={{
-          color: BRAND.chromeText,
+          color: 'text.primary',
           gap: '10px',
           px: '8px',
-          '&:hover': { backgroundColor: 'rgba(255,255,255,0.08)' },
+          '&:hover': { backgroundColor: 'action.hover' },
         }}>
-        <Avatar sx={{ width: 32, height: 32, fontSize: '0.8rem', fontWeight: 700, bgcolor: BRAND.blue }}>
+        <Avatar sx={{ width: 32, height: 32, fontSize: '0.8rem', fontWeight: 700, bgcolor: BRAND.violet, color: '#FFFFFF' }}>
           {initials(name)}
         </Avatar>
         <Box textAlign="left" sx={{ lineHeight: 1.1, display: { xs: 'none', md: 'block' } }}>
-          <Typography sx={{ fontSize: '0.86rem', fontWeight: 700, color: BRAND.chromeText }}>{name}</Typography>
-          <Typography sx={{ fontSize: '0.72rem', color: BRAND.chromeMuted, textTransform: 'capitalize' }}>
+          <Typography sx={{ fontSize: '0.86rem', fontWeight: 700, color: 'text.primary' }}>{name}</Typography>
+          <Typography sx={{ fontSize: '0.72rem', color: 'text.secondary', textTransform: 'capitalize' }}>
             {userGroup(user) || user?.username}
           </Typography>
         </Box>

@@ -72,14 +72,14 @@ const Login: FC = () => {
           minHeight: isWide ? '100vh' : 380,
           overflow: 'hidden',
           background: dark
-            ? 'radial-gradient(900px 600px at 50% 45%, #15406A 0%, transparent 70%), linear-gradient(150deg, #0F2A45 0%, #0E3442 100%)'
-            : 'radial-gradient(900px 600px at 50% 45%, #FFFFFF 0%, transparent 70%), linear-gradient(150deg, #EAF2FF 0%, #E9F8F6 55%, #E6F8EE 100%)',
+            ? 'radial-gradient(900px 600px at 50% 45%, #2A2350 0%, transparent 70%), linear-gradient(150deg, #17132E 0%, #241B33 100%)'
+            : 'radial-gradient(900px 600px at 50% 45%, #FFFFFF 0%, transparent 70%), linear-gradient(150deg, #F1EEFC 0%, #F7F1F8 55%, #FDF1E2 100%)',
           // a fine honeycomb, like the facets of the logo
           '&::before': {
             content: '""',
             position: 'absolute',
             inset: 0,
-            backgroundImage: `url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='56' height='97' viewBox='0 0 56 97'><path d='M28 0 56 16v32L28 64 0 48V16zM28 97V64' fill='none' stroke='%231565D8' stroke-opacity='.09' stroke-width='1'/></svg>")`,
+            backgroundImage: `url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='56' height='97' viewBox='0 0 56 97'><path d='M28 0 56 16v32L28 64 0 48V16zM28 97V64' fill='none' stroke='%234B3AC4' stroke-opacity='.09' stroke-width='1'/></svg>")`,
             backgroundSize: '56px 97px',
             opacity: dark ? 0.6 : 1,
             maskImage: 'radial-gradient(circle at 50% 45%, transparent 18%, black 75%)',

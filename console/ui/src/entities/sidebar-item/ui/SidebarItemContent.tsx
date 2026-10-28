@@ -4,7 +4,7 @@ import { ListItemButton, ListItemIcon, ListItemText } from '@mui/material';
 import { SidebarItemProps } from '@entities/sidebar-item/model/types.ts';
 import { BRAND } from '@shared/theme/theme.ts';
 
-// pg_mantra: sidebar items sit on the dark navy chrome; the active page is a blue pill.
+// KeenPG: sidebar items on the light sidebar; the active page is a violet pill.
 const SidebarItemContent: FC<SidebarItemProps> = ({
   path,
   label,
@@ -22,12 +22,12 @@ const SidebarItemContent: FC<SidebarItemProps> = ({
       px: isCollapsed ? 0 : '12px',
       borderRadius: '10px',
       justifyContent: isCollapsed ? 'center' : 'flex-start',
-      color: isActive ? '#FFFFFF' : BRAND.chromeMuted,
-      backgroundColor: isActive ? BRAND.blue : 'transparent',
-      boxShadow: isActive ? '0 6px 16px rgba(29, 111, 224, 0.35)' : 'none',
+      color: isActive ? '#FFFFFF' : 'text.secondary',
+      backgroundImage: isActive ? `linear-gradient(180deg, #5645D3 0%, ${BRAND.violet} 100%)` : 'none',
+      boxShadow: isActive ? '0 6px 16px rgba(75, 58, 196, 0.30)' : 'none',
       '&:hover': {
-        backgroundColor: isActive ? BRAND.blue : 'rgba(255, 255, 255, 0.07)',
-        color: '#FFFFFF',
+        backgroundColor: isActive ? BRAND.violet : 'action.hover',
+        color: isActive ? '#FFFFFF' : 'text.primary',
       },
     }}
     to={path}

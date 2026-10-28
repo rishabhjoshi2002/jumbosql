@@ -27,12 +27,12 @@ const ICON = {
 };
 
 const TILES: { icon: keyof typeof ICON; title: string; sub: string; from: string; to: string }[] = [
-  { icon: 'secure', title: 'Secure', sub: 'Access policies and audit', from: '#1565D8', to: '#14B3C7' },
-  { icon: 'auto', title: 'Automated', sub: 'Build and run clusters', from: '#14B3C7', to: '#2BD18B' },
-  { icon: 'backup', title: 'Backups', sub: 'Restore to any second', from: '#1565D8', to: '#2BD18B' },
-  { icon: 'ha', title: 'High Availability', sub: 'Failover in seconds', from: '#14B3C7', to: '#1565D8' },
-  { icon: 'insights', title: 'Insights', sub: 'Health and forecasts', from: '#2BD18B', to: '#14B3C7' },
-  { icon: 'upgrade', title: 'Upgrades', sub: 'Always with a rollback', from: '#1565D8', to: '#14B3C7' },
+  { icon: 'secure', title: 'Secure', sub: 'Access policies and audit', from: '#4B3AC4', to: '#7B5CF0' },
+  { icon: 'auto', title: 'Automated', sub: 'Build and run clusters', from: '#F5A10F', to: '#F07A1A' },
+  { icon: 'backup', title: 'Backups', sub: 'Restore to any second', from: '#F07A1A', to: '#4B3AC4' },
+  { icon: 'ha', title: 'High Availability', sub: 'Failover in seconds', from: '#F5A10F', to: '#F07A1A' },
+  { icon: 'insights', title: 'Insights', sub: 'Health and forecasts', from: '#4B3AC4', to: '#7B5CF0' },
+  { icon: 'upgrade', title: 'Upgrades', sub: 'Always with a rollback', from: '#F07A1A', to: '#4B3AC4' },
 ];
 
 /** the front of a tile: an icon on a coloured chip, the title and one line under it */
@@ -62,10 +62,10 @@ const tileTexture = (t: (typeof TILES)[number]) => {
   g.fillStyle = '#FFFFFF';
   g.fill(new Path2D(ICON[t.icon]));
   g.restore();
-  g.fillStyle = '#0B2036';
+  g.fillStyle = '#261C51';
   g.font = '700 54px "Plus Jakarta Sans", system-ui, sans-serif';
   g.fillText(t.title, 64, 270);
-  g.fillStyle = '#52647A';
+  g.fillStyle = '#5E5880';
   g.font = '500 34px "Plus Jakarta Sans", system-ui, sans-serif';
   g.fillText(t.sub, 64, 328);
   const tex = new THREE.CanvasTexture(c);
@@ -110,7 +110,7 @@ const Scene3D: FC = () => {
     const camera = new THREE.PerspectiveCamera(34, W() / H(), 0.1, 100);
     const look = new THREE.Vector3(0, -0.7, 0);
 
-    scene.add(new THREE.HemisphereLight(0xffffff, 0xd6e6ff, 1.1));
+    scene.add(new THREE.HemisphereLight(0xffffff, 0xe6e0ff, 1.1));
     const key = new THREE.DirectionalLight(0xffffff, 1.8);
     key.position.set(4, 10, 7);
     key.castShadow = true;
@@ -151,7 +151,7 @@ const Scene3D: FC = () => {
     rimCanvas.height = 4;
     const rg = rimCanvas.getContext('2d')!;
     const rgrad = rg.createLinearGradient(0, 0, 256, 0);
-    ['#1565D8', '#14B3C7', '#2BD18B', '#14B3C7', '#1565D8'].forEach((c, i) => rgrad.addColorStop(i / 4, c));
+    ['#4B3AC4', '#7B5CF0', '#F5A10F', '#7B5CF0', '#4B3AC4'].forEach((c, i) => rgrad.addColorStop(i / 4, c));
     rg.fillStyle = rgrad;
     rg.fillRect(0, 0, 256, 4);
     const rimTex = new THREE.CanvasTexture(rimCanvas);
@@ -172,7 +172,7 @@ const Scene3D: FC = () => {
       logoMat.needsUpdate = true;
       if (still) frame(); // the still frame is drawn again with the logo
     });
-    const logo = new THREE.Mesh(new THREE.PlaneGeometry(2.9, 2.9 * (748 / 900)), logoMat);
+    const logo = new THREE.Mesh(new THREE.PlaneGeometry(3.3, 3.3 * (501 / 900)), logoMat);
     logo.position.set(0, 0.04, 0.125);
     core.add(logo);
     // a soft halo behind the badge
@@ -180,8 +180,8 @@ const Scene3D: FC = () => {
     haloCanvas.width = haloCanvas.height = 256;
     const hg = haloCanvas.getContext('2d')!;
     const hgrad = hg.createRadialGradient(128, 128, 60, 128, 128, 128);
-    hgrad.addColorStop(0, 'rgba(20,179,199,0.35)');
-    hgrad.addColorStop(1, 'rgba(20,179,199,0)');
+    hgrad.addColorStop(0, 'rgba(123,92,240,0.28)');
+    hgrad.addColorStop(1, 'rgba(123,92,240,0)');
     hg.fillStyle = hgrad;
     hg.fillRect(0, 0, 256, 256);
     const haloTex = new THREE.CanvasTexture(haloCanvas);
@@ -197,7 +197,7 @@ const Scene3D: FC = () => {
       new THREE.EdgesGeometry(new THREE.IcosahedronGeometry(2.9, 1)),
       // only the half behind the badge, like a cage around the logo
       new THREE.LineBasicMaterial({
-        color: 0x5aa7ff,
+        color: 0x9c8cf2,
         transparent: true,
         opacity: 0.4,
         clippingPlanes: [new THREE.Plane(new THREE.Vector3(0, 0, -1), 0)],
@@ -213,7 +213,7 @@ const Scene3D: FC = () => {
     const R = 4.6;
     const ring = new THREE.Mesh(
       new THREE.TorusGeometry(R, 0.018, 8, 200),
-      new THREE.MeshBasicMaterial({ color: 0x7db6ff, transparent: true, opacity: 0.7 }),
+      new THREE.MeshBasicMaterial({ color: 0xa898f5, transparent: true, opacity: 0.7 }),
     );
     ring.rotation.x = Math.PI / 2;
     ring.scale.set(1.12, 0.8, 1);
@@ -252,8 +252,8 @@ const Scene3D: FC = () => {
     });
 
     // links from the core to each tile, with a pulse travelling out
-    const linkMat = new THREE.LineBasicMaterial({ color: 0x5aa7ff, transparent: true, opacity: 0.5 });
-    const pulseMat = new THREE.MeshBasicMaterial({ color: 0x14b3c7 });
+    const linkMat = new THREE.LineBasicMaterial({ color: 0x9c8cf2, transparent: true, opacity: 0.5 });
+    const pulseMat = new THREE.MeshBasicMaterial({ color: 0xf5a10f });
     const links = tiles.map(() => {
       const geo = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(), new THREE.Vector3()]);
       const line = new THREE.Line(geo, linkMat);
@@ -275,7 +275,7 @@ const Scene3D: FC = () => {
     dustGeo.setAttribute('position', new THREE.BufferAttribute(dustPos, 3));
     const dust = new THREE.Points(
       dustGeo,
-      new THREE.PointsMaterial({ color: 0x6aa8f0, size: 0.045, transparent: true, opacity: 0.55 }),
+      new THREE.PointsMaterial({ color: 0x9c8cf2, size: 0.045, transparent: true, opacity: 0.55 }),
     );
     scene.add(dust);
 

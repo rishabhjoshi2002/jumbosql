@@ -12,23 +12,31 @@ declare module '@mui/material/styles' {
 }
 
 /**
- * KeenPG design tokens, taken from the logo: deep navy (the "Keen" letters, header and sidebar), cobalt blue
- * (primary), teal and green (the "PG" letters and the trunk - accents, success). The header and sidebar are always
- * dark ("chrome"); the content area follows the light/dark mode.
+ * KeenPG design tokens, taken from the logo: deep indigo (the elephant and "PG"), a violet primary for actions and
+ * the active page, and the heron's orange as the accent ("keen"). Header and sidebar are light surfaces that follow
+ * the light/dark mode, like the content.
  */
 export const BRAND = Object.freeze({
   name: 'KeenPG',
-  tagline: 'Manage PostgreSQL With Ease',
-  navy900: '#07172A',
-  navy800: '#0B2036',
-  navy700: '#102D4A',
-  blue: '#1565D8',
-  blueHover: '#0F52B5',
-  sky: '#14B3C7',
-  green: '#22C27A',
-  greenDeep: '#14955B',
-  chromeText: '#E6EDF8',
-  chromeMuted: 'rgba(230, 237, 248, 0.64)',
+  tagline: 'A Keen Eye on Your Postgres',
+  ink: '#261C51',
+  inkSoft: '#3A2F73',
+  violet: '#4B3AC4',
+  violetHover: '#3C2DA6',
+  violetLight: '#8C7CFF',
+  orange: '#F5A10F',
+  orangeDeep: '#D9870A',
+  // older names, kept so every page picks up the new colours
+  navy900: '#1A1338',
+  navy800: '#221A47',
+  navy700: '#2C2259',
+  blue: '#4B3AC4',
+  blueHover: '#3C2DA6',
+  sky: '#F5A10F',
+  green: '#22A36A',
+  greenDeep: '#178A55',
+  chromeText: '#ECE9FF',
+  chromeMuted: 'rgba(236, 233, 255, 0.66)',
   fontSans: '"Plus Jakarta Sans", "Segoe UI", system-ui, -apple-system, sans-serif',
   fontMono: '"JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace',
 });
@@ -37,16 +45,16 @@ export const createAppTheme = (mode: PaletteMode) => {
   const isLight = mode === 'light';
 
   const t = {
-    bg: isLight ? '#F4F7FA' : '#08131F',
-    paper: isLight ? '#FFFFFF' : '#0F1D2C',
-    paperRaised: isLight ? '#FFFFFF' : '#132436',
-    subtle: isLight ? '#F6F9FB' : '#122233',
-    border: isLight ? '#E1E8EF' : '#1F344B',
-    borderStrong: isLight ? '#CAD5E0' : '#2B4663',
-    text: isLight ? '#0B2036' : '#E3EBF4',
-    textMuted: isLight ? '#52647A' : '#97AAC0',
-    hover: isLight ? '#EEF4F8' : '#16283B',
-    primary: isLight ? BRAND.blue : '#4D93F0',
+    bg: isLight ? '#F5F4FB' : '#0F0D1E',
+    paper: isLight ? '#FFFFFF' : '#17142B',
+    paperRaised: isLight ? '#FFFFFF' : '#1D1935',
+    subtle: isLight ? '#F7F6FC' : '#1B1832',
+    border: isLight ? '#E7E4F3' : '#2A2549',
+    borderStrong: isLight ? '#D3CEE8' : '#3A3463',
+    text: isLight ? '#1E1745' : '#ECE9FF',
+    textMuted: isLight ? '#5E5880' : '#ABA5CC',
+    hover: isLight ? '#F1EFFA' : '#221E3D',
+    primary: isLight ? BRAND.violet : BRAND.violetLight,
     danger: isLight ? '#D93636' : '#F06464',
   };
 
@@ -56,10 +64,10 @@ export const createAppTheme = (mode: PaletteMode) => {
         mode,
         primary: {
           main: t.primary,
-          dark: BRAND.blueHover,
-          lighter10: isLight ? 'rgba(21, 101, 216, 0.10)' : 'rgba(77, 147, 240, 0.16)',
+          dark: BRAND.violetHover,
+          lighter10: isLight ? 'rgba(75, 58, 196, 0.10)' : 'rgba(140, 124, 255, 0.16)',
         },
-        secondary: { main: BRAND.green },
+        secondary: { main: BRAND.orange, contrastText: '#1E1745' },
         success: { main: isLight ? BRAND.greenDeep : BRAND.green },
         error: { main: t.danger },
         background: { default: t.bg, paper: t.paper },
@@ -105,19 +113,16 @@ export const createAppTheme = (mode: PaletteMode) => {
                 { fill: `${c} !important`, color: `${c} !important` },
               ]),
             ),
-            // Header and sidebar are dark in both modes: light icons and text there
-            '[data-surface="chrome"] svg.MuiSvgIcon-root, [data-surface="chrome"] svg.MuiSvgIcon-root path': {
-              fill: `${BRAND.chromeText} !important`,
-              color: `${BRAND.chromeText} !important`,
-            },
-            '[data-surface="chrome"] .MuiIconButton-root:hover': {
-              backgroundColor: 'rgba(255, 255, 255, 0.10)',
-            },
             '[data-logo="true"]': {
               fill: 'unset !important',
               color: 'unset !important',
             },
             '.logo, .logo *': { fill: 'unset !important', color: 'unset !important' },
+            // white icons on the gradient chips (home page)
+            '.kp-chip svg.MuiSvgIcon-root, .kp-chip svg.MuiSvgIcon-root path': {
+              fill: '#FFFFFF !important',
+              color: '#FFFFFF !important',
+            },
             // Primary-coloured icons (e.g. inside contained buttons) keep their colour
             '.MuiButton-contained svg.MuiSvgIcon-root, .MuiButton-contained svg.MuiSvgIcon-root path': {
               fill: '#FFFFFF !important',
@@ -128,19 +133,19 @@ export const createAppTheme = (mode: PaletteMode) => {
         MuiAppBar: {
           styleOverrides: {
             colorPrimary: {
-              background: `linear-gradient(90deg, ${BRAND.navy900} 0%, ${BRAND.navy800} 55%, ${BRAND.navy700} 100%)`,
-              borderBottom: '1px solid rgba(255,255,255,0.06)',
-              color: BRAND.chromeText,
-              boxShadow: '0 1px 0 rgba(7, 20, 48, 0.4)',
+              background: t.paper,
+              borderBottom: `1px solid ${t.border}`,
+              color: t.text,
+              boxShadow: 'none',
             },
           },
         },
         MuiDrawer: {
           styleOverrides: {
             paper: {
-              backgroundColor: BRAND.navy800,
-              borderRight: 'none',
-              color: BRAND.chromeText,
+              backgroundColor: t.paper,
+              borderRight: `1px solid ${t.border}`,
+              color: t.text,
             },
           },
         },
@@ -175,7 +180,7 @@ export const createAppTheme = (mode: PaletteMode) => {
               backgroundImage: 'none',
               borderColor: t.border,
               boxShadow: isLight
-                ? '0 1px 2px rgba(16, 35, 72, 0.06), 0 0 0 1px rgba(16, 35, 72, 0.05)'
+                ? '0 1px 2px rgba(38, 28, 81, 0.05), 0 0 0 1px rgba(38, 28, 81, 0.05)'
                 : '0 0 0 1px rgba(255, 255, 255, 0.05), 0 6px 20px rgba(0, 0, 0, 0.25)',
             },
           },
@@ -191,7 +196,7 @@ export const createAppTheme = (mode: PaletteMode) => {
               backgroundColor: t.paperRaised,
               border: `1px solid ${t.border}`,
               borderRadius: '12px',
-              boxShadow: '0 12px 32px rgba(7, 20, 48, 0.18)',
+              boxShadow: '0 12px 32px rgba(38, 28, 81, 0.18)',
             },
           },
         },
@@ -203,8 +208,8 @@ export const createAppTheme = (mode: PaletteMode) => {
               margin: '2px 6px',
               '&:hover': { backgroundColor: t.hover },
               '&.Mui-selected': {
-                backgroundColor: isLight ? 'rgba(29,111,224,0.10)' : 'rgba(76,143,240,0.18)',
-                '&:hover': { backgroundColor: isLight ? 'rgba(29,111,224,0.16)' : 'rgba(76,143,240,0.26)' },
+                backgroundColor: isLight ? 'rgba(75,58,196,0.10)' : 'rgba(140,124,255,0.18)',
+                '&:hover': { backgroundColor: isLight ? 'rgba(75,58,196,0.16)' : 'rgba(140,124,255,0.26)' },
               },
             },
           },
@@ -276,7 +281,15 @@ export const createAppTheme = (mode: PaletteMode) => {
               '&:focus-visible': { outline: `2px solid ${t.primary}`, outlineOffset: '2px' },
             },
             contained: {
-              '&:hover': { backgroundColor: BRAND.blueHover },
+              '&:hover': { backgroundColor: isLight ? BRAND.violetHover : '#7A69F5' },
+            },
+            containedPrimary: {
+              backgroundImage: isLight
+                ? `linear-gradient(180deg, #5645D3 0%, ${BRAND.violet} 100%)`
+                : 'linear-gradient(180deg, #9A8BFF 0%, #8070FA 100%)',
+              boxShadow: isLight ? '0 4px 12px rgba(75, 58, 196, 0.28)' : 'none',
+              color: isLight ? '#FFFFFF' : '#14102B',
+              '&.Mui-disabled': { backgroundImage: 'none', boxShadow: 'none' },
             },
             outlined: {
               borderColor: t.borderStrong,
@@ -307,8 +320,8 @@ export const createAppTheme = (mode: PaletteMode) => {
         MuiTooltip: {
           styleOverrides: {
             tooltip: {
-              backgroundColor: BRAND.navy800,
-              color: BRAND.chromeText,
+              backgroundColor: BRAND.ink,
+              color: '#FFFFFF',
               fontSize: '0.78rem',
               borderRadius: '8px',
             },

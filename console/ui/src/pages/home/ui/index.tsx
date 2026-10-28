@@ -14,11 +14,14 @@ import { can } from '@shared/lib/session.ts';
 import { sidebarData } from '@widgets/sidebar/model/constants.ts';
 import { loadHistory } from '@pages/sql-editor/lib/storage.ts';
 import { FleetGrowth, FleetRisks, useFleet } from '@pages/insights/ui/Fleet.tsx';
-import { ClusterCards, SummaryLine } from './ClusterCards.tsx';
+import { ClusterCards } from './ClusterCards.tsx';
+import { FleetClusterCards, FleetNumbers, HomeHero } from './HomeTop.tsx';
+import ArrowForwardRounded from '@mui/icons-material/ArrowForwardRounded';
 import { chosenCards, isWide } from '../model/cards.ts';
 
-const Panel: FC<{ title: string; action?: ReactNode; children: ReactNode; wide?: boolean }> = ({
+const Panel: FC<{ title: string; sub?: string; action?: ReactNode; children: ReactNode; wide?: boolean }> = ({
   title,
+  sub,
   action,
   children,
   wide,
@@ -28,13 +31,23 @@ const Panel: FC<{ title: string; action?: ReactNode; children: ReactNode; wide?:
       gridColumn: wide ? '1 / -1' : undefined,
       border: 1,
       borderColor: 'divider',
-      borderRadius: 2,
-      p: 2,
+      borderRadius: '16px',
+      p: 2.5,
       bgcolor: 'background.paper',
+      boxShadow: '0 6px 20px -14px rgba(38, 28, 81, 0.25)',
       minWidth: 0,
     }}>
-    <Stack direction="row" alignItems="center" justifyContent="space-between" mb={1.25} gap={1}>
-      <Typography fontWeight={700}>{title}</Typography>
+    <Stack direction="row" alignItems="flex-start" justifyContent="space-between" mb={1.5} gap={1}>
+      <Box minWidth={0}>
+        <Typography fontWeight={800} fontSize="1.05rem">
+          {title}
+        </Typography>
+        {sub ? (
+          <Typography variant="body2" color="text.secondary">
+            {sub}
+          </Typography>
+        ) : null}
+      </Box>
       {action}
     </Stack>
     {children}
@@ -70,7 +83,9 @@ const FleetCard: FC<{ id: 'fleet' | 'risks' | 'growth' }> = ({ id }) => {
       {body(<ClusterCards fleet={q.data!} onOpen={open} />)}
     </Panel>
   ) : id === 'risks' ? (
-    <Panel title={t('home_risks')}>{body(<FleetRisks fleet={q.data!} max={6} onOpen={open} />)}</Panel>
+    <Panel title={t('home_risks')} sub={t('home_risks_sub')}>
+      {body(<FleetRisks fleet={q.data!} max={6} onOpen={open} />)}
+    </Panel>
   ) : (
     <Panel title={t('home_growth')}>{body(<FleetGrowth fleet={q.data!} />)}</Panel>
   );
@@ -178,6 +193,7 @@ const OperationsCard: FC = () => {
   return (
     <Panel
       title={t('home_operations')}
+      sub={t('home_operations_sub')}
       action={
         <Button size="small" component={RouterLink} to={RouterPaths.operations.absolutePath}>
           {t('homeAll')}
@@ -285,59 +301,95 @@ const Home: FC = () => {
 
   const name = user?.display_name || user?.username || '';
   const projectId = Number(useAppSelector(selectCurrentProject));
+  const navigate = useNavigate();
   const fleet = useFleet(can('insights.view', undefined, user) ? projectId : 0);
-  return (
-    <Stack gap={2} p={2}>
-      <Stack direction="row" alignItems="flex-end" gap={2} flexWrap="wrap">
-        <Box flex={1}>
-          <Typography variant="h5" fontWeight={700}>
-            {t(`homeGreeting_${greeting(new Date().getHours())}`, { name })}
-          </Typography>
-          <Typography variant="body2" color="text.secondary">
-            {new Date().toLocaleDateString(undefined, {
-              weekday: 'long',
-              day: 'numeric',
-              month: 'long',
-              year: 'numeric',
-            })}
-            {' · '}
-            {t('homeSubtitle')}
-          </Typography>
-        </Box>
-      </Stack>
+  const pages = sidebarData(t, user).map((l) => l.path);
+  const openCluster = (id: number) => navigate(`${RouterPaths.insights.absolutePath}?cluster=${id}`);
 
-      {fleet.data ? <SummaryLine fleet={fleet.data} /> : null}
+  // the fleet, recent operations and risks have their own places at the top; other chosen cards follow below
+  const showFleet = cards.includes('fleet');
+  const ops = cards.includes('operations');
+  const risks = cards.includes('risks');
+  const rest = cards.filter((c) => c !== 'fleet' && c !== 'operations' && c !== 'risks');
+
+  return (
+    <Stack gap={3} p={{ xs: 2, md: 3 }}>
+      <HomeHero
+        greeting={t(`homeGreeting_${greeting(new Date().getHours())}`, { name })}
+        fleet={fleet.data}
+        user={user}
+        pages={pages}
+      />
 
       {!cards.length ? <Alert severity="info">{t('homeEmpty')}</Alert> : null}
 
-      <Box
-        sx={{
-          display: 'grid',
-          gap: 2,
-          gridTemplateColumns: { xs: 'minmax(0, 1fr)', lg: 'repeat(2, minmax(0, 1fr))' },
-          alignItems: 'start',
-        }}>
-        {cards.map((id) => {
-          switch (id) {
-            case 'fleet':
-            case 'risks':
-            case 'growth':
-              return <FleetCard key={id} id={id} />;
-            case 'clusters':
-              return <ClustersCard key={id} />;
-            case 'recentQueries':
-              return <RecentQueriesCard key={id} />;
-            case 'operations':
-              return <OperationsCard key={id} />;
-            case 'shortcuts':
-              return <ShortcutsCard key={id} />;
-            case 'notes':
-              return <NotesCard key={id} prefs={prefs} save={save} />;
-            default:
-              return null;
-          }
-        })}
-      </Box>
+      {showFleet && fleet.data ? <FleetNumbers fleet={fleet.data} /> : null}
+
+      {showFleet ? (
+        <Box>
+          <Stack direction="row" alignItems="center" justifyContent="space-between" mb={1.5}>
+            <Typography component="h2" fontWeight={800} fontSize="1.3rem" letterSpacing="-0.01em">
+              {t('homeYourClusters')}
+            </Typography>
+            <Button
+              size="small"
+              component={RouterLink}
+              to={RouterPaths.clusters.absolutePath}
+              endIcon={<ArrowForwardRounded />}
+              sx={{ fontWeight: 700 }}>
+              {t('homeAllClusters')}
+            </Button>
+          </Stack>
+          {fleet.data ? (
+            <FleetClusterCards fleet={fleet.data} onOpen={openCluster} />
+          ) : (
+            <Typography color="text.secondary">{fleet.error ? t('homeNoClusters') : t('homeLoading')}</Typography>
+          )}
+        </Box>
+      ) : null}
+
+      {ops || risks ? (
+        <Box
+          sx={{
+            display: 'grid',
+            gap: 2,
+            gridTemplateColumns: {
+              xs: 'minmax(0, 1fr)',
+              lg: ops && risks ? 'minmax(0, 1.6fr) minmax(0, 1fr)' : 'minmax(0, 1fr)',
+            },
+            alignItems: 'start',
+          }}>
+          {ops ? <OperationsCard /> : null}
+          {risks ? <FleetCard id="risks" /> : null}
+        </Box>
+      ) : null}
+
+      {rest.length ? (
+        <Box
+          sx={{
+            display: 'grid',
+            gap: 2,
+            gridTemplateColumns: { xs: 'minmax(0, 1fr)', lg: 'repeat(2, minmax(0, 1fr))' },
+            alignItems: 'start',
+          }}>
+          {rest.map((id) => {
+            switch (id) {
+              case 'growth':
+                return <FleetCard key={id} id={id} />;
+              case 'clusters':
+                return <ClustersCard key={id} />;
+              case 'recentQueries':
+                return <RecentQueriesCard key={id} />;
+              case 'shortcuts':
+                return <ShortcutsCard key={id} />;
+              case 'notes':
+                return <NotesCard key={id} prefs={prefs} save={save} />;
+              default:
+                return null;
+            }
+          })}
+        </Box>
+      ) : null}
     </Stack>
   );
 };

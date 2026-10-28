@@ -8,7 +8,6 @@ import Toolbar from '@mui/material/Toolbar';
 import Typography from '@mui/material/Typography';
 import { BrandMark, BrandName } from '@shared/ui/brand';
 import UserMenu from '@features/user-menu';
-import { BRAND } from '@shared/theme/theme.ts';
 import ThemeToggle from '@features/theme-toggle';
 import { useGetProjectsQuery } from '@shared/api/api/projects.ts';
 import { HEADER_HEIGHT } from '@shared/model/constants.ts';
@@ -34,7 +33,7 @@ const Header: FC = () => {
   };
 
   return (
-    <AppBar position="fixed" data-surface="chrome" sx={(theme) => ({ zIndex: theme.zIndex.drawer + 1 })} elevation={0}>
+    <AppBar position="fixed" sx={(theme) => ({ zIndex: theme.zIndex.drawer + 1 })} elevation={0}>
       <Toolbar sx={{ minHeight: `${HEADER_HEIGHT} !important`, paddingLeft: '0 !important' }}>
         <Stack direction="row" justifyContent="space-between" alignItems="center" width="100%">
           <Stack direction="row" alignItems="center" gap="16px">
@@ -48,9 +47,9 @@ const Header: FC = () => {
               <BrandMark size={40} />
               <Box sx={{ lineHeight: 1 }}>
                 <Typography component="div" sx={{ lineHeight: 1.15 }}>
-                  <BrandName size="1.12rem" />
+                  <BrandName size="1.2rem" />
                 </Typography>
-                <Typography noWrap sx={{ color: BRAND.sky, fontSize: '0.7rem', fontWeight: 600, lineHeight: 1.2 }}>
+                <Typography noWrap sx={{ color: 'text.secondary', fontSize: '0.7rem', fontWeight: 600, lineHeight: 1.2 }}>
                   {t('productLine')}
                 </Typography>
               </Box>
@@ -59,14 +58,7 @@ const Header: FC = () => {
               sx={{
                 minWidth: '140px',
                 maxWidth: '180px',
-                '& .MuiOutlinedInput-root': {
-                  backgroundColor: 'rgba(255,255,255,0.08)',
-                  color: BRAND.chromeText,
-                  '& fieldset': { borderColor: 'rgba(255,255,255,0.18)' },
-                  '&:hover fieldset': { borderColor: BRAND.sky },
-                },
-                '& .MuiInputLabel-root': { color: BRAND.chromeMuted },
-                '& .MuiSelect-select': { color: BRAND.chromeText },
+                '& .MuiOutlinedInput-root': { backgroundColor: 'background.paper' },
               }}
               select
               size="small"

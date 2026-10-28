@@ -2,7 +2,7 @@
   <img src="console/ui/src/shared/assets/pgMantraLogo.png" alt="KeenPG" width="220">
 </p>
 
-# KeenPG: Manage PostgreSQL With Ease
+# KeenPG: A Keen Eye on Your Postgres
 
 A web console for building and running highly available PostgreSQL clusters (Patroni, etcd, HAProxy,
 PgBouncer, pgBackRest, Prometheus/Grafana) on your own virtual machines, using your licensed HA Ansible

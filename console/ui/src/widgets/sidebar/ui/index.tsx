@@ -7,7 +7,6 @@ import { useEffect, useRef, useState } from 'react';
 import CollapseIcon from '@shared/assets/collapseIcon.svg?react';
 import RouterPaths from '@app/router/routerPathsConfig';
 import { HEADER_HEIGHT } from '@shared/model/constants.ts';
-import { BRAND } from '@shared/theme/theme.ts';
 import { useSessionUser } from '@shared/lib/useSession.ts';
 
 const Sidebar = () => {
@@ -70,14 +69,12 @@ const Sidebar = () => {
   return (
     <Drawer
       variant="permanent"
-      PaperProps={{ 'data-surface': 'chrome' } as object}
       sx={{
         width: isCollapsed ? COLLAPSED_SIDEBAR_WIDTH : OPEN_SIDEBAR_WIDTH,
         flexShrink: 0,
         overflow: 'auto',
         [`& .MuiDrawer-paper`]: {
           width: isCollapsed ? COLLAPSED_SIDEBAR_WIDTH : OPEN_SIDEBAR_WIDTH,
-          backgroundColor: BRAND.navy800,
           boxSizing: 'border-box',
           transition: 'width .1s ease-in-out',
         },
@@ -95,26 +92,21 @@ const Sidebar = () => {
           ))}
         </List>
         <Box sx={{ height: '100%' }} />
-        <Divider flexItem sx={{ borderColor: 'rgba(255,255,255,0.08)' }} />
+        <Divider flexItem />
         <List sx={{ width: '100%', padding: '8px 0 8px 0' }}>
           {sidebarLowData(t).map((item) => (
             <SidebarItem key={item.label + item.path} isCollapsed={isCollapsed} target="_blank" {...item} />
           ))}
         </List>
-        <Divider flexItem sx={{ borderColor: 'rgba(255,255,255,0.08)' }} />
+        <Divider flexItem />
         <IconButton
           sx={{
             width: '100%',
             transform: isCollapsed ? 'scale(-1, 1)' : 'none',
             transition: 'transform .1s ease-in-out',
             borderRadius: 0,
-            color: BRAND.chromeMuted,
-            '&:hover': {
-              backgroundColor: 'rgba(255, 255, 255, 0.07)',
-            },
-            '& svg': {
-              fill: `${BRAND.chromeMuted} !important`,
-            },
+            color: 'text.secondary',
+            '&:hover': { backgroundColor: 'action.hover' },
           }}
           onClick={toggleSidebarCollapse}>
           <CollapseIcon width="24px" height="24px" />
